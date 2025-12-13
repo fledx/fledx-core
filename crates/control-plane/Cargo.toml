@@ -1,0 +1,57 @@
+[package]
+name = "control-plane"
+version = "0.1.0"
+edition = "2021"
+license = "BUSL-1.1"
+description = "Distributed edge hosting control plane server - centralized orchestration for edge containers"
+repository = "https://github.com/fledx/fledx-core"
+homepage = "https://github.com/fledx/fledx-core"
+authors = ["Thomas Schmitz <dev@tschmitz.de>"]
+keywords = ["edge-computing", "containers", "orchestration", "docker", "distributed"]
+categories = ["command-line-utilities", "network-programming"]
+build = "build.rs"
+
+[[bin]]
+name = "fledx-cp"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+axum.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+config.workspace = true
+tower-http.workspace = true
+chrono.workspace = true
+rand.workspace = true
+sha2.workspace = true
+tower.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+common = { path = "../common" }
+argon2.workspace = true
+subtle.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+utoipa.workspace = true
+semver.workspace = true
+futures-util.workspace = true
+base64 = "0.22"
+bytes.workspace = true
+h2.workspace = true
+http.workspace = true
+
+[build-dependencies]
+chrono.workspace = true
+anyhow.workspace = true
+
+[dev-dependencies]
+assert_cmd = "2.0"
+tempfile = "3.10"
+rcgen = "0.12"

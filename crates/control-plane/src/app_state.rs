@@ -1,0 +1,150 @@
+use std::{
+    collections::VecDeque,
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use crate::{
+    compat::AgentCompatibility,
+    config::{
+        LimitsConfig, PortsConfig, ReachabilityConfig, RetentionConfig, TunnelConfig, VolumesConfig,
+    },
+    metrics::MetricsHistory,
+    persistence, scheduler,
+};
+use axum::http::HeaderName;
+use metrics_exporter_prometheus::PrometheusHandle;
+use subtle::ConstantTimeEq;
+
+/// Shared application state passed into handlers.
+#[derive(Clone)]
+pub struct AppState {
+    pub db: persistence::Db,
+    pub scheduler: scheduler::RoundRobinScheduler,
+    pub registration_token: String,
+    pub operator_auth: OperatorAuth,
+    /// Pluggable validator for operator bearer tokens (env-only by default).
+    pub operator_token_validator: OperatorTokenValidator,
+    pub registration_limiter: Option<RegistrationLimiterRef>,
+    pub token_pepper: String,
+    pub limits: LimitsConfig,
+    pub retention: RetentionConfig,
+    pub reachability: ReachabilityConfig,
+    pub ports: PortsConfig,
+    pub volumes: VolumesConfig,
+    pub tunnel: TunnelConfig,
+    pub metrics_handle: PrometheusHandle,
+    pub metrics_history: MetricsHistory,
+    pub tunnel_registry: crate::tunnel::TunnelRegistry,
+    pub relay_health: crate::tunnel::RelayHealthState,
+    pub agent_compat: AgentCompatibility,
+    pub schema: persistence::MigrationSnapshot,
+    pub enforce_agent_compatibility: bool,
+    pub pem_key: Option<[u8; 32]>,
+    pub audit_sink: Option<Arc<dyn crate::audit::AuditSink>>,
+}
+
+/// Operator authentication configuration.
+#[derive(Clone)]
+pub struct OperatorAuth {
+    pub tokens: Vec<String>,
+    pub header_name: HeaderName,
+}
+
+impl OperatorAuth {
+    pub fn is_env_token(&self, candidate: &str) -> bool {
+        self.tokens.iter().any(|token| {
+            if token.len() != candidate.len() {
+                return false;
+            }
+            token.as_bytes().ct_eq(candidate.as_bytes()).into()
+        })
+    }
+}
+
+/// Callback used to validate operator bearer tokens.
+pub type OperatorTokenValidator = Arc<
+    dyn for<'a> Fn(
+            &'a AppState,
+            &'a str,
+        ) -> Pin<
+            Box<
+                dyn Future<Output = crate::Result<Option<crate::auth::OperatorIdentity>>>
+                    + Send
+                    + 'a,
+            >,
+        > + Send
+        + Sync,
+>;
+
+/// Interface for registration rate limiting.
+///
+/// Custom implementations can be injected via `BuildHooks::registration_limiter` to
+/// control node registration frequency. The control plane also provides a built-in
+/// `SlidingWindowRegistrationLimiter` that can be enabled via configuration.
+pub trait RegistrationLimiter: Send + Sync + 'static {
+    fn try_acquire(&mut self) -> bool;
+}
+
+/// Convenience alias for sharing the limiter through state.
+pub type RegistrationLimiterRef = Arc<tokio::sync::Mutex<dyn RegistrationLimiter>>;
+
+#[allow(dead_code)]
+fn _assert_app_state_bounds() {
+    fn assert_bounds<T: Clone + Send + Sync + 'static>() {}
+    assert_bounds::<AppState>();
+}
+
+/// No-op limiter that allows all registration attempts.
+///
+/// This is used by default when rate limiting is disabled (config: `rate_limit_per_minute = 0`).
+/// For production deployments, consider using `SlidingWindowRegistrationLimiter` or a custom
+/// implementation to prevent registration abuse.
+#[derive(Debug, Default)]
+pub struct NoopRegistrationLimiter;
+
+impl RegistrationLimiter for NoopRegistrationLimiter {
+    fn try_acquire(&mut self) -> bool {
+        true
+    }
+}
+
+/// Simple sliding-window limiter driven by configuration.
+#[derive(Debug)]
+pub struct SlidingWindowRegistrationLimiter {
+    capacity: usize,
+    window: Duration,
+    events: VecDeque<Instant>,
+}
+
+impl SlidingWindowRegistrationLimiter {
+    pub fn per_minute(capacity: u32) -> Self {
+        Self {
+            capacity: capacity.max(1) as usize,
+            window: Duration::from_secs(60),
+            events: VecDeque::new(),
+        }
+    }
+}
+
+impl RegistrationLimiter for SlidingWindowRegistrationLimiter {
+    fn try_acquire(&mut self) -> bool {
+        let now = Instant::now();
+        while let Some(front) = self.events.front() {
+            if now.duration_since(*front) > self.window {
+                self.events.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        if self.events.len() >= self.capacity {
+            return false;
+        }
+
+        self.events.push_back(now);
+        true
+    }
+}

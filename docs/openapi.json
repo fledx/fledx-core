@@ -1,0 +1,4623 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Distributed Edge Hosting API",
+    "description": "",
+    "license": {
+      "name": "BUSL-1.1"
+    },
+    "version": "0.1.0 (git 5c8a13b-dirty, dirty=true, built 2025-12-13T23:09:46Z)"
+  },
+  "paths": {
+    "/api/v1/configs": {
+      "get": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "list_configs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "maximum": 100,
+              "minimum": 1
+            },
+            "example": 50
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            },
+            "example": 0
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List configs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigSummaryPage"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "entry_count": 3,
+                      "file_count": 1,
+                      "metadata": {
+                        "config_id": "00000000-0000-0000-0000-00000000cafe",
+                        "created_at": "2025-01-10T12:00:00Z",
+                        "name": "app-config",
+                        "updated_at": "2025-02-11T15:30:00Z",
+                        "version": 2
+                      }
+                    }
+                  ],
+                  "limit": 50,
+                  "offset": 0
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "create_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Config created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                },
+                "example": {
+                  "attached_deployments": [],
+                  "attached_nodes": [],
+                  "entries": [
+                    {
+                      "key": "DATABASE_URL",
+                      "value": "postgres://app:secret@db:5432/app"
+                    },
+                    {
+                      "key": "REDIS_HOST",
+                      "value": "redis.internal"
+                    }
+                  ],
+                  "files": [
+                    {
+                      "file_ref": "config-blobs/app-v1",
+                      "path": "/etc/app/config.yaml"
+                    }
+                  ],
+                  "metadata": {
+                    "config_id": "00000000-0000-0000-0000-00000000cafe",
+                    "created_at": "2025-02-11T15:30:00Z",
+                    "name": "app-config",
+                    "updated_at": "2025-02-11T15:30:00Z",
+                    "version": 1
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failure (name uniqueness, version < 1, entry/file rules, or mixed plaintext/secret entries)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "bad_request",
+                  "error": "config entry value too long"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/configs/{config_id}": {
+      "get": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "get_config",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Config identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config detail",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                },
+                "example": {
+                  "attached_deployments": [
+                    "00000000-0000-0000-0000-00000000beef"
+                  ],
+                  "attached_nodes": [
+                    "00000000-0000-0000-0000-00000000babe"
+                  ],
+                  "entries": [
+                    {
+                      "key": "DATABASE_URL",
+                      "value": "postgres://app:secret@db:5432/app"
+                    }
+                  ],
+                  "files": [
+                    {
+                      "file_ref": "config-blobs/app-v2",
+                      "path": "/etc/app/config.yaml"
+                    }
+                  ],
+                  "metadata": {
+                    "config_id": "00000000-0000-0000-0000-00000000cafe",
+                    "created_at": "2025-01-10T12:00:00Z",
+                    "name": "app-config",
+                    "updated_at": "2025-02-11T15:30:00Z",
+                    "version": 2
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "config not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "update_config",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Config identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Config updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                },
+                "example": {
+                  "attached_deployments": [
+                    "00000000-0000-0000-0000-00000000beef"
+                  ],
+                  "attached_nodes": [],
+                  "entries": [
+                    {
+                      "key": "DATABASE_URL",
+                      "value": "postgres://app:secret@db:5432/app?sslmode=disable"
+                    }
+                  ],
+                  "files": [
+                    {
+                      "file_ref": "config-blobs/app-v2",
+                      "path": "/etc/app/config.yaml"
+                    }
+                  ],
+                  "metadata": {
+                    "config_id": "00000000-0000-0000-0000-00000000cafe",
+                    "created_at": "2025-01-10T12:00:00Z",
+                    "name": "app-config",
+                    "updated_at": "2025-02-12T09:00:00Z",
+                    "version": 2
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failure (name uniqueness, version must increase, entry/file rules, or mixed plaintext/secret entries)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "bad_request",
+                  "error": "version must be greater than current version"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "config not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "delete_config",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Config identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigMetadata"
+                },
+                "example": {
+                  "config_id": "00000000-0000-0000-0000-00000000cafe",
+                  "created_at": "2025-01-10T12:00:00Z",
+                  "name": "app-config",
+                  "updated_at": "2025-02-12T09:00:00Z",
+                  "version": 2
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "config not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/configs/{config_id}/deployments/{deployment_id}": {
+      "post": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "attach_config_to_deployment",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Config identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "Deployment identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment already existed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigAttachmentResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Attachment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigAttachmentResponse"
+                },
+                "example": {
+                  "attached": true,
+                  "attached_at": "2025-02-12T09:05:00Z",
+                  "deployment_id": "00000000-0000-0000-0000-00000000beef",
+                  "metadata": {
+                    "config_id": "00000000-0000-0000-0000-00000000cafe",
+                    "created_at": "2025-01-10T12:00:00Z",
+                    "name": "app-config",
+                    "updated_at": "2025-02-12T09:00:00Z",
+                    "version": 2
+                  },
+                  "node_id": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config or deployment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "deployment not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "detach_config_from_deployment",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Config identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "Deployment identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config detached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigAttachmentResponse"
+                },
+                "example": {
+                  "attached": false,
+                  "attached_at": null,
+                  "deployment_id": "00000000-0000-0000-0000-00000000beef",
+                  "metadata": {
+                    "config_id": "00000000-0000-0000-0000-00000000cafe",
+                    "created_at": "2025-01-10T12:00:00Z",
+                    "name": "app-config",
+                    "updated_at": "2025-02-12T09:00:00Z",
+                    "version": 2
+                  },
+                  "node_id": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config or deployment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "config not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/configs/{config_id}/nodes/{node_id}": {
+      "post": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "attach_config_to_node",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Config identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "description": "Node identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Attachment already existed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigAttachmentResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Attachment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigAttachmentResponse"
+                },
+                "example": {
+                  "attached": true,
+                  "attached_at": "2025-02-12T09:05:00Z",
+                  "deployment_id": null,
+                  "metadata": {
+                    "config_id": "00000000-0000-0000-0000-00000000cafe",
+                    "created_at": "2025-01-10T12:00:00Z",
+                    "name": "app-config",
+                    "updated_at": "2025-02-12T09:00:00Z",
+                    "version": 2
+                  },
+                  "node_id": "00000000-0000-0000-0000-00000000babe"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config or node not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "node not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "configs"
+        ],
+        "operationId": "detach_config_from_node",
+        "parameters": [
+          {
+            "name": "config_id",
+            "in": "path",
+            "description": "Config identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "node_id",
+            "in": "path",
+            "description": "Node identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Config detached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigAttachmentResponse"
+                },
+                "example": {
+                  "attached": false,
+                  "attached_at": null,
+                  "deployment_id": null,
+                  "metadata": {
+                    "config_id": "00000000-0000-0000-0000-00000000cafe",
+                    "created_at": "2025-01-10T12:00:00Z",
+                    "name": "app-config",
+                    "updated_at": "2025-02-12T09:00:00Z",
+                    "version": 2
+                  },
+                  "node_id": "00000000-0000-0000-0000-00000000babe"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Config or node not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "config not found"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/deployments": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "operationId": "list_deployments",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List deployments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentSummaryPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "deployments"
+        ],
+        "operationId": "create_deployment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentSpec"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Deployment created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid deployment spec"
+          },
+          "503": {
+            "description": "No ready nodes"
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}": {
+      "get": {
+        "tags": [
+          "deployments"
+        ],
+        "operationId": "deployment_status",
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "Deployment identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentStatusResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "deployments"
+        ],
+        "operationId": "delete_deployment",
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "Deployment identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deployment deleted"
+          },
+          "404": {
+            "description": "Deployment not found"
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "deployments"
+        ],
+        "operationId": "update_deployment",
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "Deployment identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Deployment updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentStatusResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/deployments/{deployment_id}/metrics": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "deployment_metrics",
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "description": "Deployment identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent deployment resource metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeploymentMetricsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Deployment not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/metrics/summary": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "metrics_summary",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Top HTTP request metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MetricsSummary"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes": {
+      "get": {
+        "tags": [
+          "nodes"
+        ],
+        "operationId": "list_nodes",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List nodes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeSummaryPage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/register": {
+      "post": {
+        "tags": [
+          "nodes"
+        ],
+        "operationId": "register_node",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Node registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid agent version header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "426": {
+            "description": "Agent version unsupported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        },
+        "security": [
+          {
+            "registrationBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{node_id}": {
+      "get": {
+        "tags": [
+          "nodes"
+        ],
+        "operationId": "node_status",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "description": "Node identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Node status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeStatusResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{node_id}/configs": {
+      "get": {
+        "tags": [
+          "nodes"
+        ],
+        "operationId": "node_configs",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "description": "Node identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Configs attached to the node or its deployments",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeConfigResponse"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Configs unchanged"
+          },
+          "400": {
+            "description": "Missing or invalid agent version header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid node token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Node not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "not_found",
+                  "error": "node not found"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Serialized config payload exceeded configured size limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "payload_too_large",
+                  "error": "config payload exceeds 131072 bytes limit"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Agent version unsupported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "nodeBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{node_id}/desired-state": {
+      "get": {
+        "tags": [
+          "nodes"
+        ],
+        "operationId": "desired_state",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "description": "Node identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Desired state for node",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DesiredStateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid agent version header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid node token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Agent version unsupported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "nodeBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/nodes/{node_id}/heartbeats": {
+      "post": {
+        "tags": [
+          "nodes"
+        ],
+        "operationId": "heartbeat",
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "description": "Node identifier",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Heartbeat recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid agent version header",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                },
+                "example": {
+                  "agent_version": "1.0.0-invalid",
+                  "error": "unsupported_agent_version",
+                  "max_supported": "1.1.0",
+                  "min_supported": "0.9.0",
+                  "upgrade_url": "https://example.invalid/upgrade"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid node token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Heartbeat payload exceeds CONTROL_PLANE__LIMITS__HEARTBEAT_BODY_BYTES",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "payload_too_large",
+                  "error": "request payload too large"
+                }
+              }
+            }
+          },
+          "426": {
+            "description": "Agent version unsupported",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVersionError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "nodeBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/usage": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "operationId": "list_usage_rollups",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size (1-100, defaults to 50 when omitted).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "maximum": 100,
+              "minimum": 1
+            },
+            "example": 50
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Pagination offset (defaults to 0).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true,
+              "minimum": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "deployment_id",
+            "in": "query",
+            "description": "Deployment to filter by (required if `node_id` is absent).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            },
+            "example": "00000000-0000-0000-0000-00000000cafe"
+          },
+          {
+            "name": "node_id",
+            "in": "query",
+            "description": "Node to filter by (required if `deployment_id` is absent).",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "nullable": true
+            },
+            "example": "00000000-0000-0000-0000-00000000beef"
+          },
+          {
+            "name": "replica_number",
+            "in": "query",
+            "description": "Specific replica ordinal (optional).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "nullable": true,
+              "minimum": 0
+            },
+            "example": 0
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "RFC3339 timestamp for the start of the window. Defaults to now minus the allowed window.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "example": "2025-02-03T04:00:00Z"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "RFC3339 timestamp for the end of the window. Defaults to current time.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "example": "2025-02-03T04:05:00Z"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated resource usage rollups (per-minute buckets)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageRollupPage"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "avg_blk_read_bytes": 4096,
+                      "avg_blk_write_bytes": 0,
+                      "avg_cpu_percent": 12.3,
+                      "avg_memory_bytes": 230686720,
+                      "avg_network_rx_bytes": 10240,
+                      "avg_network_tx_bytes": 9216,
+                      "bucket_start": "2025-02-03T04:05:00Z",
+                      "deployment_id": "00000000-0000-0000-0000-00000000cafe",
+                      "node_id": "00000000-0000-0000-0000-00000000beef",
+                      "replica_number": 0,
+                      "samples": 2
+                    }
+                  ],
+                  "limit": 50,
+                  "offset": 0
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing required filter, malformed timestamp, or window outside retention",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": "bad_request",
+                  "error": "deployment_id or node_id is required to query usage"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "operationId": "healthz",
+        "responses": {
+          "200": {
+            "description": "Health check",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "operationId": "metrics",
+        "responses": {
+          "200": {
+            "description": "Prometheus metrics"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentVersionError": {
+        "type": "object",
+        "description": "Error payload returned when an agent's version header is missing, invalid,\nor outside the compatibility window.\n\nThe control-plane follows semver. By default, agents from the previous\nminor through the next minor release (inclusive, any patch) are accepted,\nbut operators can override the bounds with\n`compatibility.min_agent_version` / `compatibility.max_agent_version`.\nWhen set, `upgrade_url` points agents to upgrade instructions.",
+        "required": [
+          "error",
+          "agent_version",
+          "min_supported",
+          "max_supported",
+          "upgrade_url"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "agent_version": {
+            "type": "string"
+          },
+          "min_supported": {
+            "type": "string"
+          },
+          "max_supported": {
+            "type": "string"
+          },
+          "upgrade_url": {
+            "type": "string"
+          }
+        }
+      },
+      "CapacityHints": {
+        "type": "object",
+        "description": "CPU and memory hints attached to nodes and constraints.",
+        "properties": {
+          "cpu_millis": {
+            "type": "integer",
+            "format": "int32",
+            "description": "CPU in milli-cores.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Memory in bytes.",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "ConfigAttachmentResponse": {
+        "type": "object",
+        "description": "Attachment/ detachment response for configs.",
+        "required": [
+          "metadata",
+          "attached"
+        ],
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ConfigMetadata"
+          },
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Attached deployment identifier (when applicable).",
+            "nullable": true
+          },
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Attached node identifier (when applicable).",
+            "nullable": true
+          },
+          "attached": {
+            "type": "boolean",
+            "description": "Whether the attachment exists after the operation."
+          },
+          "attached_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the attachment was recorded.",
+            "nullable": true
+          }
+        },
+        "example": {
+          "attached": true,
+          "attached_at": "2025-02-12T08:00:00Z",
+          "deployment_id": "00000000-0000-0000-0000-00000000beef",
+          "metadata": {
+            "config_id": "00000000-0000-0000-0000-00000000cafe",
+            "created_at": "2025-01-10T12:00:00Z",
+            "name": "app-config",
+            "updated_at": "2025-02-11T15:30:00Z",
+            "version": 2
+          },
+          "node_id": null
+        }
+      },
+      "ConfigCreateRequest": {
+        "type": "object",
+        "description": "Request payload to create a config.",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Config name (must be unique).",
+            "example": "app-config",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional version override (defaults to 1).",
+            "example": 1,
+            "nullable": true,
+            "minimum": 1
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigEntry"
+            },
+            "description": "Key/value entries for the config.",
+            "example": [
+              {
+                "key": "DATABASE_URL",
+                "value": "postgres://app:secret@db:5432/app"
+              }
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigFile"
+            },
+            "description": "File references attached to the config.",
+            "example": [
+              {
+                "file_ref": "config-blobs/app-v1",
+                "path": "/etc/app/config.yaml"
+              }
+            ]
+          }
+        }
+      },
+      "ConfigDesired": {
+        "type": "object",
+        "description": "Config payload returned to node agents.",
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ConfigMetadata"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigEntry"
+            },
+            "description": "Key/value pairs defined on the config."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigFile"
+            },
+            "description": "File references defined on the config."
+          },
+          "attached_deployments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Deployments that reference this config on the requesting node."
+          },
+          "attached_nodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Nodes that reference this config (usually the requester only)."
+          },
+          "checksum": {
+            "type": "string",
+            "description": "Integrity hash of the config content.",
+            "nullable": true
+          }
+        },
+        "example": {
+          "attached_deployments": [
+            "00000000-0000-0000-0000-00000000beef"
+          ],
+          "attached_nodes": [
+            "00000000-0000-0000-0000-00000000babe"
+          ],
+          "checksum": "7995c1ac84c543fa",
+          "entries": [
+            {
+              "key": "DATABASE_URL",
+              "value": "postgres://app:secret@db:5432/app"
+            }
+          ],
+          "files": [
+            {
+              "file_ref": "config-blobs/app-v2",
+              "path": "/etc/app/config.yaml"
+            }
+          ],
+          "metadata": {
+            "config_id": "00000000-0000-0000-0000-00000000cafe",
+            "created_at": "2025-01-10T12:00:00Z",
+            "name": "app-config",
+            "updated_at": "2025-02-11T15:30:00Z",
+            "version": 2
+          }
+        }
+      },
+      "ConfigEntry": {
+        "type": "object",
+        "description": "Config entry containing either a plaintext value or secret reference.\n\nAll entries in a config must pick a single strategy: either every entry\nuses plaintext `value` fields or every entry uses `secret_ref` fields (they\ncannot be mixed).",
+        "required": [
+          "key"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Entry key (unique per config).",
+            "example": "DATABASE_URL",
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "value": {
+            "type": "string",
+            "description": "Plaintext value (mutually exclusive with secret_ref).",
+            "example": "postgres://app:secret@db:5432/app",
+            "maxLength": 4096
+          },
+          "secret_ref": {
+            "type": "string",
+            "description": "Secret reference (mutually exclusive with value).",
+            "example": "db-password",
+            "nullable": true,
+            "maxLength": 255,
+            "minLength": 1
+          }
+        }
+      },
+      "ConfigFile": {
+        "type": "object",
+        "description": "Reference to a file-backed config blob.",
+        "required": [
+          "path",
+          "file_ref"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Target path for the config file.",
+            "example": "/etc/app/config.yaml",
+            "maxLength": 512,
+            "minLength": 1
+          },
+          "file_ref": {
+            "type": "string",
+            "description": "Reference to the stored file content.",
+            "example": "config-blobs/app-v1",
+            "maxLength": 255,
+            "minLength": 1
+          }
+        }
+      },
+      "ConfigMetadata": {
+        "type": "object",
+        "description": "Config metadata used across responses.",
+        "required": [
+          "config_id",
+          "name",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "config_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Config identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Config name (unique)."
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Monotonic version for propagation."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last update timestamp."
+          }
+        }
+      },
+      "ConfigResponse": {
+        "type": "object",
+        "description": "Full config response with entries and files.",
+        "required": [
+          "metadata"
+        ],
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ConfigMetadata"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigEntry"
+            },
+            "description": "Config entries."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigFile"
+            },
+            "description": "Config files."
+          },
+          "attached_deployments": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Deployments currently attached to the config."
+          },
+          "attached_nodes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Nodes currently attached to the config."
+          }
+        },
+        "example": {
+          "attached_deployments": [
+            "00000000-0000-0000-0000-00000000beef"
+          ],
+          "attached_nodes": [
+            "00000000-0000-0000-0000-00000000babe"
+          ],
+          "entries": [
+            {
+              "key": "DATABASE_URL",
+              "value": "postgres://app:secret@db:5432/app"
+            }
+          ],
+          "files": [
+            {
+              "file_ref": "config-blobs/app-v2",
+              "path": "/etc/app/config.yaml"
+            }
+          ],
+          "metadata": {
+            "config_id": "00000000-0000-0000-0000-00000000cafe",
+            "created_at": "2025-01-10T12:00:00Z",
+            "name": "app-config",
+            "updated_at": "2025-02-11T15:30:00Z",
+            "version": 2
+          }
+        }
+      },
+      "ConfigSummary": {
+        "type": "object",
+        "description": "Config summary for list endpoints.",
+        "required": [
+          "metadata",
+          "entry_count",
+          "file_count"
+        ],
+        "properties": {
+          "metadata": {
+            "$ref": "#/components/schemas/ConfigMetadata"
+          },
+          "entry_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of key/value entries."
+          },
+          "file_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of file references."
+          }
+        }
+      },
+      "ConfigSummaryPage": {
+        "type": "object",
+        "description": "Paginated config list response wrapper.",
+        "required": [
+          "limit",
+          "offset",
+          "items"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested page size.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested offset.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigSummary"
+            },
+            "description": "Config summaries on this page."
+          }
+        }
+      },
+      "ConfigUpdateRequest": {
+        "type": "object",
+        "description": "Request payload to update/replace a config.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Optional new name (must stay unique).",
+            "example": "app-config-v2",
+            "nullable": true,
+            "maxLength": 255,
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Optional explicit version (defaults to current + 1).",
+            "example": 2,
+            "nullable": true,
+            "minimum": 1
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigEntry"
+            },
+            "description": "Replacement entries for the config.",
+            "example": [
+              {
+                "key": "DATABASE_URL",
+                "value": "postgres://app:secret@db:5432/app?sslmode=disable"
+              }
+            ],
+            "nullable": true
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigFile"
+            },
+            "description": "Replacement files for the config.",
+            "example": [
+              {
+                "file_ref": "config-blobs/app-v2",
+                "path": "/etc/app/config.yaml"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "DeploymentCreateResponse": {
+        "type": "object",
+        "description": "Response returned when creating a deployment.",
+        "required": [
+          "deployment_id",
+          "assigned_node_id"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "assigned_node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node assigned to the deployment."
+          },
+          "assigned_node_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Nodes chosen for replicas (best-effort)."
+          },
+          "unplaced_replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of replicas that could not be placed.",
+            "minimum": 0
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Generation number for reconciliation."
+          }
+        }
+      },
+      "DeploymentDesired": {
+        "type": "object",
+        "description": "Single desired deployment entry in the desired state response.",
+        "required": [
+          "deployment_id",
+          "name",
+          "image",
+          "desired_state",
+          "generation"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Deployment name."
+          },
+          "replica_number": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Replica number (0-based) assigned to this node.",
+            "minimum": 0
+          },
+          "image": {
+            "type": "string",
+            "description": "Container image."
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of desired replicas.",
+            "minimum": 0
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional command.",
+            "nullable": true
+          },
+          "env": {
+            "type": "object",
+            "description": "Optional environment variables.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "secret_env": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretEnv"
+            },
+            "description": "Secret environment variable references.",
+            "nullable": true
+          },
+          "secret_files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretFile"
+            },
+            "description": "Secret file references.",
+            "nullable": true
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortMapping"
+            },
+            "description": "Port mappings for the deployment.",
+            "nullable": true
+          },
+          "requires_public_ip": {
+            "type": "boolean",
+            "description": "Whether the deployment requires public ingress.",
+            "example": true
+          },
+          "tunnel_only": {
+            "type": "boolean",
+            "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
+          },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementHints"
+              }
+            ],
+            "nullable": true
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeMount"
+            },
+            "description": "Filesystem volumes to mount into the container.",
+            "nullable": true
+          },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentHealth"
+              }
+            ],
+            "nullable": true
+          },
+          "desired_state": {
+            "$ref": "#/components/schemas/DesiredState"
+          },
+          "replica_generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Generation number used for reconciliation.",
+            "nullable": true
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Generation number used for reconciliation (deployment-wide fallback)."
+          }
+        }
+      },
+      "DeploymentHealth": {
+        "type": "object",
+        "description": "Health check configuration attached to deployments.",
+        "properties": {
+          "liveness": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HealthProbe"
+              }
+            ],
+            "nullable": true
+          },
+          "readiness": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HealthProbe"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DeploymentMetricsResponse": {
+        "type": "object",
+        "description": "Response containing resource metrics for a deployment.",
+        "required": [
+          "deployment_id",
+          "deployment",
+          "window_secs",
+          "as_of"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "deployment": {
+            "type": "string",
+            "description": "Deployment name."
+          },
+          "window_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Window applied to the samples in seconds.",
+            "minimum": 0
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the response was generated."
+          },
+          "replicas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplicaResourceMetrics"
+            },
+            "description": "Per-replica metrics."
+          }
+        }
+      },
+      "DeploymentSpec": {
+        "type": "object",
+        "description": "Deployment specification accepted by the control-plane.",
+        "required": [
+          "image"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Optional human-readable name; falls back to image.",
+            "nullable": true
+          },
+          "image": {
+            "type": "string",
+            "description": "Container image reference."
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of desired replicas (default: 1).",
+            "nullable": true,
+            "minimum": 0
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional entrypoint/command override.",
+            "nullable": true
+          },
+          "env": {
+            "type": "object",
+            "description": "Environment variables.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "secret_env": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretEnv"
+            },
+            "description": "Secret environment variable references.",
+            "nullable": true
+          },
+          "secret_files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretFile"
+            },
+            "description": "Secret file references.",
+            "nullable": true
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortMapping"
+            },
+            "description": "Port mappings requested by the deployment.",
+            "nullable": true
+          },
+          "requires_public_ip": {
+            "type": "boolean",
+            "description": "Whether the deployment requires public ingress.",
+            "default": false,
+            "example": true
+          },
+          "tunnel_only": {
+            "type": "boolean",
+            "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
+          },
+          "constraints": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementConstraints"
+              }
+            ],
+            "nullable": true
+          },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementHints"
+              }
+            ],
+            "nullable": true
+          },
+          "desired_state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesiredState"
+              }
+            ],
+            "nullable": true
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeMount"
+            },
+            "description": "Filesystem volumes to mount into the container.",
+            "nullable": true
+          },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentHealth"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "desired_state": "running",
+          "image": "nginx:1.27-alpine",
+          "name": "web-nginx",
+          "ports": [
+            {
+              "container_port": 80,
+              "expose": true,
+              "host_port": 8080,
+              "protocol": "tcp"
+            }
+          ],
+          "replicas": 1,
+          "requires_public_ip": true
+        }
+      },
+      "DeploymentStatus": {
+        "type": "string",
+        "description": "Deployment lifecycle state reported by the control-plane.",
+        "enum": [
+          "pending",
+          "deploying",
+          "running",
+          "stopped",
+          "failed"
+        ]
+      },
+      "DeploymentStatusResponse": {
+        "type": "object",
+        "description": "Control-plane response describing a deployment status.",
+        "required": [
+          "deployment_id",
+          "name",
+          "image",
+          "requires_public_ip",
+          "desired_state",
+          "status",
+          "generation",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Deployment name."
+          },
+          "image": {
+            "type": "string",
+            "description": "Container image."
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of desired replicas.",
+            "minimum": 0
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional command.",
+            "nullable": true
+          },
+          "env": {
+            "type": "object",
+            "description": "Optional environment variables.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "secret_env": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretEnv"
+            },
+            "description": "Secret environment variable references.",
+            "nullable": true
+          },
+          "secret_files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretFile"
+            },
+            "description": "Secret file references.",
+            "nullable": true
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortMapping"
+            },
+            "description": "Port mappings (after allocation).",
+            "nullable": true
+          },
+          "requires_public_ip": {
+            "type": "boolean",
+            "description": "Whether the deployment requires public ingress."
+          },
+          "tunnel_only": {
+            "type": "boolean",
+            "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
+          },
+          "constraints": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementConstraints"
+              }
+            ],
+            "nullable": true
+          },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementHints"
+              }
+            ],
+            "nullable": true
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeMount"
+            },
+            "description": "Filesystem volumes to mount into the container.",
+            "nullable": true
+          },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentHealth"
+              }
+            ],
+            "nullable": true
+          },
+          "desired_state": {
+            "$ref": "#/components/schemas/DesiredState"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeploymentStatus"
+          },
+          "assigned_node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node assigned to run the deployment.",
+            "nullable": true
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplicaAssignment"
+            },
+            "description": "Nodes chosen for replicas (best-effort)."
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Generation number."
+          },
+          "last_reported": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of the last status report from the node.",
+            "nullable": true
+          },
+          "instance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InstanceStatusResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "usage_summary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UsageSummary"
+              }
+            ],
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Creation timestamp."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Update timestamp."
+          }
+        }
+      },
+      "DeploymentSummary": {
+        "type": "object",
+        "description": "Deployment summary for list endpoints.",
+        "required": [
+          "deployment_id",
+          "name",
+          "image",
+          "desired_state",
+          "status",
+          "generation"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Deployment name."
+          },
+          "image": {
+            "type": "string",
+            "description": "Container image."
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of desired replicas.",
+            "minimum": 0
+          },
+          "desired_state": {
+            "$ref": "#/components/schemas/DesiredState"
+          },
+          "status": {
+            "$ref": "#/components/schemas/DeploymentStatus"
+          },
+          "assigned_node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node assigned to run the deployment.",
+            "nullable": true
+          },
+          "tunnel_only": {
+            "type": "boolean",
+            "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReplicaAssignment"
+            },
+            "description": "Nodes chosen for replicas (best-effort)."
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Generation number."
+          },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementHints"
+              }
+            ],
+            "nullable": true
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeMount"
+            },
+            "description": "Filesystem volumes to mount into the container.",
+            "nullable": true
+          },
+          "last_reported": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of the last status report from the node.",
+            "nullable": true
+          }
+        }
+      },
+      "DeploymentSummaryPage": {
+        "type": "object",
+        "description": "Paginated deployment list response wrapper.",
+        "required": [
+          "limit",
+          "offset",
+          "items"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested page size.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested offset.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentSummary"
+            },
+            "description": "Deployments on this page."
+          }
+        }
+      },
+      "DeploymentUpdate": {
+        "type": "object",
+        "description": "Deployment update payload accepted by the control-plane.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New name (None means unchanged).",
+            "nullable": true
+          },
+          "image": {
+            "type": "string",
+            "description": "New image (None means unchanged).",
+            "nullable": true
+          },
+          "replicas": {
+            "type": "integer",
+            "format": "int32",
+            "description": "New replica count (None means unchanged).",
+            "nullable": true,
+            "minimum": 0
+          },
+          "command": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Replace command (Some(None) clears it).",
+            "nullable": true
+          },
+          "env": {
+            "type": "object",
+            "description": "Replace environment (Some(None) clears it).",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "secret_env": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretEnv"
+            },
+            "description": "Replace secret env refs (Some(None) clears them).",
+            "nullable": true
+          },
+          "secret_files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SecretFile"
+            },
+            "description": "Replace secret file refs (Some(None) clears them).",
+            "nullable": true
+          },
+          "ports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PortMapping"
+            },
+            "description": "Replace ports (Some(None) clears them).",
+            "nullable": true
+          },
+          "requires_public_ip": {
+            "type": "boolean",
+            "description": "Set or clear the public ingress requirement.",
+            "example": true,
+            "nullable": true
+          },
+          "tunnel_only": {
+            "type": "boolean",
+            "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port.",
+            "nullable": true
+          },
+          "constraints": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementConstraints"
+              }
+            ],
+            "nullable": true
+          },
+          "placement": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementHints"
+              }
+            ],
+            "nullable": true
+          },
+          "desired_state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DesiredState"
+              }
+            ],
+            "nullable": true
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeMount"
+            },
+            "description": "Replace volumes (Some(None) clears them).",
+            "nullable": true
+          },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeploymentHealth"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DesiredState": {
+        "type": "string",
+        "description": "Desired deployment state (wire format uses lowercase values).",
+        "enum": [
+          "running",
+          "stopped"
+        ]
+      },
+      "DesiredStateResponse": {
+        "type": "object",
+        "description": "Control-plane response containing desired deployments for a node.\n\nAgents must check the compatibility window before applying desired state.",
+        "required": [
+          "control_plane_version",
+          "min_supported_agent_version",
+          "deployments"
+        ],
+        "properties": {
+          "control_plane_version": {
+            "type": "string",
+            "description": "Control-plane version serving the response."
+          },
+          "min_supported_agent_version": {
+            "type": "string",
+            "description": "Minimum node-agent version supported by the control-plane. The default\npolicy accepts agents from the previous minor through the next minor\nrelease (inclusive, any patch) unless overridden by control-plane\nconfiguration."
+          },
+          "max_supported_agent_version": {
+            "type": "string",
+            "description": "Maximum node-agent version supported by the control-plane.",
+            "nullable": true
+          },
+          "upgrade_url": {
+            "type": "string",
+            "description": "Optional URL with upgrade guidance for incompatible agents.",
+            "nullable": true
+          },
+          "tunnel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TunnelEndpoint"
+              }
+            ],
+            "nullable": true
+          },
+          "deployments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeploymentDesired"
+            },
+            "description": "Desired deployments assigned to the node."
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": [
+          "error",
+          "code"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "HealthProbe": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/HealthProbeKind"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "interval_seconds": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Interval between probe executions (seconds).",
+                "nullable": true,
+                "minimum": 0
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Timeout for each probe run (seconds).",
+                "nullable": true,
+                "minimum": 0
+              },
+              "failure_threshold": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Fail threshold before marking the probe as failing.",
+                "nullable": true,
+                "minimum": 0
+              },
+              "start_period_seconds": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Optional delay before running probes after container start.",
+                "nullable": true,
+                "minimum": 0
+              }
+            }
+          }
+        ],
+        "description": "Defines a single probe configuration."
+      },
+      "HealthProbeKind": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "HTTP probe hitting a container port and path.",
+            "required": [
+              "port",
+              "path",
+              "type"
+            ],
+            "properties": {
+              "port": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Container port to target.",
+                "minimum": 0
+              },
+              "path": {
+                "type": "string",
+                "description": "HTTP path to request (must not be empty)."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "http"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "TCP probe dialing a container port.",
+            "required": [
+              "port",
+              "type"
+            ],
+            "properties": {
+              "port": {
+                "type": "integer",
+                "format": "int32",
+                "description": "Container port to target.",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "tcp"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Exec probe running commands inside the container.",
+            "required": [
+              "command",
+              "type"
+            ],
+            "properties": {
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Commands executed for the probe."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "exec"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "Supported health probe implementations.",
+        "discriminator": {
+          "propertyName": "type"
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "description": "Health response including version metadata and the active compatibility\nwindow so agents can self-validate before running workloads.",
+        "required": [
+          "status",
+          "control_plane_version",
+          "version",
+          "git_sha",
+          "dirty",
+          "built_at",
+          "min_supported_agent_version",
+          "max_supported_agent_version",
+          "pending_migrations",
+          "tunnel_sessions_active",
+          "tunnel_statuses",
+          "relay"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "control_plane_version": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "git_sha": {
+            "type": "string"
+          },
+          "dirty": {
+            "type": "boolean"
+          },
+          "built_at": {
+            "type": "string"
+          },
+          "min_supported_agent_version": {
+            "type": "string"
+          },
+          "max_supported_agent_version": {
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "target_schema_version": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "pending_migrations": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tunnel_sessions_active": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "tunnel_freshest_heartbeat_secs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "tunnel_statuses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeTunnelHealth"
+            }
+          },
+          "relay": {
+            "$ref": "#/components/schemas/RelayHealth"
+          }
+        }
+      },
+      "HealthStatus": {
+        "type": "object",
+        "description": "Health status reported by the node agent for a replica.",
+        "required": [
+          "healthy"
+        ],
+        "properties": {
+          "healthy": {
+            "type": "boolean",
+            "description": "Whether the last probe reported success."
+          },
+          "last_probe_result": {
+            "type": "string",
+            "description": "Result string from the last probe run.",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional reason for the last probe failure.",
+            "nullable": true
+          },
+          "last_error": {
+            "type": "string",
+            "description": "Optional error string from the last probe execution.",
+            "nullable": true
+          },
+          "last_checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of the last probe attempt.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HeartbeatRequest": {
+        "type": "object",
+        "description": "Heartbeat payload posted by a node agent; includes recent usage metrics.",
+        "required": [
+          "node_status"
+        ],
+        "properties": {
+          "node_status": {
+            "$ref": "#/components/schemas/NodeStatus"
+          },
+          "containers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstanceStatus"
+            },
+            "description": "Per-replica status and recent usage samples (bounded by control-plane limits)."
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Optional timestamp set by the agent for skew detection.",
+            "nullable": true
+          },
+          "inventory": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NodeInventoryPayload"
+              }
+            ],
+            "nullable": true
+          },
+          "public_ip": {
+            "type": "string",
+            "nullable": true
+          },
+          "public_host": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "example": {
+          "containers": [
+            {
+              "container_id": "sha256:abc123",
+              "deployment_id": "00000000-0000-0000-0000-00000000cafe",
+              "endpoints": [
+                "127.0.0.1:18081"
+              ],
+              "generation": 3,
+              "last_updated": "2025-02-03T04:05:05Z",
+              "message": null,
+              "metrics": [
+                {
+                  "blk_read_bytes": 4096,
+                  "blk_write_bytes": 0,
+                  "collected_at": "2025-02-03T04:05:00Z",
+                  "cpu_percent": 12.3,
+                  "memory_bytes": 230686720,
+                  "network_rx_bytes": 10240,
+                  "network_tx_bytes": 9216
+                }
+              ],
+              "replica_number": 0,
+              "restart_count": 1,
+              "state": "running"
+            }
+          ],
+          "inventory": {
+            "arch": "x86_64",
+            "capacity": {
+              "cpu_millis": 2000,
+              "memory_bytes": 4294967296
+            },
+            "labels": {
+              "region": "lab-1"
+            },
+            "os": "Linux"
+          },
+          "node_status": "ready",
+          "timestamp": "2025-02-03T04:05:06Z"
+        }
+      },
+      "InstanceState": {
+        "type": "string",
+        "description": "Instance state reported by agents.",
+        "enum": [
+          "running",
+          "pending",
+          "stopped",
+          "failed",
+          "unknown"
+        ]
+      },
+      "InstanceStatus": {
+        "type": "object",
+        "description": "Instance status reported by the node-agent during heartbeats.",
+        "required": [
+          "deployment_id",
+          "state",
+          "restart_count",
+          "last_updated"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "replica_number": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Replica ordinal within the deployment.",
+            "minimum": 0
+          },
+          "container_id": {
+            "type": "string",
+            "description": "Optional container identifier.",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/InstanceState"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional status message.",
+            "nullable": true
+          },
+          "restart_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Restart counter.",
+            "minimum": 0
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Desired generation tracked by the agent."
+          },
+          "last_updated": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last time the status changed according to the agent."
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reachable endpoints reported by the node agent."
+          },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HealthStatus"
+              }
+            ],
+            "nullable": true
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceMetricSample"
+            },
+            "description": "Recent resource usage samples (bounded by the agent)."
+          }
+        }
+      },
+      "InstanceStatusResponse": {
+        "type": "object",
+        "description": "Instance status returned from control-plane status endpoints.",
+        "required": [
+          "deployment_id",
+          "replica_number",
+          "state",
+          "restart_count",
+          "generation",
+          "last_updated",
+          "last_seen"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "replica_number": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Replica ordinal within the deployment.",
+            "minimum": 0
+          },
+          "container_id": {
+            "type": "string",
+            "description": "Optional container identifier.",
+            "nullable": true
+          },
+          "state": {
+            "$ref": "#/components/schemas/InstanceState"
+          },
+          "message": {
+            "type": "string",
+            "description": "Optional status message.",
+            "nullable": true
+          },
+          "restart_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Restart counter.",
+            "minimum": 0
+          },
+          "generation": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Desired generation tracked by the agent."
+          },
+          "last_updated": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last time the status changed according to the agent."
+          },
+          "last_seen": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time of the last heartbeat observed by the control-plane."
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reachable endpoints reported by the node agent."
+          },
+          "health": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/HealthStatus"
+              }
+            ],
+            "nullable": true
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceMetricSample"
+            },
+            "description": "Recent resource usage samples reported by the agent."
+          }
+        }
+      },
+      "ListParams": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "MetricSample": {
+        "type": "object",
+        "description": "Individual metric sample returned in summaries.",
+        "required": [
+          "method",
+          "path",
+          "status",
+          "count"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "description": "HTTP method as captured on the control-plane metric labels."
+          },
+          "path": {
+            "type": "string",
+            "description": "Request path (labels may be templated)."
+          },
+          "status": {
+            "type": "string",
+            "description": "HTTP response status code observed."
+          },
+          "count": {
+            "type": "number",
+            "format": "double",
+            "description": "Counter value for the line."
+          }
+        }
+      },
+      "MetricsSummary": {
+        "type": "object",
+        "description": "Snapshot of the top HTTP request metrics.",
+        "required": [
+          "limit",
+          "window_secs",
+          "as_of"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested page size.",
+            "minimum": 0
+          },
+          "window_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Reporting window (seconds) enforced by the control-plane.",
+            "minimum": 0
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the snapshot was taken."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricSample"
+            },
+            "description": "Metric samples (sorted by count descending)."
+          }
+        }
+      },
+      "MetricsSummaryParams": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "NodeConfigResponse": {
+        "type": "object",
+        "description": "Response returned when agents fetch configs for a node.",
+        "properties": {
+          "configs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigDesired"
+            },
+            "description": "Configs relevant to the requesting node."
+          },
+          "service_identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceIdentityBundle"
+            },
+            "description": "Service identity bundles provisioned for this node."
+          }
+        },
+        "example": {
+          "configs": [
+            {
+              "attached_deployments": [
+                "00000000-0000-0000-0000-00000000beef"
+              ],
+              "attached_nodes": [
+                "00000000-0000-0000-0000-00000000babe"
+              ],
+              "checksum": "7995c1ac84c543fa",
+              "entries": [
+                {
+                  "key": "DATABASE_URL",
+                  "value": "postgres://app:secret@db:5432/app"
+                }
+              ],
+              "files": [
+                {
+                  "file_ref": "config-blobs/app-v2",
+                  "path": "/etc/app/config.yaml"
+                }
+              ],
+              "metadata": {
+                "config_id": "00000000-0000-0000-0000-00000000cafe",
+                "created_at": "2025-01-10T12:00:00Z",
+                "name": "app-config",
+                "updated_at": "2025-02-11T15:30:00Z",
+                "version": 2
+              }
+            }
+          ]
+        }
+      },
+      "NodeInventoryPayload": {
+        "type": "object",
+        "properties": {
+          "arch": {
+            "type": "string",
+            "nullable": true
+          },
+          "os": {
+            "type": "string",
+            "nullable": true
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "capacity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityHints"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "NodeStatus": {
+        "type": "string",
+        "description": "Node status reported to operators.",
+        "enum": [
+          "ready",
+          "unreachable",
+          "error",
+          "registering"
+        ]
+      },
+      "NodeStatusResponse": {
+        "type": "object",
+        "description": "Response describing a node and its instances.",
+        "required": [
+          "node_id",
+          "status",
+          "instances"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional node name.",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/NodeStatus"
+          },
+          "last_seen": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last heartbeat timestamp.",
+            "nullable": true
+          },
+          "arch": {
+            "type": "string",
+            "description": "CPU architecture reported by the node.",
+            "nullable": true
+          },
+          "os": {
+            "type": "string",
+            "description": "Operating system reported by the node.",
+            "nullable": true
+          },
+          "public_ip": {
+            "type": "string",
+            "description": "Optional public IP reported by the node.",
+            "example": "203.0.113.10",
+            "nullable": true
+          },
+          "public_host": {
+            "type": "string",
+            "description": "Optional public host reported by the node.",
+            "example": "edge-01.example.com",
+            "nullable": true
+          },
+          "labels": {
+            "type": "object",
+            "description": "Node labels.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "capacity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityHints"
+              }
+            ],
+            "nullable": true
+          },
+          "instances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InstanceStatusResponse"
+            },
+            "description": "Instances running on the node."
+          },
+          "usage_summary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UsageSummary"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "example": {
+          "arch": "x86_64",
+          "capacity": {
+            "cpu_millis": 2000,
+            "memory_bytes": 8589934592
+          },
+          "instances": [],
+          "labels": {
+            "gpu": "false",
+            "zone": "edge-west"
+          },
+          "last_seen": "2025-12-10T18:42:00Z",
+          "name": "edge-01",
+          "node_id": "00000000-0000-0000-0000-000000000042",
+          "os": "linux",
+          "public_host": "edge-01.example.com",
+          "public_ip": "203.0.113.10",
+          "status": "ready",
+          "usage_summary": null
+        }
+      },
+      "NodeSummary": {
+        "type": "object",
+        "description": "Node summary for list endpoints.",
+        "required": [
+          "node_id",
+          "status"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node identifier."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional node name.",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/NodeStatus"
+          },
+          "last_seen": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last heartbeat timestamp.",
+            "nullable": true
+          },
+          "arch": {
+            "type": "string",
+            "description": "CPU architecture reported by the node.",
+            "nullable": true
+          },
+          "os": {
+            "type": "string",
+            "description": "Operating system reported by the node.",
+            "nullable": true
+          },
+          "public_ip": {
+            "type": "string",
+            "description": "Optional public IP reported by the node.",
+            "example": "203.0.113.10",
+            "nullable": true
+          },
+          "public_host": {
+            "type": "string",
+            "description": "Optional public host reported by the node.",
+            "example": "edge-01.example.com",
+            "nullable": true
+          },
+          "labels": {
+            "type": "object",
+            "description": "Node labels.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "capacity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityHints"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "example": {
+          "arch": "x86_64",
+          "capacity": {
+            "cpu_millis": 2000,
+            "memory_bytes": 8589934592
+          },
+          "labels": {
+            "gpu": "false",
+            "zone": "edge-west"
+          },
+          "last_seen": "2025-12-10T18:42:00Z",
+          "name": "edge-01",
+          "node_id": "00000000-0000-0000-0000-000000000042",
+          "os": "linux",
+          "public_host": "edge-01.example.com",
+          "public_ip": "203.0.113.10",
+          "status": "ready"
+        }
+      },
+      "NodeSummaryPage": {
+        "type": "object",
+        "description": "Paginated node list response wrapper.",
+        "required": [
+          "limit",
+          "offset",
+          "items"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested page size.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested offset.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeSummary"
+            },
+            "description": "Nodes on this page."
+          }
+        }
+      },
+      "NodeTunnelHealth": {
+        "type": "object",
+        "required": [
+          "node_id",
+          "status"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "last_heartbeat_secs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "last_event_secs": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "OkResponse": {
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PlacementAffinity": {
+        "type": "object",
+        "description": "Preferred co-location rules for deployments.",
+        "properties": {
+          "node_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Preferred node identifiers."
+          },
+          "labels": {
+            "type": "object",
+            "description": "Preferred node labels.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "PlacementConstraints": {
+        "type": "object",
+        "description": "Placement constraints for deployments.",
+        "properties": {
+          "arch": {
+            "type": "string",
+            "description": "Required CPU architecture.",
+            "nullable": true
+          },
+          "os": {
+            "type": "string",
+            "description": "Required operating system.",
+            "nullable": true
+          },
+          "labels": {
+            "type": "object",
+            "description": "Required node labels.",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "capacity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityHints"
+              }
+            ],
+            "nullable": true
+          },
+          "requires_public_ip": {
+            "type": "boolean",
+            "description": "Require nodes with a public IP for public ingress.",
+            "example": true
+          }
+        }
+      },
+      "PlacementHints": {
+        "type": "object",
+        "description": "Placement hints (best-effort).",
+        "properties": {
+          "affinity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementAffinity"
+              }
+            ],
+            "nullable": true
+          },
+          "anti_affinity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PlacementAffinity"
+              }
+            ],
+            "nullable": true
+          },
+          "spread": {
+            "type": "boolean",
+            "description": "Prefer spreading replicas across nodes (best-effort)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "PortMapping": {
+        "type": "object",
+        "description": "Network port mapping.",
+        "required": [
+          "container_port"
+        ],
+        "properties": {
+          "container_port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Container port exposed by the workload.",
+            "minimum": 0
+          },
+          "host_port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Optional host port to bind to (auto-assigned when omitted).",
+            "nullable": true,
+            "minimum": 0
+          },
+          "protocol": {
+            "type": "string",
+            "description": "Protocol for the port mapping (defaults to tcp)."
+          },
+          "host_ip": {
+            "type": "string",
+            "description": "Optional host IP to bind to.",
+            "nullable": true
+          },
+          "expose": {
+            "type": "boolean",
+            "description": "Whether the port should be exposed externally."
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Optional host:port endpoint for an exposed port.",
+            "nullable": true
+          }
+        }
+      },
+      "RegistrationRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "arch": {
+            "type": "string",
+            "nullable": true
+          },
+          "os": {
+            "type": "string",
+            "nullable": true
+          },
+          "labels": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "capacity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CapacityHints"
+              }
+            ],
+            "nullable": true
+          },
+          "public_ip": {
+            "type": "string",
+            "nullable": true
+          },
+          "public_host": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "RegistrationResponse": {
+        "type": "object",
+        "description": "Response returned when registering a node.",
+        "required": [
+          "node_id",
+          "node_token"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node identifier."
+          },
+          "node_token": {
+            "type": "string",
+            "description": "Bearer token for the node."
+          },
+          "tunnel": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TunnelEndpoint"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
+      "RelayHealth": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "last_error": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ReplicaAssignment": {
+        "type": "object",
+        "description": "Assignment of a single replica to a node.",
+        "required": [
+          "replica_number",
+          "node_id"
+        ],
+        "properties": {
+          "replica_number": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Replica number (0-based).",
+            "minimum": 0
+          },
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node chosen for the replica."
+          }
+        }
+      },
+      "ReplicaResourceMetrics": {
+        "type": "object",
+        "description": "Recent resource metrics for a single replica.",
+        "required": [
+          "node_id",
+          "replica_number",
+          "last_seen"
+        ],
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node hosting the replica."
+          },
+          "replica_number": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Replica ordinal.",
+            "minimum": 0
+          },
+          "last_seen": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last time the control-plane heard from the replica."
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceMetricSample"
+            },
+            "description": "Bounded set of recent samples."
+          }
+        }
+      },
+      "ResourceMetricSample": {
+        "type": "object",
+        "description": "Resource usage metrics collected for a replica.",
+        "required": [
+          "collected_at",
+          "cpu_percent",
+          "memory_bytes",
+          "network_rx_bytes",
+          "network_tx_bytes"
+        ],
+        "properties": {
+          "collected_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp when the sample was collected."
+          },
+          "cpu_percent": {
+            "type": "number",
+            "format": "double",
+            "description": "CPU utilization percent (0-100, best-effort)."
+          },
+          "memory_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Memory usage in bytes.",
+            "minimum": 0
+          },
+          "network_rx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Network bytes received.",
+            "minimum": 0
+          },
+          "network_tx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Network bytes transmitted.",
+            "minimum": 0
+          },
+          "blk_read_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Block device bytes read (if available).",
+            "nullable": true,
+            "minimum": 0
+          },
+          "blk_write_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Block device bytes written (if available).",
+            "nullable": true,
+            "minimum": 0
+          }
+        }
+      },
+      "SecretEnv": {
+        "type": "object",
+        "description": "Reference to a secret injected as an environment variable.",
+        "required": [
+          "name",
+          "secret"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the environment variable inside the container."
+          },
+          "secret": {
+            "type": "string",
+            "description": "Name of the secret to resolve on the agent."
+          },
+          "optional": {
+            "type": "boolean",
+            "description": "Whether the secret is optional (missing secrets are skipped)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "SecretFile": {
+        "type": "object",
+        "description": "Reference to a secret mounted as a file in the container.",
+        "required": [
+          "path",
+          "secret"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Target path inside the container."
+          },
+          "secret": {
+            "type": "string",
+            "description": "Name of the secret to resolve on the agent."
+          },
+          "optional": {
+            "type": "boolean",
+            "description": "Whether the secret is optional (missing secrets are skipped)."
+          }
+        },
+        "additionalProperties": false
+      },
+      "ServiceIdentityBundle": {
+        "type": "object",
+        "description": "Service identity bundle delivered to node agents for mTLS.",
+        "required": [
+          "identity",
+          "cert_pem",
+          "key_pem"
+        ],
+        "properties": {
+          "identity": {
+            "type": "string",
+            "description": "Canonical identity string (URI or ref) used to name the bundle."
+          },
+          "cert_pem": {
+            "type": "string",
+            "description": "PEM-encoded end-entity certificate."
+          },
+          "key_pem": {
+            "type": "string",
+            "description": "PEM-encoded private key."
+          },
+          "ca_pem": {
+            "type": "string",
+            "description": "Optional PEM-encoded CA chain for peers/verification.",
+            "nullable": true
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Expiry time of the certificate (UTC) for observability/refresh.",
+            "nullable": true
+          },
+          "rotate_after": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Suggested time to refresh before expiry.",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false,
+        "example": {
+          "ca_pem": "-----BEGIN CERTIFICATE-----CA...",
+          "cert_pem": "-----BEGIN CERTIFICATE-----...",
+          "expires_at": "2025-03-01T12:00:00Z",
+          "identity": "service://tenant-a/payments",
+          "key_pem": "-----BEGIN PRIVATE KEY-----...",
+          "rotate_after": "2025-02-28T12:00:00Z"
+        }
+      },
+      "TunnelEndpoint": {
+        "type": "object",
+        "description": "Response returned when registering a node.\nAdvertised tunnel endpoint returned by the control-plane.",
+        "required": [
+          "host",
+          "port",
+          "connect_timeout_secs",
+          "heartbeat_interval_secs",
+          "heartbeat_timeout_secs",
+          "token_header"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "Hostname or IP where the gateway exposes the tunnel listener.",
+            "example": "tunnel.edge.example.com"
+          },
+          "port": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Port where the gateway exposes the tunnel listener.",
+            "example": 7443,
+            "minimum": 0
+          },
+          "use_tls": {
+            "type": "boolean",
+            "description": "Whether the tunnel listener expects TLS (HTTPS). Defaults to true.",
+            "example": true
+          },
+          "connect_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Max seconds to wait for establishing the CONNECT tunnel.",
+            "example": 10,
+            "minimum": 0
+          },
+          "heartbeat_interval_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Heartbeat cadence expected by the gateway once connected.",
+            "example": 30,
+            "minimum": 0
+          },
+          "heartbeat_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Time without heartbeats before the gateway closes the tunnel.",
+            "example": 90,
+            "minimum": 0
+          },
+          "token_header": {
+            "type": "string",
+            "description": "Header carrying the node bearer token during CONNECT.",
+            "example": "x-fledx-tunnel-token"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UsageQueryParams": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Page size (1-100, defaults to 50 when omitted).",
+            "nullable": true,
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Pagination offset (defaults to 0).",
+            "nullable": true,
+            "minimum": 0
+          },
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment to filter by (required if `node_id` is absent).",
+            "nullable": true
+          },
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node to filter by (required if `deployment_id` is absent).",
+            "nullable": true
+          },
+          "replica_number": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Specific replica ordinal (optional).",
+            "nullable": true
+          },
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC3339 timestamp for the start of the window. Defaults to now minus the allowed window.",
+            "nullable": true
+          },
+          "until": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC3339 timestamp for the end of the window. Defaults to current time.",
+            "nullable": true
+          }
+        }
+      },
+      "UsageRollup": {
+        "type": "object",
+        "description": "Minute-level usage rollup emitted by nodes.",
+        "required": [
+          "deployment_id",
+          "node_id",
+          "replica_number",
+          "bucket_start",
+          "samples",
+          "avg_cpu_percent",
+          "avg_memory_bytes",
+          "avg_network_rx_bytes",
+          "avg_network_tx_bytes"
+        ],
+        "properties": {
+          "deployment_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Deployment identifier."
+          },
+          "node_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Node identifier."
+          },
+          "replica_number": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Replica ordinal within the deployment."
+          },
+          "bucket_start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Start of the bucket (truncated to minute)."
+          },
+          "samples": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of samples aggregated into the bucket."
+          },
+          "avg_cpu_percent": {
+            "type": "number",
+            "format": "double",
+            "description": "Average CPU percent for the bucket."
+          },
+          "avg_memory_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average memory usage in bytes for the bucket."
+          },
+          "avg_network_rx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average network RX bytes for the bucket."
+          },
+          "avg_network_tx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average network TX bytes for the bucket."
+          },
+          "avg_blk_read_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average block read bytes for the bucket, when reported.",
+            "nullable": true
+          },
+          "avg_blk_write_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average block write bytes for the bucket, when reported.",
+            "nullable": true
+          }
+        },
+        "example": {
+          "avg_blk_read_bytes": 4096,
+          "avg_blk_write_bytes": 0,
+          "avg_cpu_percent": 12.3,
+          "avg_memory_bytes": 230686720,
+          "avg_network_rx_bytes": 10240,
+          "avg_network_tx_bytes": 9216,
+          "bucket_start": "2025-02-03T04:05:00Z",
+          "deployment_id": "00000000-0000-0000-0000-00000000cafe",
+          "node_id": "00000000-0000-0000-0000-00000000beef",
+          "replica_number": 0,
+          "samples": 2
+        }
+      },
+      "UsageRollupPage": {
+        "type": "object",
+        "description": "Paginated usage rollup response wrapper.",
+        "required": [
+          "limit",
+          "offset",
+          "items"
+        ],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested page size.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requested offset.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsageRollup"
+            },
+            "description": "Aggregated resource usage rollups on this page."
+          }
+        }
+      },
+      "UsageSummary": {
+        "type": "object",
+        "description": "Weighted-average resource usage over a rolling window.",
+        "required": [
+          "window_start",
+          "window_end",
+          "samples",
+          "avg_cpu_percent",
+          "avg_memory_bytes",
+          "avg_network_rx_bytes",
+          "avg_network_tx_bytes"
+        ],
+        "properties": {
+          "window_start": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Beginning of the summarized window."
+          },
+          "window_end": {
+            "type": "string",
+            "format": "date-time",
+            "description": "End of the summarized window (usually now)."
+          },
+          "samples": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total usage samples contributing to the summary."
+          },
+          "avg_cpu_percent": {
+            "type": "number",
+            "format": "double",
+            "description": "Average CPU percent over the window."
+          },
+          "avg_memory_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average memory usage in bytes."
+          },
+          "avg_network_rx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average network RX bytes per sample."
+          },
+          "avg_network_tx_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average network TX bytes per sample."
+          },
+          "avg_blk_read_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average block read bytes per sample (when reported).",
+            "nullable": true
+          },
+          "avg_blk_write_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Average block write bytes per sample (when reported).",
+            "nullable": true
+          }
+        },
+        "example": {
+          "avg_blk_read_bytes": 4096,
+          "avg_blk_write_bytes": 2048,
+          "avg_cpu_percent": 18.4,
+          "avg_memory_bytes": 241172480,
+          "avg_network_rx_bytes": 16384,
+          "avg_network_tx_bytes": 12288,
+          "samples": 12,
+          "window_end": "2025-02-03T04:05:00Z",
+          "window_start": "2025-02-03T04:00:00Z"
+        }
+      },
+      "VolumeMount": {
+        "type": "object",
+        "description": "Volume mount from host to container.",
+        "required": [
+          "host_path",
+          "container_path"
+        ],
+        "properties": {
+          "host_path": {
+            "type": "string",
+            "description": "Absolute path on the host."
+          },
+          "container_path": {
+            "type": "string",
+            "description": "Absolute path inside the container."
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "Optional read-only flag (default: read/write).",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "nodeBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+        "description": "Bearer node token for node heartbeats and desired state."
+      },
+      "operatorBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+        "description": "Bearer operator token for operator APIs (header name configurable)."
+      },
+      "registrationBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque",
+        "description": "Bearer token for node registration (Authorization header)."
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "Health and metrics"
+    },
+    {
+      "name": "nodes",
+      "description": "Node registration and status"
+    },
+    {
+      "name": "deployments",
+      "description": "Deployment management"
+    },
+    {
+      "name": "configs",
+      "description": "Config management and attachments"
+    },
+    {
+      "name": "observability",
+      "description": "Log tail and metrics summaries for UI observability"
+    }
+  ]
+}

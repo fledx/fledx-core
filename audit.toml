@@ -1,0 +1,9 @@
+[advisories]
+ignore = [
+    # rsa via sqlx-mysql; no upstream fix yet
+    "RUSTSEC-2023-0071",
+    # paste via ratatui; awaiting upstream replacement
+    "RUSTSEC-2024-0436",
+    # rustls-pemfile via bollard; waiting for update
+    "RUSTSEC-2025-0134",
+]

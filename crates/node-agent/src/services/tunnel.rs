@@ -1,0 +1,788 @@
+use std::{
+    collections::HashMap,
+    net::IpAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use anyhow::{anyhow, Context};
+use base64::{engine::general_purpose, Engine as _};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use chrono::Utc;
+use h2::{RecvStream, SendStream};
+use http::{
+    header::{HeaderName, HeaderValue as HttpHeaderValue},
+    Request, StatusCode, Uri,
+};
+use reqwest::{
+    header::{
+        HeaderMap as ReqwestHeaderMap, HeaderName as ReqwestHeaderName,
+        HeaderValue as ReqwestHeaderValue,
+    },
+    Client, Method as ReqwestMethod,
+};
+use serde::{Deserialize, Serialize};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+    sync::{mpsc, watch, Mutex, Semaphore},
+    time,
+};
+use tokio_rustls::{
+    client::TlsStream,
+    rustls::{
+        self,
+        client::danger::{ServerCertVerified, ServerCertVerifier},
+        pki_types::{CertificateDer, ServerName},
+        ClientConfig, RootCertStore,
+    },
+    TlsConnector,
+};
+use tracing::{error, warn};
+use uuid::Uuid;
+use webpki_roots::TLS_SERVER_ROOTS;
+
+use crate::{
+    config::{AppConfig, TunnelRoute},
+    health,
+    state::{self, SharedState},
+    telemetry, version, AGENT_BUILD_HEADER, AGENT_VERSION_HEADER,
+};
+
+const FRAME_CHANNEL_CAPACITY: usize = 128;
+const MAX_CONCURRENT_FORWARD_REQUESTS: usize = 32;
+const CLIENT_CAPABILITIES: &[&str] = &["forward"];
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum TunnelFrame {
+    #[serde(rename = "client_hello")]
+    ClientHello {
+        node_id: Uuid,
+        agent_version: String,
+        agent_build: String,
+        capabilities: Vec<String>,
+        heartbeat_interval_secs: u64,
+    },
+    #[serde(rename = "server_hello")]
+    ServerHello {
+        tunnel_id: Uuid,
+        heartbeat_timeout_secs: u64,
+    },
+    #[serde(rename = "heartbeat")]
+    Heartbeat { sent_at: String },
+    #[serde(rename = "heartbeat_ack")]
+    HeartbeatAck { received_at: String },
+    #[serde(rename = "forward_request")]
+    ForwardRequest {
+        id: String,
+        method: String,
+        path: String,
+        #[serde(default)]
+        headers: HashMap<String, String>,
+        #[serde(default)]
+        body_b64: String,
+    },
+    #[serde(rename = "forward_response")]
+    ForwardResponse {
+        id: String,
+        status: u16,
+        #[serde(default)]
+        headers: HashMap<String, String>,
+        #[serde(default)]
+        body_b64: String,
+    },
+}
+
+struct TunnelRouteMap {
+    routes: Vec<TunnelRoute>,
+}
+
+impl TunnelRouteMap {
+    fn new(routes: &[TunnelRoute]) -> Self {
+        let mut result: Vec<TunnelRoute> = routes.to_vec();
+        result.sort_by(|a, b| b.path_prefix.len().cmp(&a.path_prefix.len()));
+        Self { routes: result }
+    }
+
+    fn match_route(&self, path: &str) -> Option<&TunnelRoute> {
+        self.routes
+            .iter()
+            .find(|route| path.starts_with(&route.path_prefix))
+    }
+}
+
+struct ForwardRequestContext {
+    frame_tx: mpsc::Sender<TunnelFrame>,
+    route_map: Arc<TunnelRouteMap>,
+    http_client: Arc<Client>,
+}
+
+struct HeartbeatState {
+    last_ack: Mutex<Instant>,
+}
+
+impl HeartbeatState {
+    fn new() -> Self {
+        Self {
+            last_ack: Mutex::new(Instant::now()),
+        }
+    }
+}
+
+pub async fn tunnel_loop(
+    state: SharedState,
+    mut shutdown: watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    let mut backoff_attempts: u32 = 0;
+    loop {
+        if *shutdown.borrow() {
+            break;
+        }
+
+        let result = run_tunnel_once(&state, &mut shutdown).await;
+
+        if *shutdown.borrow() {
+            break;
+        }
+
+        match result {
+            Ok(_) => {
+                backoff_attempts = 0;
+            }
+            Err(err) => {
+                telemetry::record_tunnel_connection("failure");
+                let reason = err.to_string();
+                health::report_tunnel_health(&state, false, Some(reason)).await;
+                warn!(error = ?err, "tunnel service terminated, retrying");
+
+                backoff_attempts = backoff_attempts.saturating_add(1);
+                let (backoff_base, backoff_max) = {
+                    let guard = state.lock().await;
+                    (
+                        Duration::from_millis(guard.cfg.restart_backoff_ms),
+                        Duration::from_millis(guard.cfg.restart_backoff_max_ms),
+                    )
+                };
+                let sleep_duration =
+                    state::backoff_with_jitter(backoff_base, backoff_max, backoff_attempts);
+                tokio::select! {
+                    _ = shutdown.changed() => break,
+                    _ = time::sleep(sleep_duration) => {}
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+async fn run_tunnel_once(
+    state: &SharedState,
+    shutdown: &mut watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    let cfg = { state.lock().await.cfg.clone() };
+    let endpoint = state::current_tunnel_endpoint(state).await;
+    let transport = connect_transport(&cfg, &endpoint).await?;
+    let (mut h2_sender, connection) = h2::client::handshake(transport).await?;
+    let mut connection_handle =
+        tokio::spawn(async move { connection.await.map_err(|err| anyhow::anyhow!(err)) });
+
+    let connect_request = build_connect_request(&cfg, &endpoint)?;
+    let (response_future, mut send_stream) = h2_sender.send_request(connect_request, false)?;
+    let response = response_future.await?;
+    if response.status() != StatusCode::OK {
+        return Err(anyhow!(
+            "tunnel CONNECT failed with status {}",
+            response.status()
+        ));
+    }
+
+    let mut recv_stream = response.into_parts().1;
+    let mut buffer = BytesMut::new();
+
+    send_frame(
+        &mut send_stream,
+        TunnelFrame::ClientHello {
+            node_id: cfg.node_id,
+            agent_version: version::VERSION.to_string(),
+            agent_build: version::GIT_SHA.to_string(),
+            capabilities: CLIENT_CAPABILITIES
+                .iter()
+                .map(|&cap| cap.to_string())
+                .collect(),
+            heartbeat_interval_secs: endpoint.heartbeat_interval_secs,
+        },
+    )
+    .await?;
+
+    let handshake_frame = read_next_frame(&mut recv_stream, &mut buffer)
+        .await?
+        .ok_or_else(|| anyhow!("tunnel closed before server hello"))?;
+    let heartbeat_timeout_secs = match handshake_frame {
+        TunnelFrame::ServerHello {
+            heartbeat_timeout_secs,
+            ..
+        } => heartbeat_timeout_secs,
+        other => {
+            return Err(anyhow!("unexpected frame during handshake: {:?}", other));
+        }
+    };
+
+    telemetry::record_tunnel_connection("success");
+    health::report_tunnel_health(state, true, None).await;
+
+    let route_map = Arc::new(TunnelRouteMap::new(&cfg.tunnel_routes));
+    let http_client = Arc::new(Client::builder().timeout(Duration::from_secs(30)).build()?);
+    let request_semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_FORWARD_REQUESTS));
+    let heartbeat_state = Arc::new(HeartbeatState::new());
+    let heartbeat_interval = Duration::from_secs(endpoint.heartbeat_interval_secs);
+    let heartbeat_timeout = Duration::from_secs(heartbeat_timeout_secs);
+
+    let (frame_tx, frame_rx) = mpsc::channel(FRAME_CHANNEL_CAPACITY);
+
+    let request_ctx = Arc::new(ForwardRequestContext {
+        frame_tx: frame_tx.clone(),
+        route_map: route_map.clone(),
+        http_client: http_client.clone(),
+    });
+
+    let mut reader_handle = Box::pin(tokio::spawn({
+        let semaphore = request_semaphore.clone();
+        let heartbeat_state = heartbeat_state.clone();
+        let mut shutdown = shutdown.clone();
+        let request_ctx = request_ctx.clone();
+        async move {
+            read_loop(
+                recv_stream,
+                buffer,
+                request_ctx,
+                semaphore,
+                heartbeat_state,
+                &mut shutdown,
+            )
+            .await
+        }
+    }));
+
+    let mut writer_handle = Box::pin(tokio::spawn({
+        let mut shutdown = shutdown.clone();
+        async move { write_loop(send_stream, frame_rx, &mut shutdown).await }
+    }));
+
+    let mut heartbeat_handle = Box::pin(tokio::spawn({
+        let frame_tx = frame_tx.clone();
+        let heartbeat_state = heartbeat_state.clone();
+        let mut shutdown = shutdown.clone();
+        async move {
+            heartbeat_loop(
+                frame_tx,
+                heartbeat_interval,
+                heartbeat_timeout,
+                heartbeat_state,
+                &mut shutdown,
+            )
+            .await
+        }
+    }));
+
+    tokio::select! {
+        _ = shutdown.changed() => {
+            reader_handle.abort();
+            writer_handle.abort();
+            heartbeat_handle.abort();
+            connection_handle.abort();
+            Ok(())
+        }
+        res = &mut reader_handle => {
+            writer_handle.abort();
+            heartbeat_handle.abort();
+            connection_handle.abort();
+            res?
+        }
+        res = &mut writer_handle => {
+            reader_handle.abort();
+            heartbeat_handle.abort();
+            connection_handle.abort();
+            res?
+        }
+        res = &mut heartbeat_handle => {
+            reader_handle.abort();
+            writer_handle.abort();
+            connection_handle.abort();
+            res?
+        }
+        res = &mut connection_handle => {
+            reader_handle.abort();
+            writer_handle.abort();
+            heartbeat_handle.abort();
+            res?
+        }
+    }
+}
+
+async fn write_loop(
+    mut send_stream: SendStream<Bytes>,
+    mut rx: mpsc::Receiver<TunnelFrame>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => return Ok(()),
+            frame = rx.recv() => match frame {
+                Some(frame) => send_frame(&mut send_stream, frame).await?,
+                None => return Ok(()),
+            },
+        }
+    }
+}
+
+async fn heartbeat_loop(
+    frame_tx: mpsc::Sender<TunnelFrame>,
+    interval: Duration,
+    timeout: Duration,
+    heartbeat_state: Arc<HeartbeatState>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    let mut ticker = time::interval(interval);
+    ticker.set_missed_tick_behavior(time::MissedTickBehavior::Delay);
+
+    loop {
+        tokio::select! {
+            _ = shutdown.changed() => return Ok(()),
+            _ = ticker.tick() => {
+                let sent_at = Utc::now().to_rfc3339();
+                frame_tx
+                    .send(TunnelFrame::Heartbeat { sent_at })
+                    .await
+                    .context("failed to send heartbeat frame")?;
+
+                let last_ack = heartbeat_state.last_ack.lock().await;
+                if Instant::now().duration_since(*last_ack) > timeout {
+                    return Err(anyhow!("tunnel heartbeat ack timeout"));
+                }
+            }
+        }
+    }
+}
+
+async fn read_loop(
+    mut recv: h2::RecvStream,
+    mut buffer: BytesMut,
+    ctx: Arc<ForwardRequestContext>,
+    semaphore: Arc<Semaphore>,
+    heartbeat_state: Arc<HeartbeatState>,
+    shutdown: &mut watch::Receiver<bool>,
+) -> anyhow::Result<()> {
+    loop {
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+
+        let frame = read_next_frame(&mut recv, &mut buffer).await?;
+        let frame = match frame {
+            Some(frame) => frame,
+            None => return Err(anyhow!("tunnel stream closed unexpectedly")),
+        };
+
+        match frame {
+            TunnelFrame::HeartbeatAck { .. } => {
+                let mut guard = heartbeat_state.last_ack.lock().await;
+                *guard = Instant::now();
+            }
+            TunnelFrame::ForwardRequest {
+                id,
+                method,
+                path,
+                headers,
+                body_b64,
+            } => {
+                let permit = match semaphore.clone().try_acquire_owned() {
+                    Ok(permit) => permit,
+                    Err(_) => {
+                        send_error_response(
+                            ctx.frame_tx.clone(),
+                            id,
+                            503,
+                            "too many active forwarded requests".to_string(),
+                        )
+                        .await?;
+                        continue;
+                    }
+                };
+
+                let ctx_clone = ctx.clone();
+                tokio::spawn({
+                    let _permit = permit;
+                    let ctx = ctx_clone;
+                    async move {
+                        if let Err(err) =
+                            handle_forward_request(ctx, id, method, path, headers, body_b64).await
+                        {
+                            error!(error = ?err, "failed to proxy tunnel request");
+                        }
+                    }
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+async fn handle_forward_request(
+    ctx: Arc<ForwardRequestContext>,
+    id: String,
+    method: String,
+    path: String,
+    headers: HashMap<String, String>,
+    body_b64: String,
+) -> anyhow::Result<()> {
+    let frame_tx = ctx.frame_tx.clone();
+    let http_client = ctx.http_client.clone();
+    let route = match ctx.route_map.match_route(&path) {
+        Some(route) => route,
+        None => {
+            send_error_response(
+                frame_tx.clone(),
+                id,
+                404,
+                "no tunnel route configured".to_string(),
+            )
+            .await?;
+            telemetry::record_tunnel_request("failure", Duration::ZERO);
+            return Ok(());
+        }
+    };
+
+    let method = match ReqwestMethod::from_bytes(method.as_bytes()) {
+        Ok(m) => m,
+        Err(err) => {
+            send_error_response(
+                frame_tx.clone(),
+                id,
+                400,
+                format!("invalid method: {}", err),
+            )
+            .await?;
+            telemetry::record_tunnel_request("failure", Duration::ZERO);
+            return Ok(());
+        }
+    };
+
+    let decoded_body = match decode_base64_body(&body_b64) {
+        Ok(body) => body,
+        Err(err) => {
+            send_error_response(frame_tx.clone(), id, 400, err.to_string()).await?;
+            telemetry::record_tunnel_request("failure", Duration::ZERO);
+            return Ok(());
+        }
+    };
+
+    let start = Instant::now();
+    let url = format!(
+        "http://{}{}",
+        format_authority(&route.target_host, route.target_port),
+        path
+    );
+
+    let mut request_builder = http_client.request(method, url);
+    request_builder = request_builder.headers(build_header_map(&headers));
+
+    let response = match request_builder.body(decoded_body).send().await {
+        Ok(resp) => resp,
+        Err(err) => {
+            send_error_response(frame_tx.clone(), id, 502, err.to_string()).await?;
+            telemetry::record_tunnel_request("failure", Duration::ZERO);
+            return Ok(());
+        }
+    };
+
+    let duration = start.elapsed();
+    telemetry::record_tunnel_request("success", duration);
+
+    let status = response.status().as_u16();
+    let response_headers = flatten_headers(response.headers());
+    let body_bytes = response
+        .bytes()
+        .await
+        .context("failed to read tunneled response body")?;
+
+    send_response(
+        frame_tx.clone(),
+        id,
+        status,
+        response_headers,
+        body_bytes.to_vec(),
+    )
+    .await?;
+    Ok(())
+}
+
+fn build_header_map(headers: &HashMap<String, String>) -> ReqwestHeaderMap {
+    let mut map = ReqwestHeaderMap::new();
+    for (key, value) in headers.iter() {
+        if let Ok(name) = ReqwestHeaderName::from_bytes(key.to_ascii_lowercase().as_bytes()) {
+            if let Ok(value) = ReqwestHeaderValue::from_str(value) {
+                map.append(name, value);
+            }
+        }
+    }
+    map
+}
+
+fn flatten_headers(map: &ReqwestHeaderMap) -> HashMap<String, String> {
+    map.iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|v| (name.as_str().to_string(), v.to_string()))
+        })
+        .collect()
+}
+
+fn decode_base64_body(body_b64: &str) -> anyhow::Result<Vec<u8>> {
+    if body_b64.is_empty() {
+        return Ok(Vec::new());
+    }
+    general_purpose::STANDARD
+        .decode(body_b64)
+        .map_err(|err| anyhow!("invalid base64 body: {}", err))
+}
+
+async fn send_response(
+    frame_tx: mpsc::Sender<TunnelFrame>,
+    id: String,
+    status: u16,
+    headers: HashMap<String, String>,
+    body: Vec<u8>,
+) -> anyhow::Result<()> {
+    let body_b64 = general_purpose::STANDARD.encode(body);
+    frame_tx
+        .send(TunnelFrame::ForwardResponse {
+            id,
+            status,
+            headers,
+            body_b64,
+        })
+        .await
+        .context("failed to enqueue tunnel response frame")
+}
+
+async fn send_error_response(
+    frame_tx: mpsc::Sender<TunnelFrame>,
+    id: String,
+    status: u16,
+    message: String,
+) -> anyhow::Result<()> {
+    send_response(
+        frame_tx,
+        id,
+        status,
+        HashMap::from([("content-type".to_string(), "text/plain".to_string())]),
+        message.into_bytes(),
+    )
+    .await
+}
+
+async fn send_frame(send_stream: &mut SendStream<Bytes>, frame: TunnelFrame) -> anyhow::Result<()> {
+    let payload = serde_json::to_vec(&frame).context("serialize tunnel frame")?;
+    let mut buffer = BytesMut::with_capacity(4 + payload.len());
+    buffer.put_u32(payload.len() as u32);
+    buffer.extend_from_slice(&payload);
+    send_stream
+        .send_data(buffer.freeze(), false)
+        .context("failed to send tunnel frame")
+}
+
+async fn read_next_frame(
+    recv: &mut RecvStream,
+    buffer: &mut BytesMut,
+) -> anyhow::Result<Option<TunnelFrame>> {
+    loop {
+        if let Some(frame) = try_parse_frame(buffer)? {
+            return Ok(Some(frame));
+        }
+
+        match recv.data().await {
+            Some(Ok(bytes)) => buffer.extend_from_slice(&bytes),
+            Some(Err(err)) => return Err(anyhow!(err)),
+            None => {
+                if buffer.is_empty() {
+                    return Ok(None);
+                } else {
+                    return Err(anyhow!("tunnel stream ended mid-frame"));
+                }
+            }
+        }
+    }
+}
+
+fn try_parse_frame(buffer: &mut BytesMut) -> anyhow::Result<Option<TunnelFrame>> {
+    if buffer.len() < 4 {
+        return Ok(None);
+    }
+    let len = u32::from_be_bytes([buffer[0], buffer[1], buffer[2], buffer[3]]) as usize;
+    if buffer.len() < 4 + len {
+        return Ok(None);
+    }
+
+    buffer.advance(4);
+    let payload = buffer.split_to(len);
+    let frame = serde_json::from_slice(&payload).context("parse tunnel frame")?;
+    Ok(Some(frame))
+}
+
+fn format_authority(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{}]:{}", host, port)
+    } else {
+        format!("{}:{}", host, port)
+    }
+}
+
+fn build_tls_config(cfg: &AppConfig) -> anyhow::Result<Arc<ClientConfig>> {
+    let mut root_store = RootCertStore::empty();
+    root_store.extend(TLS_SERVER_ROOTS.iter().cloned());
+
+    if let Some(ca_path) = cfg.ca_cert_path.as_ref() {
+        use rustls::pki_types::pem::PemObject;
+        let cert_bytes = std::fs::read(ca_path).context("read tunnel ca_cert_path")?;
+        let certs = CertificateDer::pem_slice_iter(&cert_bytes);
+        for cert in certs {
+            root_store
+                .add(cert.context("parse PEM certificate")?)
+                .context("add tunnel CA certificate")?;
+        }
+    }
+
+    let mut config = ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    if cfg.tls_insecure_skip_verify {
+        config
+            .dangerous()
+            .set_certificate_verifier(Arc::new(NoCertificateVerification));
+    }
+
+    Ok(Arc::new(config))
+}
+
+async fn connect_tls(
+    _cfg: &AppConfig,
+    endpoint: &crate::api::TunnelEndpoint,
+    config: Arc<ClientConfig>,
+) -> anyhow::Result<TlsStream<TcpStream>> {
+    let addr = format!("{}:{}", endpoint.host, endpoint.port);
+    let stream = TcpStream::connect(addr)
+        .await
+        .context("connect to tunnel gateway")?;
+    let server_name = resolve_server_name(&endpoint.host)?;
+    let connector = TlsConnector::from(config);
+    let tls_stream = connector
+        .connect(server_name, stream)
+        .await
+        .context("tls handshake for tunnel")?;
+
+    Ok(tls_stream)
+}
+
+async fn connect_transport(
+    cfg: &AppConfig,
+    endpoint: &crate::api::TunnelEndpoint,
+) -> anyhow::Result<Box<dyn TunnelIo>> {
+    if endpoint.use_tls {
+        let tls_cfg = build_tls_config(cfg)?;
+        let tls_stream = connect_tls(cfg, endpoint, tls_cfg).await?;
+        Ok(Box::new(tls_stream))
+    } else {
+        let addr = format!("{}:{}", endpoint.host, endpoint.port);
+        let stream = TcpStream::connect(addr)
+            .await
+            .context("connect to tunnel gateway")?;
+        Ok(Box::new(stream))
+    }
+}
+
+fn resolve_server_name(host: &str) -> anyhow::Result<ServerName<'static>> {
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Ok(ServerName::IpAddress(ip.into()));
+    }
+
+    ServerName::try_from(host.to_owned()).map_err(|e| anyhow!("invalid tunnel gateway host: {}", e))
+}
+
+fn build_connect_request(
+    cfg: &AppConfig,
+    endpoint: &crate::api::TunnelEndpoint,
+) -> anyhow::Result<Request<()>> {
+    let authority = format_authority(&endpoint.host, endpoint.port);
+    let scheme = if endpoint.use_tls { "https" } else { "http" };
+    let uri = format!("{scheme}://{}/agent-tunnel", authority)
+        .parse::<Uri>()
+        .context("invalid tunnel endpoint URI")?;
+
+    let token_name = HeaderName::from_bytes(endpoint.token_header.to_ascii_lowercase().as_bytes())
+        .context("invalid tunnel token header name")?;
+    let token_value = HttpHeaderValue::from_str(&format!("Bearer {}", cfg.node_token))
+        .context("invalid tunnel token header value")?;
+
+    let node_id = cfg.node_id.to_string();
+
+    Request::builder()
+        .method("CONNECT")
+        .uri(uri)
+        .header("host", authority)
+        .header(token_name, token_value)
+        .header("x-fledx-node-id", node_id)
+        .header(AGENT_VERSION_HEADER, version::VERSION)
+        .header(AGENT_BUILD_HEADER, version::GIT_SHA)
+        .body(())
+        .context("build tunnel CONNECT request")
+}
+
+#[derive(Debug)]
+struct NoCertificateVerification;
+
+impl ServerCertVerifier for NoCertificateVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> std::result::Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> std::result::Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        vec![
+            rustls::SignatureScheme::RSA_PKCS1_SHA256,
+            rustls::SignatureScheme::ECDSA_NISTP256_SHA256,
+            rustls::SignatureScheme::ED25519,
+        ]
+    }
+}
+
+trait TunnelIo: AsyncRead + AsyncWrite + Unpin + Send {}
+impl<T> TunnelIo for T where T: AsyncRead + AsyncWrite + Unpin + Send {}

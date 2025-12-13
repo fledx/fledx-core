@@ -1,0 +1,13 @@
+.idea/
+target/
+data/
+.cargo/
+
+# Quickstart demo data
+quickstart-data/
+
+# Environment files (use .example versions as templates)
+.env.cp
+.env.agent
+.env.cli
+
