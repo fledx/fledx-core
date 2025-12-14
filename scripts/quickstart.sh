@@ -178,18 +178,18 @@ FLEDX_CLI="${PROJECT_ROOT}/target/release/fledx"
 # Start Control Plane
 log_info "Starting control plane on port $CP_PORT..."
 
-export FLEDX_CP__SERVER__HOST="0.0.0.0"
-export FLEDX_CP__SERVER__PORT="$CP_PORT"
-export FLEDX_CP__DATABASE__URL="sqlite://${DATA_DIR}/fledx-cp.db"
-export FLEDX_CP__REGISTRATION__TOKEN="$REG_TOKEN"
-export FLEDX_CP__OPERATOR__TOKENS="$OP_TOKEN"
-export FLEDX_CP__TOKENS__PEPPER="$PEPPER"
-export FLEDX_CP__TUNNEL__ADVERTISED_HOST="127.0.0.1"
-export FLEDX_CP__TUNNEL__ADVERTISED_PORT="$TUNNEL_PORT"
-export FLEDX_CP__TUNNEL__USE_TLS="false"
-export FLEDX_CP__PORTS__AUTO_ASSIGN="true"
-export FLEDX_CP__PORTS__RANGE_START="30000"
-export FLEDX_CP__PORTS__RANGE_END="31000"
+export FLEDX_CP_SERVER_HOST="0.0.0.0"
+export FLEDX_CP_SERVER_PORT="$CP_PORT"
+export FLEDX_CP_DATABASE_URL="sqlite://${DATA_DIR}/fledx-cp.db"
+export FLEDX_CP_REGISTRATION_TOKEN="$REG_TOKEN"
+export FLEDX_CP_OPERATOR_TOKENS="$OP_TOKEN"
+export FLEDX_CP_TOKENS_PEPPER="$PEPPER"
+export FLEDX_CP_TUNNEL_ADVERTISED_HOST="127.0.0.1"
+export FLEDX_CP_TUNNEL_ADVERTISED_PORT="$TUNNEL_PORT"
+export FLEDX_CP_TUNNEL_USE_TLS="false"
+export FLEDX_CP_PORTS_AUTO_ASSIGN="true"
+export FLEDX_CP_PORTS_RANGE_START="30000"
+export FLEDX_CP_PORTS_RANGE_END="31000"
 export RUST_LOG="info"
 
 "$FLEDX_CP" > "${LOG_DIR}/control-plane.log" 2>&1 &
@@ -203,8 +203,8 @@ wait_for_health "http://localhost:$CP_PORT/health"
 # Register a node
 log_info "Registering edge node..."
 
-export FLEDX_CONTROL_PLANE_URL="http://localhost:$CP_PORT"
-export FLEDX_REGISTRATION_TOKEN="$REG_TOKEN"
+export FLEDX_CLI_CONTROL_PLANE_URL="http://localhost:$CP_PORT"
+export FLEDX_CLI_REGISTRATION_TOKEN="$REG_TOKEN"
 
 NODE_INFO=$("$FLEDX_CLI" nodes register \
     --name quickstart-node \
@@ -224,16 +224,16 @@ log_success "Node registered: $NODE_ID"
 # Start Node Agent
 log_info "Starting node agent..."
 
-export FLEDX_AGENT__CONTROL_PLANE_URL="http://localhost:$CP_PORT"
-export FLEDX_AGENT__NODE_ID="$NODE_ID"
-export FLEDX_AGENT__NODE_TOKEN="$NODE_TOKEN"
-export FLEDX_AGENT__ALLOW_INSECURE_HTTP="true"
-export FLEDX_AGENT__ALLOWED_VOLUME_PREFIXES="${DATA_DIR}/volumes"
-export FLEDX_AGENT__VOLUME_DATA_DIR="$DATA_DIR"
-export FLEDX_AGENT__GATEWAY__ENABLED="false"
-export FLEDX_AGENT__TUNNEL__ENDPOINT_HOST="127.0.0.1"
-export FLEDX_AGENT__TUNNEL__ENDPOINT_PORT="$TUNNEL_PORT"
-export FLEDX_AGENT__TUNNEL__USE_TLS="false"
+export FLEDX_AGENT_CONTROL_PLANE_URL="http://localhost:$CP_PORT"
+export FLEDX_AGENT_NODE_ID="$NODE_ID"
+export FLEDX_AGENT_NODE_TOKEN="$NODE_TOKEN"
+export FLEDX_AGENT_ALLOW_INSECURE_HTTP="true"
+export FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES="${DATA_DIR}/volumes"
+export FLEDX_AGENT_VOLUME_DATA_DIR="$DATA_DIR"
+export FLEDX_AGENT_GATEWAY_ENABLED="false"
+export FLEDX_AGENT_TUNNEL_ENDPOINT_HOST="127.0.0.1"
+export FLEDX_AGENT_TUNNEL_ENDPOINT_PORT="$TUNNEL_PORT"
+export FLEDX_AGENT_TUNNEL_USE_TLS="false"
 export RUST_LOG="info"
 
 "$FLEDX_AGENT" > "${LOG_DIR}/node-agent.log" 2>&1 &
@@ -242,8 +242,8 @@ AGENT_PID=$!
 log_success "Node agent started (PID: $AGENT_PID)"
 
 # Export credentials for CLI commands
-export FLEDX_CONTROL_PLANE_URL="http://localhost:$CP_PORT"
-export FLEDX_OPERATOR_TOKEN="$OP_TOKEN"
+export FLEDX_CLI_CONTROL_PLANE_URL="http://localhost:$CP_PORT"
+export FLEDX_CLI_OPERATOR_TOKEN="$OP_TOKEN"
 
 # Wait for node to become ready
 log_info "Waiting for node to become ready..."
@@ -399,8 +399,8 @@ echo ""
 echo -e "${BLUE}Try it out! Open a new terminal and run:${NC}"
 echo ""
 echo -e "${GREEN}# Export credentials first${NC}"
-echo "export FLEDX_CONTROL_PLANE_URL=http://localhost:$CP_PORT"
-echo "export FLEDX_OPERATOR_TOKEN=$OP_TOKEN"
+echo "export FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:$CP_PORT"
+echo "export FLEDX_CLI_OPERATOR_TOKEN=$OP_TOKEN"
 echo ""
 echo -e "${GREEN}# List all nodes${NC}"
 echo "$FLEDX_CLI nodes status"

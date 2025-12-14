@@ -195,7 +195,7 @@ volumes:
     container_path: /app/logs
 ```
 
-**Security Note:** Only paths matching `FLEDX_AGENT__ALLOWED_VOLUME_PREFIXES` can be mounted. By default, this is
+**Security Note:** Only paths matching `FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES` can be mounted. By default, this is
 `/var/lib/fledx/volumes`.
 
 ### Health Checks
@@ -295,16 +295,16 @@ health:
 Convert YAML to JSON and POST to the API:
 
 ```bash
-curl -sSL -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -sSL -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "Content-Type: application/json" \
-  -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+  -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < deployment.yaml)"
 ```
 
 **Prerequisites:**
 
 - `yq` installed ([yq installation guide](https://github.com/mikefarah/yq))
-- `FLEDX_CONTROL_PLANE_URL` and `FLEDX_OPERATOR_TOKEN` environment variables set
+- `FLEDX_CLI_CONTROL_PLANE_URL` and `FLEDX_CLI_OPERATOR_TOKEN` environment variables set
 
 ### Using a Deployment Script
 
@@ -320,9 +320,9 @@ if [ -z "$YAML_FILE" ]; then
   exit 1
 fi
 
-curl -sSL -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -sSL -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "Content-Type: application/json" \
-  -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+  -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < "$YAML_FILE")"
 ```
 
@@ -372,9 +372,9 @@ health:
 **Deploy:**
 
 ```bash
-curl -sSL -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -sSL -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "Content-Type: application/json" \
-  -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+  -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < nginx-web.yaml)"
 ```
 
@@ -427,9 +427,9 @@ EOF
 **Deploy:**
 
 ```bash
-curl -sSL -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -sSL -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "Content-Type: application/json" \
-  -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+  -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < mosquitto-mqtt.yaml)"
 ```
 
@@ -494,9 +494,9 @@ sudo chown -R 999:999 /var/lib/fledx/volumes/postgres-data  # Postgres UID
 **Deploy:**
 
 ```bash
-curl -sSL -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -sSL -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "Content-Type: application/json" \
-  -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+  -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < postgres-db.yaml)"
 ```
 
@@ -576,18 +576,18 @@ Deploy both:
 
 ```bash
 # Deploy database first
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "Content-Type: application/json" \
-  -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+  -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < database.yaml)"
 
 # Wait for database to be ready
 fledx deployments watch --id <deployment-id>
 
 # Deploy web app
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "Content-Type: application/json" \
-  -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+  -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < webapp.yaml)"
 ```
 
@@ -612,9 +612,9 @@ Deploy all production services:
 ```bash
 for file in deployments/production/*.yaml; do
   echo "Deploying $file..."
-  curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+  curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
     -H "Content-Type: application/json" \
-    -H "x-operator-token: $FLEDX_OPERATOR_TOKEN" \
+    -H "x-operator-token: $FLEDX_CLI_OPERATOR_TOKEN" \
     -d "$(yq -o=json < "$file")"
 done
 ```

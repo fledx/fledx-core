@@ -7,7 +7,7 @@ the [Getting Started](index.md) guide.
 
 - Control plane running and accessible
 - At least one node registered and agent running
-- CLI configured with `FLEDX_CONTROL_PLANE_URL` and `FLEDX_OPERATOR_TOKEN`
+- CLI configured with `FLEDX_CLI_CONTROL_PLANE_URL` and `FLEDX_CLI_OPERATOR_TOKEN`
 
 ## Verify Node Status
 

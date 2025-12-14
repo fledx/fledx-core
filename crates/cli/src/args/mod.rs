@@ -37,7 +37,7 @@ pub struct GlobalArgs {
     /// Control-plane base URL, e.g. http://127.0.0.1:8080
     #[arg(
         long,
-        env = "FLEDX_CONTROL_PLANE_URL",
+        env = "FLEDX_CLI_CONTROL_PLANE_URL",
         default_value = "http://127.0.0.1:8080"
     )]
     pub control_plane_url: String,
@@ -45,7 +45,7 @@ pub struct GlobalArgs {
     /// Optional bearer token for control-plane admin endpoints.
     #[arg(
         long = "operator-token",
-        env = "FLEDX_OPERATOR_TOKEN",
+        env = "FLEDX_CLI_OPERATOR_TOKEN",
         visible_alias = "token"
     )]
     pub operator_token: Option<String>,
@@ -53,13 +53,13 @@ pub struct GlobalArgs {
     /// Header name used for operator token auth (default: authorization).
     #[arg(
         long = "operator-header",
-        env = "FLEDX_OPERATOR_HEADER",
+        env = "FLEDX_CLI_OPERATOR_HEADER",
         default_value = "authorization"
     )]
     pub operator_header: String,
 
     /// Registration token required by the control plane for node enrollment.
-    #[arg(long, env = "FLEDX_REGISTRATION_TOKEN", global = true)]
+    #[arg(long, env = "FLEDX_CLI_REGISTRATION_TOKEN", global = true)]
     pub registration_token: Option<String>,
 }
 

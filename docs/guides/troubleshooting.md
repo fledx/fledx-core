@@ -10,7 +10,7 @@ Run these commands to get a quick overview of system health:
 
 ```bash
 # 1. Control plane health
-curl -fsSL $FLEDX_CONTROL_PLANE_URL/health
+curl -fsSL $FLEDX_CLI_CONTROL_PLANE_URL/health
 
 # 2. Node status
 fledx nodes status --wide
@@ -223,7 +223,7 @@ sudo systemctl status fledx-agent
 sudo journalctl -u fledx-agent -n 50 -f
 
 # 3. Test connectivity to control plane
-curl -fsSL $FLEDX_CONTROL_PLANE_URL/health
+curl -fsSL $FLEDX_CLI_CONTROL_PLANE_URL/health
 ```
 
 **Solution A - Agent not running:**
@@ -418,7 +418,7 @@ sudo journalctl -u fledx-agent -f
 **Symptoms:**
 
 ```bash
-$ curl $FLEDX_CONTROL_PLANE_URL/health
+$ curl $FLEDX_CLI_CONTROL_PLANE_URL/health
 Connection refused
 ```
 
@@ -504,7 +504,7 @@ fledx deployments status | wc -l
 ```bash
 # Increase reconciliation interval (reduces CPU)
 # Edit /etc/fledx/fledx-cp.env
-FLEDX_CP__RECONCILIATION__INTERVAL_SECONDS=60
+FLEDX_CP_RECONCILIATION_INTERVAL_SECS=60
 
 # Restart control plane
 sudo systemctl restart fledx-cp
@@ -527,14 +527,14 @@ Error: 401 Unauthorized
 
 ```bash
 # 1. Verify token is set
-echo $FLEDX_OPERATOR_TOKEN
+echo $FLEDX_CLI_OPERATOR_TOKEN
 
 # 2. Verify token is correct (check control plane config)
 ssh <control-plane-host>
-cat /etc/fledx/fledx-cp.env | grep OPERATOR__TOKENS
+cat /etc/fledx/fledx-cp.env | grep OPERATOR_TOKENS
 
 # 3. Set correct token
-export FLEDX_OPERATOR_TOKEN=correct-token-here
+export FLEDX_CLI_OPERATOR_TOKEN=correct-token-here
 
 # 4. Test
 fledx nodes status
@@ -554,10 +554,10 @@ Error: Registration failed: invalid token
 ```bash
 # 1. Verify registration token
 ssh <control-plane-host>
-cat /etc/fledx/fledx-cp.env | grep REGISTRATION__TOKEN
+cat /etc/fledx/fledx-cp.env | grep REGISTRATION_TOKEN
 
 # 2. Use correct token
-export FLEDX_REGISTRATION_TOKEN=correct-registration-token
+export FLEDX_CLI_REGISTRATION_TOKEN=correct-registration-token
 
 # 3. Retry registration
 fledx nodes register --name edge-1
@@ -582,7 +582,7 @@ fledx node-token-rotate --node-id <node-id>
 # Update agent configuration with new token
 ssh <node-host>
 sudo nano /etc/fledx/fledx-agent.env
-# Update FLEDX_AGENT__NODE_TOKEN
+# Update FLEDX_AGENT_NODE_TOKEN
 
 # Restart agent
 sudo systemctl restart fledx-agent
@@ -762,7 +762,7 @@ uname -a >> diagnostics.txt
 echo >> diagnostics.txt
 
 echo "=== Control Plane Health ===" >> diagnostics.txt
-curl -fsSL $FLEDX_CONTROL_PLANE_URL/health >> diagnostics.txt 2>&1
+curl -fsSL $FLEDX_CLI_CONTROL_PLANE_URL/health >> diagnostics.txt 2>&1
 echo >> diagnostics.txt
 
 echo "=== Nodes ===" >> diagnostics.txt
@@ -795,7 +795,7 @@ echo "Diagnostics saved to diagnostics.txt"
 
 ```bash
 # Health check
-curl $FLEDX_CONTROL_PLANE_URL/health
+curl $FLEDX_CLI_CONTROL_PLANE_URL/health
 
 # View system status
 fledx nodes status --wide

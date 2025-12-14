@@ -39,12 +39,12 @@ export FLEDX_REG_TOKEN=quickstart-reg-123
 export FLEDX_OPERATOR_TOKEN=quickstart-operator-123
 export FLEDX_TOKEN_PEPPER=pepper-123
 
-FLEDX_CP__SERVER__HOST=0.0.0.0 \
-FLEDX_CP__SERVER__PORT=8080 \
-FLEDX_CP__DATABASE__URL=sqlite://$PWD/quickstart/data/fledx-cp.db \
-FLEDX_CP__REGISTRATION__TOKEN=$FLEDX_REG_TOKEN \
-FLEDX_CP__OPERATOR__TOKENS=$FLEDX_OPERATOR_TOKEN \
-FLEDX_CP__TOKENS__PEPPER=$FLEDX_TOKEN_PEPPER \
+FLEDX_CP_SERVER_HOST=0.0.0.0 \
+FLEDX_CP_SERVER_PORT=8080 \
+FLEDX_CP_DATABASE_URL=sqlite://$PWD/quickstart/data/fledx-cp.db \
+FLEDX_CP_REGISTRATION_TOKEN=$FLEDX_REG_TOKEN \
+FLEDX_CP_OPERATOR_TOKENS=$FLEDX_OPERATOR_TOKEN \
+FLEDX_CP_TOKENS_PEPPER=$FLEDX_TOKEN_PEPPER \
 RUST_LOG=info \
 fledx-cp
 ```
@@ -60,8 +60,8 @@ curl -fsSL http://<control-plane-host>:8080/health
 In a new terminal (with PATH pointing to `quickstart/bin`):
 
 ```bash
-FLEDX_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
-FLEDX_REGISTRATION_TOKEN=$FLEDX_REG_TOKEN \
+FLEDX_CLI_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
+FLEDX_CLI_REGISTRATION_TOKEN=$FLEDX_REG_TOKEN \
 fledx nodes register --name edge-1
 ```
 
@@ -70,11 +70,11 @@ Note the printed `node_id` and `node_token`; you need them for the agent.
 ## 4) Run the node agent (Host B)
 
 ```bash
-FLEDX_AGENT__CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
-FLEDX_AGENT__NODE_ID=<node_id from step 3> \
-FLEDX_AGENT__NODE_TOKEN=<node_token from step 3> \
-FLEDX_AGENT__ALLOW_INSECURE_HTTP=true \
-FLEDX_AGENT__PUBLIC_HOST=<agent-hostname-or-ip> \
+FLEDX_AGENT_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
+FLEDX_AGENT_NODE_ID=<node_id from step 3> \
+FLEDX_AGENT_NODE_TOKEN=<node_token from step 3> \
+FLEDX_AGENT_ALLOW_INSECURE_HTTP=true \
+FLEDX_AGENT_PUBLIC_HOST=<agent-hostname-or-ip> \
 fledx-agent
 ```
 
@@ -83,8 +83,8 @@ Leave this running to keep the node connected.
 ## 5) Deploy nginx with custom HTML (Host A)
 
 ```bash
-FLEDX_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
-FLEDX_OPERATOR_TOKEN=$FLEDX_OPERATOR_TOKEN \
+FLEDX_CLI_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
+FLEDX_CLI_OPERATOR_TOKEN=$FLEDX_OPERATOR_TOKEN \
 fledx deployments create \
   --name edge-nginx \
   --image nginx:alpine \
@@ -103,7 +103,7 @@ fledx deployments status --status running
 
 - UI: open `http://<control-plane-host>:8080/ui` and paste the operator token
   (`$FLEDX_OPERATOR_TOKEN`).
-- API: `curl -H "authorization: $FLEDX_OPERATOR_TOKEN" http://<control-plane-host>:8080/api/v1/deployments`.
+- API: `curl -H "authorization: $FLEDX_CLI_OPERATOR_TOKEN" http://<control-plane-host>:8080/api/v1/deployments`.
 - CLI: `fledx nodes list --wide`.
 - App: `curl http://<agent-hostname-or-ip>:8081` should return the custom HTML.
 

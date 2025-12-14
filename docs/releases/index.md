@@ -67,7 +67,7 @@ Distributed Edge Hosting follows [Semantic Versioning 2.0.0](https://semver.org/
 The control plane maintains a compatibility window of ±1 minor version for node agents:
 
 - Example: Control Plane v1.5.x supports Node Agents v1.4.x through v1.6.x
-- This window is configurable via `FLEDX_CP__COMPATIBILITY__MIN_AGENT_VERSION` and `FLEDX_CP__COMPATIBILITY__MAX_AGENT_VERSION`
+- This window is configurable via `FLEDX_CP_COMPATIBILITY_MIN_AGENT_VERSION` and `FLEDX_CP_COMPATIBILITY_MAX_AGENT_VERSION`
 
 ## Upgrade Process
 

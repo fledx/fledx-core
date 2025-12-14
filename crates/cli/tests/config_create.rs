@@ -88,8 +88,8 @@ fn configs_create_accepts_env_file_and_inline_vars() {
     });
 
     let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "test-token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "test-token")
         .args([
             "configs",
             "create",
@@ -146,8 +146,8 @@ fn configs_create_rejects_mixed_plain_and_secret_entries() {
     fs::write(&env_path, "FOO=bar\n").expect("write env file");
 
     let output = std::process::Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", "http://127.0.0.1:9")
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", "http://127.0.0.1:9")
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args([
             "configs",
             "create",

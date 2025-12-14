@@ -71,8 +71,8 @@ fn configs_list_command_renders_table_and_uses_pagination_params() {
     });
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "test-token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "test-token")
         .args(["configs", "list", "--limit", "2", "--offset", "1"])
         .output()
         .expect("run cli");

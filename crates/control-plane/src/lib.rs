@@ -117,9 +117,7 @@ pub async fn run_with(mode: CommandMode, hooks: ControlPlaneHooks) -> Result<()>
         .filter(|t| !t.is_empty())
         .collect();
     if operator_tokens.is_empty() {
-        return Err(anyhow::anyhow!(
-            "FLEDX_CP__OPERATOR__TOKENS cannot be empty"
-        ));
+        return Err(anyhow::anyhow!("FLEDX_CP_OPERATOR_TOKENS cannot be empty"));
     }
     let operator_header = app_config
         .operator

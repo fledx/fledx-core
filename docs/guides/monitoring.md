@@ -179,7 +179,7 @@ scrape_configs:
           - 'node-2.example.com:9091'
           - 'node-3.example.com:9091'
     relabel_configs:
-      - source_labels: [ __address__ ]
+      - source_labels: [ _address__ ]
         target_label: instance
 ```
 
@@ -656,7 +656,7 @@ Check available ports:
 
 ```bash
 # Current range
-grep "PORTS__RANGE" /etc/fledx/fledx-cp.env
+grep "PORTS_RANGE" /etc/fledx/fledx-cp.env
 
 # Used ports
 fledx deployments status --wide | grep -oP '\d+:\d+' | cut -d: -f1 | sort -n | uniq
@@ -669,8 +669,8 @@ Adjust if needed:
 sudo vi /etc/fledx/fledx-cp.env
 
 # Update range
-FLEDX_CP__PORTS__RANGE_START=8000
-FLEDX_CP__PORTS__RANGE_END=9000
+FLEDX_CP_PORTS_RANGE_START=8000
+FLEDX_CP_PORTS_RANGE_END=9000
 
 # Restart
 sudo systemctl restart fledx-cp
@@ -718,13 +718,13 @@ NEW_TOKEN=$(openssl rand -hex 32)
 
 # Update control plane config
 sudo vi /etc/fledx/fledx-cp.env
-# Add new token to FLEDX_CP__OPERATOR__TOKENS (comma-separated)
+# Add new token to FLEDX_CP_OPERATOR_TOKENS (comma-separated)
 
 # Restart control plane
 sudo systemctl restart fledx-cp
 
 # Update clients to use new token
-export FLEDX_OPERATOR_TOKEN=$NEW_TOKEN
+export FLEDX_CLI_OPERATOR_TOKEN=$NEW_TOKEN
 
 # Verify
 fledx nodes status
@@ -982,7 +982,7 @@ sudo journalctl -u fledx-agent -n 100 | grep -i "error\|failed"
 cat /etc/fledx/fledx-agent.env | grep -E "NODE_ID|NODE_TOKEN"
 
 # Test control plane reachability
-curl -fsSL $FLEDX_AGENT__CONTROL_PLANE_URL/health
+curl -fsSL $FLEDX_AGENT_CONTROL_PLANE_URL/health
 
 # Check TLS/certificate issues
 openssl s_client -connect control-plane.example.com:443 -showcerts
@@ -990,7 +990,7 @@ openssl s_client -connect control-plane.example.com:443 -showcerts
 
 **Common Causes:**
 
-- Incorrect `FLEDX_AGENT__CONTROL_PLANE_URL` (typo, wrong protocol)
+- Incorrect `FLEDX_AGENT_CONTROL_PLANE_URL` (typo, wrong protocol)
 - Invalid or expired node token
 - TLS certificate issues (self-signed, expired)
 - Firewall blocking outbound connections
@@ -1001,7 +1001,7 @@ openssl s_client -connect control-plane.example.com:443 -showcerts
 ```bash
 # Fix control plane URL
 sudo vi /etc/fledx/fledx-agent.env
-# Set: FLEDX_AGENT__CONTROL_PLANE_URL=https://correct-hostname.example.com
+# Set: FLEDX_AGENT_CONTROL_PLANE_URL=https://correct-hostname.example.com
 
 # Regenerate node token if invalid
 fledx nodes token rotate --node-id <node-id>
@@ -1009,7 +1009,7 @@ fledx nodes token rotate --node-id <node-id>
 
 # For labs: temporarily disable TLS verification
 sudo vi /etc/fledx/fledx-agent.env
-# Add: FLEDX_AGENT__TLS_INSECURE_SKIP_VERIFY=true
+# Add: FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY=true
 # WARNING: Never use in production!
 
 # Restart agent
@@ -1139,20 +1139,20 @@ fledx deployments update --id <id> --image registry.example.com/my-app:v1.0
 
 ```bash
 # Increase connection pool (if needed)
-FLEDX_CP__DATABASE__MAX_CONNECTIONS=20
+FLEDX_CP_DATABASE_MAX_CONNECTIONS=20
 
 # Adjust reconciliation interval
-FLEDX_CP__RECONCILE_INTERVAL_SECS=30
+FLEDX_CP_RECONCILE_INTERVAL_SECS=30
 ```
 
 ### Node Agent
 
 ```bash
 # Adjust heartbeat interval
-FLEDX_AGENT__HEARTBEAT_INTERVAL_SECS=30
+FLEDX_AGENT_HEARTBEAT_INTERVAL_SECS=30
 
 # Adjust reconcile interval
-FLEDX_AGENT__RECONCILE_INTERVAL_SECS=10
+FLEDX_AGENT_RECONCILE_INTERVAL_SECS=10
 ```
 
 ## Monitoring Checklist

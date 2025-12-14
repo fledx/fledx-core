@@ -23,23 +23,23 @@ in `localStorage` so you do not have to type it again during the next browser se
 2. **Manual control-plane run (for production-style installs).**
 
    ```bash
-   FLEDX_CP__SERVER__HOST=0.0.0.0 \
-     FLEDX_CP__SERVER__PORT=8080 \
-     FLEDX_CP__DATABASE__URL=sqlite:///var/lib/fledx/control-plane.db \
-     FLEDX_CP__OPERATOR__TOKENS="op-token-1,op-token-2" \
-     FLEDX_CP__OPERATOR__HEADER_NAME=authorization \
+   FLEDX_CP_SERVER_HOST=0.0.0.0 \
+     FLEDX_CP_SERVER_PORT=8080 \
+     FLEDX_CP_DATABASE_URL=sqlite:///var/lib/fledx/control-plane.db \
+     FLEDX_CP_OPERATOR_TOKENS="op-token-1,op-token-2" \
+     FLEDX_CP_OPERATOR_HEADER_NAME=authorization \
      ./target/release/control-plane
    ```
 
    Adjust the host/port if you are behind a reverse proxy. The UI uses relative paths, so ensure `/ui`, `/api/v1/*`, and
    `/metrics` all reach the same origin or that your proxy rewrites requests accordingly; otherwise, you will hit CORS
    errors when the UI attempts to hit the APIs. If you need a custom header name, change
-   `FLEDX_CP__OPERATOR__HEADER_NAME` and restart the control-plane. The value you configured also appears on the UI
+   `FLEDX_CP_OPERATOR_HEADER_NAME` and restart the control-plane. The value you configured also appears on the UI
    so you know which header it will send.
 
 ## Authentication & Base Configuration
 
-- **Operator tokens.** The UI requires one of the strings listed in `FLEDX_CP__OPERATOR__TOKENS` (default
+- **Operator tokens.** The UI requires one of the strings listed in `FLEDX_CP_OPERATOR_TOKENS` (default
   `dev-operator-token`). You paste the token into the masked input at the top of the page; the UI automatically prefixes
   it with `Bearer ` if you omit the prefix and persists it inside the browser under the key `fledx-observability-token`
   for the next session.
@@ -94,14 +94,14 @@ in `localStorage` so you do not have to type it again during the next browser se
   instead of clicking through the UI:
 
   ```bash
-  FLEDX_CONTROL_PLANE_URL=http://localhost:8080 \
-    FLEDX_OPERATOR_TOKEN=dev-operator-token \
+  FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080 \
+    FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
     cargo run -p cli -- deploy-create --name web --image nginx:alpine
   ```
 
   ```bash
-  FLEDX_CONTROL_PLANE_URL=http://localhost:8080 \
-    FLEDX_OPERATOR_TOKEN=dev-operator-token \
+  FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080 \
+    FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
     cargo run -p cli -- deploy stop --deployment-id <id>
   ```
 

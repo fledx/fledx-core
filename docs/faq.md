@@ -241,8 +241,8 @@ Yes! Fledx's CLI and API are designed for automation:
 # Example CI/CD deployment script
 deploy:
   script:
-    - export FLEDX_CONTROL_PLANE_URL=$FLEDX_URL
-    - export FLEDX_OPERATOR_TOKEN=$FLEDX_TOKEN
+    - export FLEDX_CLI_CONTROL_PLANE_URL=$FLEDX_URL
+    - export FLEDX_CLI_OPERATOR_TOKEN=$FLEDX_TOKEN
     - fledx deployments create --name my-app --image registry.example.com/my-app:$VERSION_TAG
 ```
 

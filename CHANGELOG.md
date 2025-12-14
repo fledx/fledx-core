@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Environment variable naming convention changed from double to single underscore separators
+    - Control Plane: `FLEDX_CP__*` → `FLEDX_CP_*` (e.g., `FLEDX_CP__SERVER__HOST` → `FLEDX_CP_SERVER_HOST`)
+    - Node Agent: `FLEDX_AGENT__*` → `FLEDX_AGENT_*` (e.g., `FLEDX_AGENT__CONTROL_PLANE_URL` →
+      `FLEDX_AGENT_CONTROL_PLANE_URL`)
+    - CLI: Variables now use `FLEDX_CLI_` prefix (e.g., `FLEDX_CONTROL_PLANE_URL` → `FLEDX_CLI_CONTROL_PLANE_URL`,
+      `FLEDX_OPERATOR_TOKEN` → `FLEDX_CLI_OPERATOR_TOKEN`)
+- Removed `FLEDX_TOKEN` environment variable alias - Use `FLEDX_CLI_OPERATOR_TOKEN` instead
+
 ### Added
 
 ### Changed

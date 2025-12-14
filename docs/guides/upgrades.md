@@ -26,13 +26,13 @@ Control compatibility enforcement via environment variables:
 
 ```bash
 # Minimum agent version
-FLEDX_CP__COMPATIBILITY__MIN_AGENT_VERSION=1.4.0
+FLEDX_CP_COMPATIBILITY_MIN_AGENT_VERSION=1.4.0
 
 # Maximum agent version
-FLEDX_CP__COMPATIBILITY__MAX_AGENT_VERSION=1.6.0
+FLEDX_CP_COMPATIBILITY_MAX_AGENT_VERSION=1.6.0
 
 # Enforcement mode (default: true)
-FLEDX_CP__FEATURES__ENFORCE_AGENT_COMPATIBILITY=true
+FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY=true
 ```
 
 ### Warn-Only Mode
@@ -40,7 +40,7 @@ FLEDX_CP__FEATURES__ENFORCE_AGENT_COMPATIBILITY=true
 For testing or gradual rollouts, disable strict enforcement:
 
 ```bash
-FLEDX_CP__FEATURES__ENFORCE_AGENT_COMPATIBILITY=false
+FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY=false
 ```
 
 Agents outside the version window will trigger warnings but remain operational.
@@ -319,7 +319,7 @@ Either:
 - Upgrade the agent to a compatible version
 - Adjust control plane compatibility window:
   ```bash
-  FLEDX_CP__COMPATIBILITY__MIN_AGENT_VERSION=1.4.0
+  FLEDX_CP_COMPATIBILITY_MIN_AGENT_VERSION=1.4.0
   ```
 
 ### Issue: Database Migration Failed

@@ -1,5 +1,3 @@
-use std::env;
-
 use crate::api::OperatorApi;
 
 pub mod completions;
@@ -45,14 +43,11 @@ impl CommandContext {
 }
 
 fn resolve_operator_token(operator_token: &Option<String>) -> anyhow::Result<String> {
-    operator_token
-        .clone()
-        .or_else(|| env::var("FLEDX_TOKEN").ok())
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "operator token is required; pass --operator-token or set FLEDX_OPERATOR_TOKEN/FLEDX_TOKEN"
-            )
-        })
+    operator_token.clone().ok_or_else(|| {
+        anyhow::anyhow!(
+            "operator token is required; pass --operator-token or set FLEDX_CLI_OPERATOR_TOKEN"
+        )
+    })
 }
 
 fn make_operator_api(

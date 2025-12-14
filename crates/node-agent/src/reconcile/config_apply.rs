@@ -119,7 +119,7 @@ fn resolve_config_entry(entry: &api::ConfigEntry, secrets_prefix: &str) -> anyho
 
     let trimmed_prefix = secrets_prefix.trim();
     if trimmed_prefix.is_empty() {
-        anyhow::bail!("secrets_prefix is empty; set FLEDX_AGENT__SECRETS_PREFIX");
+        anyhow::bail!("secrets_prefix is empty; set FLEDX_AGENT_SECRETS_PREFIX");
     }
 
     let env_key = format!("{}{}", trimmed_prefix, secret);
@@ -142,7 +142,7 @@ fn resolve_config_file_path(
 ) -> anyhow::Result<String> {
     let base = cfg.volume_data_dir.trim();
     if base.is_empty() {
-        anyhow::bail!("volume_data_dir is empty; set FLEDX_AGENT__VOLUME_DATA_DIR");
+        anyhow::bail!("volume_data_dir is empty; set FLEDX_AGENT_VOLUME_DATA_DIR");
     }
 
     let host_path = PathBuf::from(base).join("configs").join(&file.file_ref);

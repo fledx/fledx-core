@@ -1399,7 +1399,7 @@ pub(crate) fn to_deployment_summary(
         (status = 401, description = "Invalid node token", body = ErrorResponse),
         (
             status = 413,
-            description = "Heartbeat payload exceeds FLEDX_CP__LIMITS__HEARTBEAT_BODY_BYTES",
+            description = "Heartbeat payload exceeds FLEDX_CP_LIMITS_HEARTBEAT_BODY_BYTES",
             body = ErrorResponse,
             example = json!({
                 "error": "request payload too large",

@@ -42,16 +42,16 @@ sudo install -d -o root -g root /etc/fledx
 Environment file `/etc/fledx/fledx-cp.env` (edit secrets):
 
 ```
-FLEDX_CP__SERVER__HOST=0.0.0.0
-FLEDX_CP__SERVER__PORT=8080
-FLEDX_CP__DATABASE__URL=sqlite:///var/lib/fledx/fledx-cp.db
-FLEDX_CP__REGISTRATION__TOKEN=change-me-registration
-FLEDX_CP__OPERATOR__TOKENS=change-me-operator
-FLEDX_CP__OPERATOR__HEADER_NAME=authorization
-FLEDX_CP__TOKENS__PEPPER=change-me-pepper
+FLEDX_CP_SERVER_HOST=0.0.0.0
+FLEDX_CP_SERVER_PORT=8080
+FLEDX_CP_DATABASE_URL=sqlite:///var/lib/fledx/fledx-cp.db
+FLEDX_CP_REGISTRATION_TOKEN=change-me-registration
+FLEDX_CP_OPERATOR_TOKENS=change-me-operator
+FLEDX_CP_OPERATOR_HEADER_NAME=authorization
+FLEDX_CP_TOKENS_PEPPER=change-me-pepper
 # Optional hardening
-# FLEDX_CP__PORTS__AUTO_ASSIGN=true
-# FLEDX_CP__FEATURES__ENFORCE_AGENT_COMPATIBILITY=true
+# FLEDX_CP_PORTS_AUTO_ASSIGN=true
+# FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY=true
 RUST_LOG=info
 ```
 
@@ -102,13 +102,13 @@ sudo install -d -o root -g root /etc/fledx
 Environment file `/etc/fledx/fledx-agent.env` (fill from node registration):
 
 ```
-FLEDX_AGENT__CONTROL_PLANE_URL=https://control-plane.example.com
-FLEDX_AGENT__NODE_ID=<node-uuid>
-FLEDX_AGENT__NODE_TOKEN=<node-token>
-FLEDX_AGENT__ALLOWED_VOLUME_PREFIXES=/var/lib/fledx/volumes
+FLEDX_AGENT_CONTROL_PLANE_URL=https://control-plane.example.com
+FLEDX_AGENT_NODE_ID=<node-uuid>
+FLEDX_AGENT_NODE_TOKEN=<node-token>
+FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=/var/lib/fledx/volumes
 # For labs only (not production):
-# FLEDX_AGENT__ALLOW_INSECURE_HTTP=true
-# FLEDX_AGENT__TLS_INSECURE_SKIP_VERIFY=true
+# FLEDX_AGENT_ALLOW_INSECURE_HTTP=true
+# FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY=true
 ```
 
 Systemd unit `/etc/systemd/system/fledx-agent.service`:
@@ -163,8 +163,8 @@ fledx completions fish | sudo tee /usr/share/fish/vendor_completions.d/fledx.fis
 2) Register each node:
 
 ```bash
-FLEDX_CONTROL_PLANE_URL=https://control-plane.example.com \
-FLEDX_REGISTRATION_TOKEN=<control-plane registration token> \
+FLEDX_CLI_CONTROL_PLANE_URL=https://control-plane.example.com \
+FLEDX_CLI_REGISTRATION_TOKEN=<control-plane registration token> \
 fledx nodes register --name edge-1
 ```
 
@@ -175,16 +175,16 @@ Capture the `node_id` and `node_token`.
 
 ```bash
 curl -fsSL https://control-plane.example.com/health
-FLEDX_CONTROL_PLANE_URL=https://control-plane.example.com \
-FLEDX_OPERATOR_TOKEN=<operator token> \
+FLEDX_CLI_CONTROL_PLANE_URL=https://control-plane.example.com \
+FLEDX_CLI_OPERATOR_TOKEN=<operator token> \
 fledx nodes status --wide
 ```
 
 5) Deploy a workload (example):
 
 ```bash
-FLEDX_CONTROL_PLANE_URL=https://control-plane.example.com \
-FLEDX_OPERATOR_TOKEN=<operator token> \
+FLEDX_CLI_CONTROL_PLANE_URL=https://control-plane.example.com \
+FLEDX_CLI_OPERATOR_TOKEN=<operator token> \
 fledx deployments create \
   --name web \
   --image nginx:alpine \
@@ -196,7 +196,7 @@ fledx deployments create \
 - Use HTTPS for fledx-cp and agents; only enable insecure flags in labs.
 - Treat registration and operator tokens as secrets; rotate periodically.
 - Pin allowed volume prefixes and avoid running agents as root when possible.
-- Enforce agent compatibility with `FLEDX_CP__FEATURES__ENFORCE_AGENT_COMPATIBILITY=true`.
+- Enforce agent compatibility with `FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY=true`.
 
 ## Links
 

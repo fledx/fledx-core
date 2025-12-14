@@ -155,8 +155,8 @@ async fn handle_operator_response(res: Response) -> Result<Response> {
     let parsed_error = extract_error_message(&body);
 
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        let hint = "Set --operator-token or FLEDX_OPERATOR_TOKEN/FLEDX_TOKEN and \
---operator-header/FLEDX_OPERATOR_HEADER if the control plane uses a custom header.";
+        let hint = "Set --operator-token or FLEDX_CLI_OPERATOR_TOKEN and \
+--operator-header/FLEDX_CLI_OPERATOR_HEADER if the control plane uses a custom header.";
         let message = match parsed_error {
             Some(err) => format!("operator auth failed with {}: {} {}", status, err, hint),
             None if body.is_empty() => format!("operator auth failed with {}. {}", status, hint),

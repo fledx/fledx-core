@@ -124,7 +124,7 @@ fledx configs create \
   --file /etc/nginx/nginx.conf=config-blobs/nginx-v1
 ```
 
-The agent reads file blobs from `FLEDX_AGENT__VOLUME_DATA_DIR/configs/<file_ref>`.
+The agent reads file blobs from `FLEDX_AGENT_VOLUME_DATA_DIR/configs/<file_ref>`.
 
 **Prepare the file on nodes:**
 
@@ -159,7 +159,7 @@ Use an operator token in `Authorization: Bearer <token>`.
 
 ```bash
 curl -X POST "$CONTROL_PLANE/api/v1/configs" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -H "content-type: application/json" \
   -d '{
         "name": "app-config",
@@ -174,7 +174,7 @@ curl -X POST "$CONTROL_PLANE/api/v1/configs" \
 
 ```bash
 curl -X POST "$CONTROL_PLANE/api/v1/configs" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -H "content-type: application/json" \
   -d '{
         "name": "app-config",
@@ -223,7 +223,7 @@ fledx configs update --id <config-uuid> --var KEY=value --version 5
 
 ```bash
 curl -X PUT "$CONTROL_PLANE/api/v1/configs/<config-id>" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -H "content-type: application/json" \
   -d '{
         "name": "app-config",
@@ -313,7 +313,7 @@ curl -X DELETE "$CONTROL_PLANE/api/v1/configs/<config-id>/nodes/<node-id>" \
 ### How Reloads Work
 
 1. Control plane stores config changes immediately
-2. Node agents poll `/api/v1/nodes/<id>/configs` every `FLEDX_AGENT__RECONCILE_INTERVAL_SECS` (default: 10s)
+2. Node agents poll `/api/v1/nodes/<id>/configs` every `FLEDX_AGENT_RECONCILE_INTERVAL_SECS` (default: 10s)
 3. Agent computes config fingerprint (config_id + version + checksum)
 4. If fingerprint differs from running container, agent restarts the replica
 5. New container starts with updated configuration
@@ -342,7 +342,7 @@ Look for restart counts and instance state.
 ### Restart Behavior
 
 - Restarts respect backoff (exponential)
-- Max restart attempts: `FLEDX_AGENT__RESTART_FAILURE_LIMIT` (default: 5)
+- Max restart attempts: `FLEDX_AGENT_RESTART_FAILURE_LIMIT` (default: 5)
 - Agent logs show: `container config fingerprint mismatch, scheduling restart`
 
 ## Limits and Validation
@@ -363,7 +363,7 @@ Look for restart counts and instance state.
 
 ### Payload Limits
 
-- **Total payload:** Capped by `FLEDX_CP__LIMITS__CONFIG_PAYLOAD_BYTES` (default: 131072 bytes / 128 KB)
+- **Total payload:** Capped by `FLEDX_CP_LIMITS_CONFIG_PAYLOAD_BYTES` (default: 131072 bytes / 128 KB)
 - Exceeding returns `413 payload_too_large`
 
 ### Env File Parsing
@@ -463,7 +463,7 @@ fledx configs attach deployment --config-id <id> --deployment-id <prod-id>
 
 1. Split into multiple configs
 2. Remove unused entries/files
-3. Increase limit: `FLEDX_CP__LIMITS__CONFIG_PAYLOAD_BYTES=262144`
+3. Increase limit: `FLEDX_CP_LIMITS_CONFIG_PAYLOAD_BYTES=262144`
 
 ### Secret Not Found
 

@@ -30,7 +30,7 @@ pub(crate) fn validate_volume_mounts(
     }
 
     if cfg.allowed_volume_prefixes.is_empty() {
-        bail!("volume mounts are disabled; set FLEDX_AGENT__ALLOWED_VOLUME_PREFIXES to enable");
+        bail!("volume mounts are disabled; set FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES to enable");
     }
 
     let resolved_prefixes: Vec<PathBuf> = cfg
@@ -117,7 +117,7 @@ pub(crate) fn resolve_secret_files(
 
     let base = secrets_dir.trim();
     if base.is_empty() {
-        bail!("secrets_dir is empty; set FLEDX_AGENT__SECRETS_DIR");
+        bail!("secrets_dir is empty; set FLEDX_AGENT_SECRETS_DIR");
     }
 
     for entry in entries {
@@ -245,7 +245,7 @@ fn canonicalize_existing(path: &Path) -> Result<PathBuf> {
 fn normalized_secrets_prefix(prefix: &str) -> Result<String> {
     let trimmed = prefix.trim();
     if trimmed.is_empty() {
-        bail!("secrets_prefix is empty; set FLEDX_AGENT__SECRETS_PREFIX");
+        bail!("secrets_prefix is empty; set FLEDX_AGENT_SECRETS_PREFIX");
     }
 
     Ok(trimmed.to_string())

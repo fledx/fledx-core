@@ -68,8 +68,8 @@ fn configs_list_json_includes_pagination_and_items() {
     });
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args(["configs", "list", "--limit", "5", "--offset", "2", "--json"])
         .output()
         .expect("run cli");
@@ -143,8 +143,8 @@ fn configs_show_outputs_entries_and_attachments_in_table() {
     });
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args(["configs", "show", "--id", &config_id.to_string()])
         .output()
         .expect("run cli");
@@ -210,8 +210,8 @@ fn configs_show_outputs_json_payload() {
     });
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args(["configs", "show", "--id", &config_id.to_string(), "--json"])
         .output()
         .expect("run cli");
@@ -382,8 +382,8 @@ fn status_command_shows_attached_configs_in_table() {
         spawn_status_server(node_page, deployment_page, config_page, config_details);
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args(["status", "--node-limit", "1", "--deploy-limit", "1"])
         .output()
         .expect("run cli");
@@ -472,8 +472,8 @@ fn status_command_outputs_json_with_config_attachments() {
         spawn_status_server(node_page, deployment_page, config_page, config_details);
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args([
             "status",
             "--node-limit",

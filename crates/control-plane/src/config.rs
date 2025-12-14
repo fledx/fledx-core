@@ -1,4 +1,5 @@
 use serde::{Deserialize, Deserializer};
+use std::env;
 use std::path::{Component, Path};
 
 pub const ENV_PREFIX: &str = "FLEDX_CP";
@@ -150,6 +151,177 @@ pub struct FeatureFlags {
     #[serde(default)]
     pub migrations_dry_run_on_start: bool,
 }
+
+// (ENV_NAME, config_key, is_comma_list)
+const ENV_OVERRIDES: &[(&str, &str, bool)] = &[
+    ("FLEDX_CP_SERVER_HOST", "server.host", false),
+    ("FLEDX_CP_SERVER_PORT", "server.port", false),
+    (
+        "FLEDX_CP_TUNNEL_ADVERTISED_HOST",
+        "tunnel.advertised_host",
+        false,
+    ),
+    (
+        "FLEDX_CP_TUNNEL_ADVERTISED_PORT",
+        "tunnel.advertised_port",
+        false,
+    ),
+    ("FLEDX_CP_TUNNEL_USE_TLS", "tunnel.use_tls", false),
+    (
+        "FLEDX_CP_TUNNEL_CONNECT_TIMEOUT_SECS",
+        "tunnel.connect_timeout_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_TUNNEL_HEARTBEAT_INTERVAL_SECS",
+        "tunnel.heartbeat_interval_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_TUNNEL_HEARTBEAT_TIMEOUT_SECS",
+        "tunnel.heartbeat_timeout_secs",
+        false,
+    ),
+    ("FLEDX_CP_TUNNEL_TOKEN_HEADER", "tunnel.token_header", false),
+    ("FLEDX_CP_DATABASE_URL", "database.url", false),
+    ("FLEDX_CP_REGISTRATION_TOKEN", "registration.token", false),
+    (
+        "FLEDX_CP_REGISTRATION_RATE_LIMIT_PER_MINUTE",
+        "registration.rate_limit_per_minute",
+        false,
+    ),
+    ("FLEDX_CP_OPERATOR_TOKENS", "operator.tokens", false),
+    (
+        "FLEDX_CP_OPERATOR_HEADER_NAME",
+        "operator.header_name",
+        false,
+    ),
+    ("FLEDX_CP_TOKENS_PEPPER", "tokens.pepper", false),
+    (
+        "FLEDX_CP_LIMITS_REGISTRATION_BODY_BYTES",
+        "limits.registration_body_bytes",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_HEARTBEAT_BODY_BYTES",
+        "limits.heartbeat_body_bytes",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_CONFIG_PAYLOAD_BYTES",
+        "limits.config_payload_bytes",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_HEARTBEAT_METRICS_PER_INSTANCE",
+        "limits.heartbeat_metrics_per_instance",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_HEARTBEAT_METRICS_TOTAL",
+        "limits.heartbeat_metrics_total",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_RESOURCE_METRICS_MAX_SERIES",
+        "limits.resource_metrics_max_series",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_MAX_FIELD_LEN",
+        "limits.max_field_len",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_LOG_TAIL_LIMIT",
+        "limits.log_tail_limit",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_LOG_TAIL_MAX_WINDOW_SECS",
+        "limits.log_tail_max_window_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_METRICS_SUMMARY_LIMIT",
+        "limits.metrics_summary_limit",
+        false,
+    ),
+    (
+        "FLEDX_CP_LIMITS_METRICS_SUMMARY_WINDOW_SECS",
+        "limits.metrics_summary_window_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_RETENTION_INSTANCE_STATUS_SECS",
+        "retention.instance_status_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_RETENTION_INSTANCE_METRICS_SECS",
+        "retention.instance_metrics_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_RETENTION_USAGE_WINDOW_SECS",
+        "retention.usage_window_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_RETENTION_USAGE_CLEANUP_INTERVAL_SECS",
+        "retention.usage_cleanup_interval_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_REACHABILITY_HEARTBEAT_STALE_SECS",
+        "reachability.heartbeat_stale_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_REACHABILITY_SWEEP_INTERVAL_SECS",
+        "reachability.sweep_interval_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_REACHABILITY_RESCHEDULE_ON_UNREACHABLE",
+        "reachability.reschedule_on_unreachable",
+        false,
+    ),
+    ("FLEDX_CP_PORTS_AUTO_ASSIGN", "ports.auto_assign", false),
+    ("FLEDX_CP_PORTS_RANGE_START", "ports.range_start", false),
+    ("FLEDX_CP_PORTS_RANGE_END", "ports.range_end", false),
+    ("FLEDX_CP_PORTS_PUBLIC_HOST", "ports.public_host", false),
+    (
+        "FLEDX_CP_VOLUMES_ALLOWED_HOST_PREFIXES",
+        "volumes.allowed_host_prefixes",
+        true,
+    ),
+    (
+        "FLEDX_CP_COMPATIBILITY_MIN_AGENT_VERSION",
+        "compatibility.min_agent_version",
+        false,
+    ),
+    (
+        "FLEDX_CP_COMPATIBILITY_MAX_AGENT_VERSION",
+        "compatibility.max_agent_version",
+        false,
+    ),
+    (
+        "FLEDX_CP_COMPATIBILITY_UPGRADE_URL",
+        "compatibility.upgrade_url",
+        false,
+    ),
+    (
+        "FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY",
+        "features.enforce_agent_compatibility",
+        false,
+    ),
+    (
+        "FLEDX_CP_FEATURES_MIGRATIONS_DRY_RUN_ON_START",
+        "features.migrations_dry_run_on_start",
+        false,
+    ),
+];
 
 fn default_tunnel_connect_timeout_secs() -> u64 {
     10
@@ -304,14 +476,8 @@ impl Default for ReachabilityConfig {
 }
 
 pub fn load() -> anyhow::Result<AppConfig> {
-    let env = config::Environment::with_prefix(ENV_PREFIX)
-        .separator("__")
-        // Keep try_parsing disabled so numeric token strings are not coerced.
-        .try_parsing(false);
-
-    let builder = config::Config::builder()
+    let mut builder = config::Config::builder()
         .add_source(config::File::with_name("config").required(false))
-        .add_source(env)
         .set_default("server.host", "0.0.0.0")?
         .set_default("server.port", 8080)?
         .set_default("tunnel.advertised_host", "127.0.0.1")?
@@ -364,6 +530,23 @@ pub fn load() -> anyhow::Result<AppConfig> {
         .set_default("features.enforce_agent_compatibility", true)?
         .set_default("features.migrations_dry_run_on_start", false)?;
 
+    // Override with environment variables using single-underscore format.
+    for (env_key, cfg_key, is_list) in ENV_OVERRIDES {
+        if let Ok(value) = env::var(env_key) {
+            if *is_list {
+                let entries: Vec<String> = value
+                    .split(',')
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                    .map(String::from)
+                    .collect();
+                builder = builder.set_override(cfg_key, entries)?;
+            } else {
+                builder = builder.set_override(cfg_key, value)?;
+            }
+        }
+    }
+
     let cfg = builder.build()?;
     let mut app: AppConfig = cfg.try_deserialize()?;
     app.tunnel.advertised_host = app.tunnel.advertised_host.trim().to_string();
@@ -390,7 +573,7 @@ mod tests {
 
     fn with_control_plane_env(vars: &[(&str, &str)], test: impl FnOnce() + panic::UnwindSafe) {
         let _guard = ENV_LOCK.lock().expect("env mutex poisoned");
-        let prefix = format!("{}__", ENV_PREFIX);
+        let prefix = format!("{}_", ENV_PREFIX);
 
         let existing: Vec<(String, String)> = env::vars()
             .filter(|(key, _)| key.starts_with(&prefix))
@@ -421,9 +604,9 @@ mod tests {
     fn numeric_tokens_remain_strings() {
         with_control_plane_env(
             &[
-                ("FLEDX_CP__REGISTRATION__TOKEN", "123456"),
-                ("FLEDX_CP__OPERATOR__TOKENS", "1111,2222"),
-                ("FLEDX_CP__TOKENS__PEPPER", "9999"),
+                ("FLEDX_CP_REGISTRATION_TOKEN", "123456"),
+                ("FLEDX_CP_OPERATOR_TOKENS", "1111,2222"),
+                ("FLEDX_CP_TOKENS_PEPPER", "9999"),
             ],
             || {
                 let cfg = load().expect("config loads");
@@ -442,10 +625,10 @@ mod tests {
     fn numeric_and_bool_env_values_still_parse() {
         with_control_plane_env(
             &[
-                ("FLEDX_CP__SERVER__PORT", "9090"),
-                ("FLEDX_CP__REGISTRATION__RATE_LIMIT_PER_MINUTE", "45"),
-                ("FLEDX_CP__LIMITS__MAX_FIELD_LEN", "512"),
-                ("FLEDX_CP__REACHABILITY__RESCHEDULE_ON_UNREACHABLE", "false"),
+                ("FLEDX_CP_SERVER_PORT", "9090"),
+                ("FLEDX_CP_REGISTRATION_RATE_LIMIT_PER_MINUTE", "45"),
+                ("FLEDX_CP_LIMITS_MAX_FIELD_LEN", "512"),
+                ("FLEDX_CP_REACHABILITY_RESCHEDULE_ON_UNREACHABLE", "false"),
             ],
             || {
                 let cfg = load().expect("config loads");
@@ -466,8 +649,8 @@ mod tests {
 
         with_control_plane_env(
             &[
-                ("FLEDX_CP__FEATURES__ENFORCE_AGENT_COMPATIBILITY", "false"),
-                ("FLEDX_CP__FEATURES__MIGRATIONS_DRY_RUN_ON_START", "true"),
+                ("FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY", "false"),
+                ("FLEDX_CP_FEATURES_MIGRATIONS_DRY_RUN_ON_START", "true"),
             ],
             || {
                 let cfg = load().expect("config loads");

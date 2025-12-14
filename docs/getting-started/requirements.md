@@ -20,7 +20,7 @@ This page lists the system requirements and prerequisites for running Distribute
 ### Ports
 
 - **8080** (HTTP) or **8443** (HTTPS) for API, UI, and agent communication
-- Configurable via `FLEDX_CP__SERVER__PORT`
+- Configurable via `FLEDX_CP_SERVER_PORT`
 
 ## Node Agent Requirements
 
@@ -80,7 +80,7 @@ If Docker is not installed, follow the [official Docker installation guide](http
 ### TLS/HTTPS
 
 - **Production:** TLS termination via reverse proxy (nginx, Caddy, Traefik) required
-- **Development:** Insecure HTTP mode available with `FLEDX_AGENT__ALLOW_INSECURE_HTTP=true`
+- **Development:** Insecure HTTP mode available with `FLEDX_AGENT_ALLOW_INSECURE_HTTP=true`
 
 ## Security Requirements
 

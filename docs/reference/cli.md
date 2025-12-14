@@ -9,9 +9,9 @@ The `fledx` CLI is the primary command-line tool for managing Distributed Edge H
 Before using the CLI, configure your environment:
 
 ```bash
-export FLEDX_CONTROL_PLANE_URL=https://control-plane.example.com
-export FLEDX_OPERATOR_TOKEN=your-operator-token-here
-export FLEDX_REGISTRATION_TOKEN=your-registration-token-here
+export FLEDX_CLI_CONTROL_PLANE_URL=https://control-plane.example.com
+export FLEDX_CLI_OPERATOR_TOKEN=your-operator-token-here
+export FLEDX_CLI_REGISTRATION_TOKEN=your-registration-token-here
 ```
 
 Add these to your `~/.bashrc` or `~/.zshrc` for persistence.
@@ -22,7 +22,7 @@ Add these to your `~/.bashrc` or `~/.zshrc` for persistence.
 
 ```bash
 # Control plane health
-curl $FLEDX_CONTROL_PLANE_URL/health
+curl $FLEDX_CLI_CONTROL_PLANE_URL/health
 
 # List all nodes
 fledx nodes status
@@ -74,7 +74,7 @@ Step-by-step guide to deploying your first application:
 
 ```bash
 # 1. Verify control plane is healthy
-curl $FLEDX_CONTROL_PLANE_URL/health
+curl $FLEDX_CLI_CONTROL_PLANE_URL/health
 
 # 2. Check available nodes
 fledx nodes status --wide
@@ -260,9 +260,9 @@ All commands support these global flags:
 
 ### Environment Variables
 
-- `FLEDX_CONTROL_PLANE_URL` - Control plane URL (required)
-- `FLEDX_OPERATOR_TOKEN` - Operator authentication token
-- `FLEDX_REGISTRATION_TOKEN` - Node registration token
+- `FLEDX_CLI_CONTROL_PLANE_URL` - Control plane URL (required)
+- `FLEDX_CLI_OPERATOR_TOKEN` - Operator authentication token
+- `FLEDX_CLI_REGISTRATION_TOKEN` - Node registration token
 
 ## List & status commands
 

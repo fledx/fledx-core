@@ -11,8 +11,8 @@ fn configs_create_rejects_invalid_env_file_lines() {
     fs::write(&env_path, "GOOD=ok\nbad-line\n").expect("write env");
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", "http://127.0.0.1:9")
-        .env("FLEDX_OPERATOR_TOKEN", "test-token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", "http://127.0.0.1:9")
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "test-token")
         .args([
             "configs",
             "create",
@@ -51,8 +51,8 @@ fn configs_create_rejects_duplicate_keys_case_insensitive() {
     fs::write(&env_path, "FOO=from-file\n").expect("write env");
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", "http://127.0.0.1:9")
-        .env("FLEDX_OPERATOR_TOKEN", "test-token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", "http://127.0.0.1:9")
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "test-token")
         .args([
             "configs",
             "create",
@@ -85,8 +85,8 @@ fn configs_create_rejects_oversized_keys_and_values() {
 
     let key_arg = format!("{}=ok", long_key);
     let key_output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", "http://127.0.0.1:9")
-        .env("FLEDX_OPERATOR_TOKEN", "test-token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", "http://127.0.0.1:9")
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "test-token")
         .args([
             "configs",
             "create",
@@ -110,8 +110,8 @@ fn configs_create_rejects_oversized_keys_and_values() {
 
     let value_arg = format!("KEY={}", long_value);
     let value_output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", "http://127.0.0.1:9")
-        .env("FLEDX_OPERATOR_TOKEN", "test-token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", "http://127.0.0.1:9")
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "test-token")
         .args([
             "configs",
             "create",

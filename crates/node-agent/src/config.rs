@@ -1,6 +1,7 @@
 use config::{Value, ValueKind};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::env;
 use uuid::Uuid;
 
 pub const ENV_PREFIX: &str = "FLEDX_AGENT";
@@ -220,6 +221,232 @@ impl Default for TunnelConfig {
     }
 }
 
+enum EnvKind {
+    String,
+    List,
+    Labels,
+}
+
+// (ENV_NAME, config_key, kind)
+const ENV_OVERRIDES: &[(&str, &str, EnvKind)] = &[
+    (
+        "FLEDX_AGENT_CONTROL_PLANE_URL",
+        "control_plane_url",
+        EnvKind::String,
+    ),
+    ("FLEDX_AGENT_NODE_ID", "node_id", EnvKind::String),
+    ("FLEDX_AGENT_NODE_TOKEN", "node_token", EnvKind::String),
+    ("FLEDX_AGENT_SECRETS_DIR", "secrets_dir", EnvKind::String),
+    (
+        "FLEDX_AGENT_SECRETS_PREFIX",
+        "secrets_prefix",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_HEARTBEAT_INTERVAL_SECS",
+        "heartbeat_interval_secs",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_HEARTBEAT_TIMEOUT_SECS",
+        "heartbeat_timeout_secs",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_HEARTBEAT_MAX_RETRIES",
+        "heartbeat_max_retries",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_HEARTBEAT_BACKOFF_MS",
+        "heartbeat_backoff_ms",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_HEARTBEAT_MAX_METRICS",
+        "heartbeat_max_metrics",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RECONCILE_INTERVAL_SECS",
+        "reconcile_interval_secs",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_DOCKER_RECONNECT_BACKOFF_MS",
+        "docker_reconnect_backoff_ms",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_DOCKER_RECONNECT_BACKOFF_MAX_MS",
+        "docker_reconnect_backoff_max_ms",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESTART_BACKOFF_MS",
+        "restart_backoff_ms",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESTART_BACKOFF_MAX_MS",
+        "restart_backoff_max_ms",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESTART_FAILURE_LIMIT",
+        "restart_failure_limit",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESOURCE_SAMPLE_INTERVAL_SECS",
+        "resource_sample_interval_secs",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESOURCE_SAMPLE_WINDOW",
+        "resource_sample_window",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESOURCE_SAMPLE_MAX_CONCURRENCY",
+        "resource_sample_max_concurrency",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESOURCE_SAMPLE_BACKOFF_MS",
+        "resource_sample_backoff_ms",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_RESOURCE_SAMPLE_BACKOFF_MAX_MS",
+        "resource_sample_backoff_max_ms",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_ALLOW_INSECURE_HTTP",
+        "allow_insecure_http",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY",
+        "tls_insecure_skip_verify",
+        EnvKind::String,
+    ),
+    ("FLEDX_AGENT_CA_CERT_PATH", "ca_cert_path", EnvKind::String),
+    (
+        "FLEDX_AGENT_SERVICE_IDENTITY_DIR",
+        "service_identity_dir",
+        EnvKind::String,
+    ),
+    ("FLEDX_AGENT_METRICS_HOST", "metrics_host", EnvKind::String),
+    ("FLEDX_AGENT_METRICS_PORT", "metrics_port", EnvKind::String),
+    ("FLEDX_AGENT_ARCH", "arch", EnvKind::String),
+    ("FLEDX_AGENT_OS", "os", EnvKind::String),
+    (
+        "FLEDX_AGENT_TUNNEL_ENDPOINT_HOST",
+        "tunnel.endpoint_host",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_TUNNEL_ENDPOINT_PORT",
+        "tunnel.endpoint_port",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_TUNNEL_USE_TLS",
+        "tunnel.use_tls",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_TUNNEL_CONNECT_TIMEOUT_SECS",
+        "tunnel.connect_timeout_secs",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_TUNNEL_HEARTBEAT_INTERVAL_SECS",
+        "tunnel.heartbeat_interval_secs",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_TUNNEL_HEARTBEAT_TIMEOUT_SECS",
+        "tunnel.heartbeat_timeout_secs",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_TUNNEL_TOKEN_HEADER",
+        "tunnel.token_header",
+        EnvKind::String,
+    ),
+    ("FLEDX_AGENT_PUBLIC_HOST", "public_host", EnvKind::String),
+    ("FLEDX_AGENT_PUBLIC_IP", "public_ip", EnvKind::String),
+    (
+        "FLEDX_AGENT_GATEWAY_ENABLED",
+        "gateway.enabled",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_GATEWAY_ENVOY_IMAGE",
+        "gateway.envoy_image",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_GATEWAY_ADMIN_PORT",
+        "gateway.admin_port",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_GATEWAY_LISTENER_PORT",
+        "gateway.listener_port",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_GATEWAY_XDS_HOST",
+        "gateway.xds_host",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_GATEWAY_XDS_PORT",
+        "gateway.xds_port",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES",
+        "allowed_volume_prefixes",
+        EnvKind::List,
+    ),
+    ("FLEDX_AGENT_LABELS", "labels", EnvKind::Labels),
+    (
+        "FLEDX_AGENT_VOLUME_DATA_DIR",
+        "volume_data_dir",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_CAPACITY_CPU_MILLIS",
+        "capacity_cpu_millis",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_CAPACITY_MEMORY_BYTES",
+        "capacity_memory_bytes",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_FORCE_EMPTY_LABELS",
+        "force_empty_labels",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_FORCE_EMPTY_CAPACITY",
+        "force_empty_capacity",
+        EnvKind::String,
+    ),
+    (
+        "FLEDX_AGENT_CLEANUP_ON_SHUTDOWN",
+        "cleanup_on_shutdown",
+        EnvKind::String,
+    ),
+];
+
 impl TunnelConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.endpoint_host.trim().is_empty() {
@@ -245,13 +472,8 @@ impl TunnelConfig {
 }
 
 pub fn load() -> anyhow::Result<AppConfig> {
-    let builder = config::Config::builder()
+    let mut builder = config::Config::builder()
         .add_source(config::File::with_name("config").required(false))
-        .add_source(
-            config::Environment::with_prefix(ENV_PREFIX)
-                .separator("__")
-                .list_separator(","),
-        )
         // Gateway defaults
         .set_default("gateway.enabled", false)?
         .set_default("gateway.admin_port", default_gateway_admin_port())?
@@ -310,6 +532,39 @@ pub fn load() -> anyhow::Result<AppConfig> {
         .set_default("cleanup_on_shutdown", false)?
         // gateway defaults set above
         ;
+
+    // Override with single-underscore environment variables.
+    for (env_key, cfg_key, kind) in ENV_OVERRIDES {
+        if let Ok(value) = env::var(env_key) {
+            match kind {
+                EnvKind::List => {
+                    let entries: Vec<String> = value
+                        .split(',')
+                        .map(|s| s.trim())
+                        .filter(|s| !s.is_empty())
+                        .map(String::from)
+                        .collect();
+                    builder = builder.set_override(cfg_key, entries)?;
+                }
+                EnvKind::Labels => {
+                    let mut labels = HashMap::new();
+                    for entry in value.split(',') {
+                        let trimmed = entry.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        if let Some((k, v)) = trimmed.split_once('=') {
+                            labels.insert(k.trim().to_string(), v.trim().to_string());
+                        }
+                    }
+                    builder = builder.set_override(cfg_key, labels)?;
+                }
+                EnvKind::String => {
+                    builder = builder.set_override(cfg_key, value)?;
+                }
+            }
+        }
+    }
 
     let mut cfg = builder.build()?;
 

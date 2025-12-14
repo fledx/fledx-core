@@ -221,10 +221,10 @@ fledx deployments create \
 
 ### Security
 
-Only allowed prefixes (set in `FLEDX_AGENT__ALLOWED_VOLUME_PREFIXES`) can be mounted:
+Only allowed prefixes (set in `FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES`) can be mounted:
 
 ```bash
-FLEDX_AGENT__ALLOWED_VOLUME_PREFIXES=/var/lib/fledx/volumes
+FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=/var/lib/fledx/volumes
 ```
 
 ## Multi-Container Applications

@@ -140,17 +140,17 @@ Global application requiring presence in multiple geographic regions.
 
 ```bash
 # US nodes
-export FLEDX_CONTROL_PLANE_URL=https://control-us.example.com
+export FLEDX_CLI_CONTROL_PLANE_URL=https://control-us.example.com
 fledx nodes register --name us-node-1
 fledx nodes register --name us-node-2
 
 # EU nodes
-export FLEDX_CONTROL_PLANE_URL=https://control-eu.example.com
+export FLEDX_CLI_CONTROL_PLANE_URL=https://control-eu.example.com
 fledx nodes register --name eu-node-1
 fledx nodes register --name eu-node-2
 
 # AP nodes
-export FLEDX_CONTROL_PLANE_URL=https://control-ap.example.com
+export FLEDX_CLI_CONTROL_PLANE_URL=https://control-ap.example.com
 fledx nodes register --name ap-node-1
 fledx nodes register --name ap-node-2
 ```
@@ -160,8 +160,8 @@ fledx nodes register --name ap-node-2
 ```bash
 # Deploy script for all regions
 for region in us eu ap; do
-  export FLEDX_CONTROL_PLANE_URL=https://control-${region}.example.com
-  export FLEDX_OPERATOR_TOKEN=$OPERATOR_TOKEN_${region}
+  export FLEDX_CLI_CONTROL_PLANE_URL=https://control-${region}.example.com
+  export FLEDX_CLI_OPERATOR_TOKEN=$OPERATOR_TOKEN_${region}
 
   fledx deployments create \
     --name web-app \
@@ -293,7 +293,7 @@ fledx deployments create \
 # All nodes connect to cloud control plane via VPN
 
 # On-premise nodes configuration:
-FLEDX_AGENT__CONTROL_PLANE_URL=https://control-plane.internal.vpc:8080
+FLEDX_AGENT_CONTROL_PLANE_URL=https://control-plane.internal.vpc:8080
 ```
 
 ### Benefits
@@ -595,7 +595,7 @@ Production:                      Staging:
 
 ```bash
 # Staging control plane (separate instance)
-export FLEDX_CONTROL_PLANE_URL=https://staging-control.example.com
+export FLEDX_CLI_CONTROL_PLANE_URL=https://staging-control.example.com
 
 # Register staging nodes with environment label
 fledx nodes register --name staging-node-1 --label env=staging

@@ -25,25 +25,25 @@ The API follows semantic versioning. Breaking changes will increment the major v
 
 ### Operator Tokens
 
-All operator endpoints require bearer token authentication via the `authorization` header (header name is configurable via `FLEDX_CP__OPERATOR__HEADER_NAME`).
+All operator endpoints require bearer token authentication via the `authorization` header (header name is configurable via `FLEDX_CP_OPERATOR_HEADER_NAME`).
 
 **Request format:**
 
 ```bash
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments"
 ```
 
 **Environment setup:**
 
 ```bash
-export FLEDX_CONTROL_PLANE_URL=https://control-plane.example.com
-export FLEDX_OPERATOR_TOKEN=your-operator-token-here
+export FLEDX_CLI_CONTROL_PLANE_URL=https://control-plane.example.com
+export FLEDX_CLI_OPERATOR_TOKEN=your-operator-token-here
 ```
 
 **Token management:**
 
-- Tokens are configured in the control plane: `FLEDX_CP__OPERATOR__TOKENS=token1,token2`
+- Tokens are configured in the control plane: `FLEDX_CP_OPERATOR_TOKENS=token1,token2`
 - Multiple tokens supported (comma-separated)
 - Rotate tokens by updating control plane config and restarting
 
@@ -61,7 +61,7 @@ The following endpoints do not require authentication:
 **Check control plane health:**
 
 ```bash
-curl -fsSL "$FLEDX_CONTROL_PLANE_URL/health"
+curl -fsSL "$FLEDX_CLI_CONTROL_PLANE_URL/health"
 ```
 
 **Response:**
@@ -78,8 +78,8 @@ curl -fsSL "$FLEDX_CONTROL_PLANE_URL/health"
 **List all nodes:**
 
 ```bash
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/nodes?limit=50&offset=0"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/nodes?limit=50&offset=0"
 ```
 
 **Response:**
@@ -111,9 +111,9 @@ curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
 **Simple deployment:**
 
 ```bash
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "name": "nginx-web",
     "image": "nginx:alpine",
@@ -147,9 +147,9 @@ curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
 **Deployment with environment variables:**
 
 ```bash
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "name": "my-app",
     "image": "my-app:v1.0",
@@ -169,9 +169,9 @@ curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
 
 ```bash
 # Using yq to convert YAML to JSON
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d "$(yq -o=json < deployment.yaml)"
 ```
 
@@ -180,28 +180,28 @@ curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
 **List all deployments:**
 
 ```bash
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments?limit=50&offset=0"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments?limit=50&offset=0"
 ```
 
 **Get specific deployment:**
 
 ```bash
 DEPLOYMENT_ID="c2d4e1f5-1b2c-4e5a-8b1f-9b4d1e82964b"
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID"
 ```
 
 **Filter by status:**
 
 ```bash
 # Only running deployments
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments?status=running"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments?status=running"
 
 # Failed deployments
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments?status=failed"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments?status=failed"
 ```
 
 ### 4. Update a Deployment
@@ -210,9 +210,9 @@ curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
 
 ```bash
 DEPLOYMENT_ID="c2d4e1f5-1b2c-4e5a-8b1f-9b4d1e82964b"
-curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
+curl -X PATCH "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "image": "nginx:1.25-alpine"
   }'
@@ -221,9 +221,9 @@ curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
 **Scale replicas:**
 
 ```bash
-curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
+curl -X PATCH "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "replicas": 5
   }'
@@ -232,9 +232,9 @@ curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
 **Update environment variables:**
 
 ```bash
-curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
+curl -X PATCH "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "environment": {
       "NODE_ENV": "production",
@@ -248,9 +248,9 @@ curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
 **Stop (without deleting):**
 
 ```bash
-curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
+curl -X PATCH "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "desired_state": "stopped"
   }'
@@ -259,8 +259,8 @@ curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
 **Delete permanently:**
 
 ```bash
-curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN"
+curl -X DELETE "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN"
 ```
 
 ### 6. Node Management
@@ -268,9 +268,9 @@ curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" \
 **Register a new node:**
 
 ```bash
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/nodes/register" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/nodes/register" \
   -H "content-type: application/json" \
-  -H "x-registration-token: $FLEDX_REGISTRATION_TOKEN" \
+  -H "x-registration-token: $FLEDX_CLI_REGISTRATION_TOKEN" \
   -d '{
     "name": "edge-1",
     "arch": "amd64",
@@ -292,9 +292,9 @@ curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/nodes/register" \
 
 ```bash
 NODE_ID="8e7f3d4a-8d7b-4fdc-91cf-2c1f0d6b9a1a"
-curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/nodes/$NODE_ID" \
+curl -X PATCH "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/nodes/$NODE_ID" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "labels": {
       "region": "eu-west",
@@ -307,8 +307,8 @@ curl -X PATCH "$FLEDX_CONTROL_PLANE_URL/api/v1/nodes/$NODE_ID" \
 **Delete a node:**
 
 ```bash
-curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/nodes/$NODE_ID" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN"
+curl -X DELETE "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/nodes/$NODE_ID" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN"
 ```
 
 ### 7. View Logs
@@ -316,8 +316,8 @@ curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/nodes/$NODE_ID" \
 **Get deployment logs:**
 
 ```bash
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/logs?resource_type=deployment&resource_id=$DEPLOYMENT_ID&limit=100"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/logs?resource_type=deployment&resource_id=$DEPLOYMENT_ID&limit=100"
 ```
 
 **Response:**
@@ -345,9 +345,9 @@ Configuration objects store environment variables and secrets that can be attach
 **Create a configuration:**
 
 ```bash
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/configs" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "name": "app-config",
     "version": 1,
@@ -378,8 +378,8 @@ curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/configs" \
 **List configurations:**
 
 ```bash
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/configs?limit=50&offset=0"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs?limit=50&offset=0"
 ```
 
 **Response:**
@@ -405,16 +405,16 @@ curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
 
 ```bash
 CONFIG_ID="a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID"
 ```
 
 **Update a configuration:**
 
 ```bash
-curl -X PUT "$FLEDX_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID" \
+curl -X PUT "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "name": "app-config",
     "version": 2,
@@ -428,29 +428,29 @@ curl -X PUT "$FLEDX_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID" \
 **Attach config to deployment:**
 
 ```bash
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID/deployments/$DEPLOYMENT_ID" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN"
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID/deployments/$DEPLOYMENT_ID" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN"
 ```
 
 **Attach config to node:**
 
 ```bash
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID/nodes/$NODE_ID" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN"
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID/nodes/$NODE_ID" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN"
 ```
 
 **Detach config from deployment:**
 
 ```bash
-curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID/deployments/$DEPLOYMENT_ID" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN"
+curl -X DELETE "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID/deployments/$DEPLOYMENT_ID" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN"
 ```
 
 **Delete configuration:**
 
 ```bash
-curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN"
+curl -X DELETE "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/configs/$CONFIG_ID" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN"
 ```
 
 ## Advanced Patterns
@@ -466,8 +466,8 @@ Integrate Fledx deployments into your CI/CD pipeline using the REST API:
 # deploy.sh - Generic deployment script for CI/CD
 
 # Set from CI/CD environment variables
-CONTROL_PLANE_URL="${FLEDX_CONTROL_PLANE_URL}"
-OPERATOR_TOKEN="${FLEDX_OPERATOR_TOKEN}"
+CONTROL_PLANE_URL="${FLEDX_CLI_CONTROL_PLANE_URL}"
+OPERATOR_TOKEN="${FLEDX_CLI_OPERATOR_TOKEN}"
 APP_NAME="${APP_NAME:-my-app}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 REPLICAS="${REPLICAS:-3}"
@@ -496,8 +496,8 @@ echo "Monitor at: ${CONTROL_PLANE_URL}/ui"
 Configure these in your CI/CD system's secret management:
 
 ```bash
-FLEDX_CONTROL_PLANE_URL=https://control-plane.example.com
-FLEDX_OPERATOR_TOKEN=your-operator-token
+FLEDX_CLI_CONTROL_PLANE_URL=https://control-plane.example.com
+FLEDX_CLI_OPERATOR_TOKEN=your-operator-token
 APP_NAME=my-application
 IMAGE_TAG=v1.2.3
 REPLICAS=3
@@ -521,9 +521,9 @@ deploy:
 
 ```bash
 # Deploy blue version
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "name": "app-blue",
     "image": "my-app:v1.0",
@@ -532,9 +532,9 @@ curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
   }'
 
 # Deploy green version (different port)
-curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
+curl -X POST "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" \
   -H "content-type: application/json" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
   -d '{
     "name": "app-green",
     "image": "my-app:v2.0",
@@ -544,8 +544,8 @@ curl -X POST "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" \
 
 # Test green version, then switch load balancer
 # Finally delete blue:
-curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/app-blue" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN"
+curl -X DELETE "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/app-blue" \
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN"
 ```
 
 ## Error Handling
@@ -575,8 +575,8 @@ curl -X DELETE "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/app-blue" \
 Every response includes an `x-request-id` header for debugging:
 
 ```bash
-curl -v -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments" 2>&1 | grep x-request-id
+curl -v -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments" 2>&1 | grep x-request-id
 ```
 
 ## Rate Limiting
@@ -584,7 +584,7 @@ curl -v -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
 The API does not currently enforce rate limits for operator tokens. However, node registration can be rate-limited via:
 
 ```
-FLEDX_CP__REGISTRATION__RATE_LIMIT_PER_MINUTE=10
+FLEDX_CP_REGISTRATION_RATE_LIMIT_PER_MINUTE=10
 ```
 
 ## Pagination
@@ -598,10 +598,10 @@ List endpoints support pagination:
 
 ```bash
 # Page 1 (first 50 items)
-curl "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments?limit=50&offset=0"
+curl "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments?limit=50&offset=0"
 
 # Page 2 (items 51-100)
-curl "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments?limit=50&offset=50"
+curl "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments?limit=50&offset=50"
 ```
 
 ## Best Practices
@@ -613,16 +613,16 @@ curl "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments?limit=50&offset=50"
 curl -H "authorization: Bearer my-secret-token" ...
 
 # Good - use environment variables
-export FLEDX_OPERATOR_TOKEN="$(cat /secure/location/token)"
-curl -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" ...
+export FLEDX_CLI_OPERATOR_TOKEN="$(cat /secure/location/token)"
+curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" ...
 ```
 
 ### 2. Handle Errors Gracefully
 
 ```bash
 response=$(curl -s -w "\n%{http_code}" \
-  -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-  "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments")
+  -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+  "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments")
 
 http_code=$(echo "$response" | tail -n1)
 body=$(echo "$response" | sed '$d')
@@ -651,8 +651,8 @@ fi
 # Poll until deployment is running
 DEPLOYMENT_ID="c2d4e1f5-1b2c-4e5a-8b1f-9b4d1e82964b"
 while true; do
-  status=$(curl -s -H "authorization: Bearer $FLEDX_OPERATOR_TOKEN" \
-    "$FLEDX_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" | jq -r '.status')
+  status=$(curl -s -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
+    "$FLEDX_CLI_CONTROL_PLANE_URL/api/v1/deployments/$DEPLOYMENT_ID" | jq -r '.status')
 
   echo "Status: $status"
 

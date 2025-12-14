@@ -71,8 +71,8 @@ fn configs_attach_deduplicates_ids_and_sends_one_request_each() {
     });
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args([
             "configs",
             "attach",
@@ -148,8 +148,8 @@ fn configs_detach_reports_idempotent_state() {
     });
 
     let output = Command::new(assert_cmd::cargo::cargo_bin!("fledx"))
-        .env("FLEDX_CONTROL_PLANE_URL", format!("http://{}", addr))
-        .env("FLEDX_OPERATOR_TOKEN", "token")
+        .env("FLEDX_CLI_CONTROL_PLANE_URL", format!("http://{}", addr))
+        .env("FLEDX_CLI_OPERATOR_TOKEN", "token")
         .args([
             "configs",
             "detach",

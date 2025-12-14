@@ -9,9 +9,9 @@ This guide covers setting up secure transport, token handling, and network expos
 > **WARNING:** Operator and registration tokens provide full administrative access. Store them securely and rotate regularly.
 
 - Operator tokens: bearer-style secrets used by CLI, UI, and API. Header name
-  defaults to `authorization`; override with `FLEDX_CP__OPERATOR__HEADER_NAME`.
+  defaults to `authorization`; override with `FLEDX_CP_OPERATOR_HEADER_NAME`.
 - Registration token: single secret required to enroll nodes
-  (`FLEDX_CP__REGISTRATION__TOKEN`).
+  (`FLEDX_CP_REGISTRATION_TOKEN`).
 - Node tokens: per-node secret issued at registration; used by agents to
   authenticate to the control plane.
 - Rotation:
@@ -22,14 +22,14 @@ This guide covers setting up secure transport, token handling, and network expos
 
 ## Transport Security
 
-> **WARNING:** Never use `FLEDX_AGENT__ALLOW_INSECURE_HTTP=true` or `FLEDX_AGENT__TLS_INSECURE_SKIP_VERIFY=true` in production. These settings disable critical security protections and expose your system to man-in-the-middle attacks.
+> **WARNING:** Never use `FLEDX_AGENT_ALLOW_INSECURE_HTTP=true` or `FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY=true` in production. These settings disable critical security protections and expose your system to man-in-the-middle attacks.
 
 - Terminate TLS at your reverse proxy (e.g., nginx, Caddy, Traefik) in front of
   the control plane. Upstream to the control plane uses HTTP by default.
-- Agents should reach the proxy over HTTPS; avoid `FLEDX_AGENT__ALLOW_INSECURE_HTTP`
+- Agents should reach the proxy over HTTPS; avoid `FLEDX_AGENT_ALLOW_INSECURE_HTTP`
   except in labs.
-- For private CAs, supply agents with the CA bundle (`FLEDX_AGENT__CA_CERT_PATH`)
-  and keep `FLEDX_AGENT__TLS_INSECURE_SKIP_VERIFY` false.
+- For private CAs, supply agents with the CA bundle (`FLEDX_AGENT_CA_CERT_PATH`)
+  and keep `FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY` false.
 
 ## Network Exposure
 
@@ -47,20 +47,20 @@ This guide covers setting up secure transport, token handling, and network expos
 - Store tokens in environment files with `600` permissions owned by the service
   account. Avoid shell history leaks (use `ENV=... ExecStart` env files).
 - For configs, prefer secret-backed entries and mount paths scoped per
-  deployment. Keep `FLEDX_AGENT__SECRETS_DIR` on a tmpfs if feasible.
+  deployment. Keep `FLEDX_AGENT_SECRETS_DIR` on a tmpfs if feasible.
 - Avoid logging secrets; set `RUST_LOG=info` (not `debug`) in production.
 
 ## Hardening Tips
 
 - Run control plane and agents under dedicated users (`fledx`) without login
   shells; set `LimitNOFILE` to handle many connections.
-- Pin allowed host volume prefixes for agents: `FLEDX_AGENT__ALLOWED_VOLUME_PREFIXES`
+- Pin allowed host volume prefixes for agents: `FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES`
   (default `/var/lib/fledx/volumes`).
 - Enforce version compatibility:
-  `FLEDX_CP__FEATURES__ENFORCE_AGENT_COMPATIBILITY=true` plus min/max agent
+  `FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY=true` plus min/max agent
   versions as needed.
 - Rate limit registration:
-  `FLEDX_CP__REGISTRATION__RATE_LIMIT_PER_MINUTE=<number>`.
+  `FLEDX_CP_REGISTRATION_RATE_LIMIT_PER_MINUTE=<number>`.
 
 ## Incident Basics
 
