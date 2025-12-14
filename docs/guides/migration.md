@@ -533,7 +533,7 @@ Fledx doesn't include a built-in load balancer. Use external solutions:
 
 ```bash
 # Option 1: nginx reverse proxy
-upstream deh_backend {
+upstream fledx_backend {
     server node1.example.com:8080;
     server node2.example.com:8080;
     server node3.example.com:8080;
@@ -542,7 +542,7 @@ upstream deh_backend {
 server {
     listen 80;
     location / {
-        proxy_pass http://deh_backend;
+        proxy_pass http://fledx_backend;
     }
 }
 
@@ -552,7 +552,7 @@ node2.example.com:8080
 node3.example.com:8080
 
 # Option 3: HAProxy
-backend deh_nodes
+backend fledx_nodes
     server node1 node1.example.com:8080 check
     server node2 node2.example.com:8080 check
     server node3 node3.example.com:8080 check

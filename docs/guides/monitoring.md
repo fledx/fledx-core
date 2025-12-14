@@ -254,7 +254,7 @@ Create `alert.rules.yml`:
 
 ```yaml
 groups:
-  - name: deh_alerts
+  - name: fledx_alerts
     rules:
       # Control plane down
       - alert: ControlPlaneDown
