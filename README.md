@@ -5,9 +5,9 @@ containers across multiple edge nodes.
 
 ## Overview
 
-fledx-core is a production-ready edge computing platform that enables centralized management of containerized workloads
-across geographically distributed edge devices. Built with Rust for performance and reliability, it provides a complete
-solution for deploying, monitoring, and managing applications at the edge.
+fledx-core is a (not yet) production-ready edge computing platform that enables centralized management of containerized 
+workloads across geographically distributed edge devices. Built with Rust for performance and reliability, it provides 
+a complete solution for deploying, monitoring, and managing applications at the edge.
 
 ### Key Features
 
