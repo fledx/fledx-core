@@ -286,12 +286,3 @@ When reporting bugs, include:
 3. **Steps to reproduce** - Clear reproduction steps
 4. **Environment details** - OS, Docker version, hardware specs
 5. **Expected vs actual behavior** - What you expected and what happened
-
-### Where can I find information about upcoming features?
-
-For information about upcoming features and improvements, please refer to:
-
-- [Releases Documentation](releases/index.md) - Current and recent releases
-- Official release announcements from your distribution channel
-- Contact your support channel for feature requests and feedback
-

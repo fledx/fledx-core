@@ -90,14 +90,14 @@ sudo lvcreate -L 1G -s -n cp-snapshot /dev/vg0/fledx-data
 
 ```bash
 # Download new release (replace URL with actual release)
-wget https://releases.example.com/fledx/fledx-cp-v1.6.0-linux-amd64.tar.gz
+wget https://github.com/fledx/fledx-core/releases/download/v0.2.0/fledx-0.2.0-x86_64-linux.tar.gz
 
 # Verify checksum
-sha256sum fledx-cp-v1.6.0-linux-amd64.tar.gz
+sha256sum fledx-0.2.0-x86_64-linux.tar.gz
 # Compare with published checksum
 
 # Extract
-tar -xzf fledx-cp-v1.6.0-linux-amd64.tar.gz
+tar -xzf fledx-0.2.0-x86_64-linux.tar.gz
 ```
 
 #### Replace Binary
@@ -161,9 +161,9 @@ Upgrade agents **one at a time** to avoid service disruption.
 
 ```bash
 # On the node
-wget https://releases.example.com/fledx/fledx-agent-v1.6.0-linux-amd64.tar.gz
-sha256sum fledx-agent-v1.6.0-linux-amd64.tar.gz
-tar -xzf fledx-agent-v1.6.0-linux-amd64.tar.gz
+wget https://github.com/fledx/fledx-core/releases/download/v0.2.0/fledx-0.2.0-x86_64-linux.tar.gz
+sha256sum fledx-0.2.0-x86_64-linux.tar.gz
+tar -xzf fledx-0.2.0-x86_64-linux.tar.gz
 ```
 
 **Stop agent:**
@@ -451,9 +451,7 @@ Always review release notes before upgrading. Key items to check:
 - **Security Updates** - Critical patches
 
 Release notes are available in:
-- [Releases Documentation](../releases/index.md)
 - Project `CHANGELOG.md`
-- Official releases page provided by your distribution channel
 
 ## Automated Upgrade Tools
 

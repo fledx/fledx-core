@@ -41,7 +41,6 @@ Detailed reference documentation:
 ### Other Resources
 
 - **[FAQ](faq.md)** – Frequently asked questions
-- **[Releases](releases/index.md)** – Release notes and changelogs
 
 ## Who Should Use This Documentation
 
@@ -120,9 +119,6 @@ docs/
 │   ├── cli.md                 # CLI reference
 │   ├── ui.md                  # UI reference
 │   └── api.md                 # API reference
-│
-└── releases/
-    └── index.md               # Release notes
 ```
 
 ## Support & Feedback

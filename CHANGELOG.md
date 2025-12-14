@@ -5,7 +5,7 @@ All notable changes to fledx-core will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2025-12-15
 
 ### Breaking Changes
 
@@ -17,14 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       `FLEDX_OPERATOR_TOKEN` → `FLEDX_CLI_OPERATOR_TOKEN`)
 - Removed `FLEDX_TOKEN` environment variable alias - Use `FLEDX_CLI_OPERATOR_TOKEN` instead
 
-### Added
-
-### Changed
+### Fixes
 
 - CLI now sends `x-agent-version` during node registration to satisfy
   control-plane compatibility enforcement
-
-### Fixed
 
 ## [0.1.0] - 2025-12-14
 

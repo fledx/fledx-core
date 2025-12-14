@@ -1,6 +1,6 @@
 [package]
 name = "control-plane"
-version = "0.2.0-dev"
+version = "0.2.0"
 edition = "2021"
 license = "BUSL-1.1"
 description = "Distributed edge hosting control plane server - centralized orchestration for edge containers"
