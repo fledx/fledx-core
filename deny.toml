@@ -38,10 +38,10 @@ allow = [
 
 confidence-threshold = 0.8
 exceptions = [
-    { name = "cli", version = "*" , allow = ["BUSL-1.1"] },
-    { name = "common", version = "*", allow = ["BUSL-1.1"] },
-    { name = "control-plane", version = "*", allow = ["BUSL-1.1"] },
-    { name = "node-agent", version = "*", allow = ["BUSL-1.1"] },
+    { name = "cli", allow = ["BUSL-1.1"] },
+    { name = "common", allow = ["BUSL-1.1"] },
+    { name = "control-plane", allow = ["BUSL-1.1"] },
+    { name = "node-agent", allow = ["BUSL-1.1"] },
 ]
 
 [licenses.private]
