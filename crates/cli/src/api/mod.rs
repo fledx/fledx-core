@@ -5,6 +5,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::version;
+
 #[derive(Clone)]
 pub struct OperatorApi {
     client: Client,
@@ -132,7 +134,10 @@ pub async fn register_node(
     payload: &Value,
 ) -> Result<common_api::RegistrationResponse> {
     let url = format!("{}/api/v1/nodes/register", base.trim_end_matches('/'));
-    let mut req = client.post(url).json(payload);
+    let mut req = client
+        .post(url)
+        .json(payload)
+        .header("x-agent-version", version::VERSION);
     if let Some(token) = registration_token {
         req = req.bearer_auth(token);
     }

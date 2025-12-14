@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- CLI now sends `x-agent-version` during node registration to satisfy
+  control-plane compatibility enforcement
+
 ### Fixed
 
 ## [0.1.0] - 2025-12-14
