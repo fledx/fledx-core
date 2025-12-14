@@ -1,12 +1,17 @@
 {
-  "openapi": "3.0.3",
+  "openapi": "3.1.0",
   "info": {
     "title": "Distributed Edge Hosting API",
-    "description": "",
-    "license": {
-      "name": "BUSL-1.1"
+    "description": "Distributed edge hosting control plane server - centralized orchestration for edge containers",
+    "contact": {
+      "name": "Thomas Schmitz",
+      "email": "dev@tschmitz.de"
     },
-    "version": "0.1.0 (git 5c8a13b-dirty, dirty=true, built 2025-12-13T23:09:46Z)"
+    "license": {
+      "name": "BUSL-1.1",
+      "identifier": "BUSL-1.1"
+    },
+    "version": "0.2.0-dev (git 43e0863-dirty, dirty=true, built 2025-12-14T06:17:30Z)"
   },
   "paths": {
     "/api/v1/configs": {
@@ -23,7 +28,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "maximum": 100,
               "minimum": 1
             },
@@ -36,7 +40,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "minimum": 0
             },
             "example": 0
@@ -710,7 +713,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "minimum": 0
             }
           },
@@ -721,7 +723,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "minimum": 0
             }
           },
@@ -730,8 +731,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           }
         ],
@@ -967,7 +967,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "minimum": 0
             }
           }
@@ -1005,7 +1004,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "minimum": 0
             }
           },
@@ -1016,7 +1014,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "minimum": 0
             }
           },
@@ -1025,8 +1022,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "string",
-              "nullable": true
+              "type": "string"
             }
           }
         ],
@@ -1379,7 +1375,7 @@
             }
           },
           "413": {
-            "description": "Heartbeat payload exceeds CONTROL_PLANE__LIMITS__HEARTBEAT_BODY_BYTES",
+            "description": "Heartbeat payload exceeds FLEDX_CP__LIMITS__HEARTBEAT_BODY_BYTES",
             "content": {
               "application/json": {
                 "schema": {
@@ -1425,7 +1421,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "maximum": 100,
               "minimum": 1
             },
@@ -1439,7 +1434,6 @@
             "schema": {
               "type": "integer",
               "format": "int32",
-              "nullable": true,
               "minimum": 0
             },
             "example": 0
@@ -1451,8 +1445,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "nullable": true
+              "format": "uuid"
             },
             "example": "00000000-0000-0000-0000-00000000cafe"
           },
@@ -1463,8 +1456,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "format": "uuid",
-              "nullable": true
+              "format": "uuid"
             },
             "example": "00000000-0000-0000-0000-00000000beef"
           },
@@ -1476,7 +1468,6 @@
             "schema": {
               "type": "integer",
               "format": "int64",
-              "nullable": true,
               "minimum": 0
             },
             "example": 0
@@ -1488,8 +1479,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time",
-              "nullable": true
+              "format": "date-time"
             },
             "example": "2025-02-03T04:00:00Z"
           },
@@ -1500,8 +1490,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "format": "date-time",
-              "nullable": true
+              "format": "date-time"
             },
             "example": "2025-02-03T04:05:00Z"
           }
@@ -1586,7 +1575,10 @@
         "operationId": "metrics",
         "responses": {
           "200": {
-            "description": "Prometheus metrics"
+            "description": "Prometheus metrics",
+            "content": {
+              "text/plain": {}
+            }
           }
         }
       }
@@ -1627,17 +1619,21 @@
         "description": "CPU and memory hints attached to nodes and constraints.",
         "properties": {
           "cpu_millis": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "description": "CPU in milli-cores.",
-            "nullable": true,
             "minimum": 0
           },
           "memory_bytes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "description": "Memory in bytes.",
-            "nullable": true,
             "minimum": 0
           }
         }
@@ -1651,29 +1647,36 @@
         ],
         "properties": {
           "metadata": {
-            "$ref": "#/components/schemas/ConfigMetadata"
+            "$ref": "#/components/schemas/ConfigMetadata",
+            "description": "Config metadata."
           },
           "deployment_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
-            "description": "Attached deployment identifier (when applicable).",
-            "nullable": true
+            "description": "Attached deployment identifier (when applicable)."
           },
           "node_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
-            "description": "Attached node identifier (when applicable).",
-            "nullable": true
+            "description": "Attached node identifier (when applicable)."
           },
           "attached": {
             "type": "boolean",
             "description": "Whether the attachment exists after the operation."
           },
           "attached_at": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Timestamp when the attachment was recorded.",
-            "nullable": true
+            "description": "Timestamp when the attachment was recorded."
           }
         },
         "example": {
@@ -1705,11 +1708,13 @@
             "minLength": 1
           },
           "version": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "description": "Optional version override (defaults to 1).",
             "example": 1,
-            "nullable": true,
             "minimum": 1
           },
           "entries": {
@@ -1748,7 +1753,8 @@
         ],
         "properties": {
           "metadata": {
-            "$ref": "#/components/schemas/ConfigMetadata"
+            "$ref": "#/components/schemas/ConfigMetadata",
+            "description": "Config metadata including version and timestamps."
           },
           "entries": {
             "type": "array",
@@ -1781,9 +1787,11 @@
             "description": "Nodes that reference this config (usually the requester only)."
           },
           "checksum": {
-            "type": "string",
-            "description": "Integrity hash of the config content.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Integrity hash of the config content."
           }
         },
         "example": {
@@ -1836,10 +1844,12 @@
             "maxLength": 4096
           },
           "secret_ref": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Secret reference (mutually exclusive with value).",
             "example": "db-password",
-            "nullable": true,
             "maxLength": 255,
             "minLength": 1
           }
@@ -1914,7 +1924,8 @@
         ],
         "properties": {
           "metadata": {
-            "$ref": "#/components/schemas/ConfigMetadata"
+            "$ref": "#/components/schemas/ConfigMetadata",
+            "description": "Config metadata."
           },
           "entries": {
             "type": "array",
@@ -1985,7 +1996,8 @@
         ],
         "properties": {
           "metadata": {
-            "$ref": "#/components/schemas/ConfigMetadata"
+            "$ref": "#/components/schemas/ConfigMetadata",
+            "description": "Config metadata."
           },
           "entry_count": {
             "type": "integer",
@@ -2034,23 +2046,30 @@
         "description": "Request payload to update/replace a config.",
         "properties": {
           "name": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional new name (must stay unique).",
             "example": "app-config-v2",
-            "nullable": true,
             "maxLength": 255,
             "minLength": 1
           },
           "version": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "description": "Optional explicit version (defaults to current + 1).",
             "example": 2,
-            "nullable": true,
             "minimum": 1
           },
           "entries": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/ConfigEntry"
             },
@@ -2060,11 +2079,13 @@
                 "key": "DATABASE_URL",
                 "value": "postgres://app:secret@db:5432/app?sslmode=disable"
               }
-            ],
-            "nullable": true
+            ]
           },
           "files": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/ConfigFile"
             },
@@ -2074,8 +2095,7 @@
                 "file_ref": "config-blobs/app-v2",
                 "path": "/etc/app/config.yaml"
               }
-            ],
-            "nullable": true
+            ]
           }
         }
       },
@@ -2155,44 +2175,57 @@
             "minimum": 0
           },
           "command": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             },
-            "description": "Optional command.",
-            "nullable": true
+            "description": "Optional command."
           },
           "env": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "description": "Optional environment variables.",
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "secret_env": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretEnv"
             },
-            "description": "Secret environment variable references.",
-            "nullable": true
+            "description": "Secret environment variable references."
           },
           "secret_files": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretFile"
             },
-            "description": "Secret file references.",
-            "nullable": true
+            "description": "Secret file references."
           },
           "ports": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/PortMapping"
             },
-            "description": "Port mappings for the deployment.",
-            "nullable": true
+            "description": "Port mappings for the deployment."
           },
           "requires_public_ip": {
             "type": "boolean",
@@ -2204,37 +2237,48 @@
             "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
           },
           "placement": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementHints",
+                "description": "Placement hints (best-effort)."
               }
-            ],
-            "nullable": true
+            ]
           },
           "volumes": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/VolumeMount"
             },
-            "description": "Filesystem volumes to mount into the container.",
-            "nullable": true
+            "description": "Filesystem volumes to mount into the container."
           },
           "health": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/DeploymentHealth"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeploymentHealth",
+                "description": "Optional health probes shipped to the node."
               }
-            ],
-            "nullable": true
+            ]
           },
           "desired_state": {
-            "$ref": "#/components/schemas/DesiredState"
+            "$ref": "#/components/schemas/DesiredState",
+            "description": "Desired state (running or stopped)."
           },
           "replica_generation": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "description": "Generation number used for reconciliation.",
-            "nullable": true
+            "description": "Generation number used for reconciliation."
           },
           "generation": {
             "type": "integer",
@@ -2248,20 +2292,26 @@
         "description": "Health check configuration attached to deployments.",
         "properties": {
           "liveness": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/HealthProbe"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HealthProbe",
+                "description": "Liveness probe executed when the container is running."
               }
-            ],
-            "nullable": true
+            ]
           },
           "readiness": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/HealthProbe"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HealthProbe",
+                "description": "Readiness probe executed before traffic is routed to the container."
               }
-            ],
-            "nullable": true
+            ]
           }
         },
         "additionalProperties": false
@@ -2313,60 +2363,77 @@
         ],
         "properties": {
           "name": {
-            "type": "string",
-            "description": "Optional human-readable name; falls back to image.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional human-readable name; falls back to image."
           },
           "image": {
             "type": "string",
             "description": "Container image reference."
           },
           "replicas": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "description": "Number of desired replicas (default: 1).",
-            "nullable": true,
             "minimum": 0
           },
           "command": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             },
-            "description": "Optional entrypoint/command override.",
-            "nullable": true
+            "description": "Optional entrypoint/command override."
           },
           "env": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "description": "Environment variables.",
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "secret_env": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretEnv"
             },
-            "description": "Secret environment variable references.",
-            "nullable": true
+            "description": "Secret environment variable references."
           },
           "secret_files": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretFile"
             },
-            "description": "Secret file references.",
-            "nullable": true
+            "description": "Secret file references."
           },
           "ports": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/PortMapping"
             },
-            "description": "Port mappings requested by the deployment.",
-            "nullable": true
+            "description": "Port mappings requested by the deployment."
           },
           "requires_public_ip": {
             "type": "boolean",
@@ -2379,44 +2446,58 @@
             "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
           },
           "constraints": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementConstraints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementConstraints",
+                "description": "Placement constraints for scheduling."
               }
-            ],
-            "nullable": true
+            ]
           },
           "placement": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementHints",
+                "description": "Placement hints (affinity/anti-affinity/spread)."
               }
-            ],
-            "nullable": true
+            ]
           },
           "desired_state": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/DesiredState"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DesiredState",
+                "description": "Desired state for the deployment; defaults to running."
               }
-            ],
-            "nullable": true
+            ]
           },
           "volumes": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/VolumeMount"
             },
-            "description": "Filesystem volumes to mount into the container.",
-            "nullable": true
+            "description": "Filesystem volumes to mount into the container."
           },
           "health": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/DeploymentHealth"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeploymentHealth",
+                "description": "Optional health check configuration."
               }
-            ],
-            "nullable": true
+            ]
           }
         },
         "additionalProperties": false,
@@ -2482,44 +2563,57 @@
             "minimum": 0
           },
           "command": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             },
-            "description": "Optional command.",
-            "nullable": true
+            "description": "Optional command."
           },
           "env": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "description": "Optional environment variables.",
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "secret_env": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretEnv"
             },
-            "description": "Secret environment variable references.",
-            "nullable": true
+            "description": "Secret environment variable references."
           },
           "secret_files": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretFile"
             },
-            "description": "Secret file references.",
-            "nullable": true
+            "description": "Secret file references."
           },
           "ports": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/PortMapping"
             },
-            "description": "Port mappings (after allocation).",
-            "nullable": true
+            "description": "Port mappings (after allocation)."
           },
           "requires_public_ip": {
             "type": "boolean",
@@ -2530,48 +2624,63 @@
             "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
           },
           "constraints": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementConstraints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementConstraints",
+                "description": "Placement constraints."
               }
-            ],
-            "nullable": true
+            ]
           },
           "placement": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementHints",
+                "description": "Placement hints (best-effort)."
               }
-            ],
-            "nullable": true
+            ]
           },
           "volumes": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/VolumeMount"
             },
-            "description": "Filesystem volumes to mount into the container.",
-            "nullable": true
+            "description": "Filesystem volumes to mount into the container."
           },
           "health": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/DeploymentHealth"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeploymentHealth",
+                "description": "Health checks configured for the deployment."
               }
-            ],
-            "nullable": true
+            ]
           },
           "desired_state": {
-            "$ref": "#/components/schemas/DesiredState"
+            "$ref": "#/components/schemas/DesiredState",
+            "description": "Desired state (running or stopped)."
           },
           "status": {
-            "$ref": "#/components/schemas/DeploymentStatus"
+            "$ref": "#/components/schemas/DeploymentStatus",
+            "description": "Current deployment status."
           },
           "assigned_node_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
-            "description": "Node assigned to run the deployment.",
-            "nullable": true
+            "description": "Node assigned to run the deployment."
           },
           "assignments": {
             "type": "array",
@@ -2586,26 +2695,34 @@
             "description": "Generation number."
           },
           "last_reported": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Timestamp of the last status report from the node.",
-            "nullable": true
+            "description": "Timestamp of the last status report from the node."
           },
           "instance": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/InstanceStatusResponse"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InstanceStatusResponse",
+                "description": "Instance status details, if available."
               }
-            ],
-            "nullable": true
+            ]
           },
           "usage_summary": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/UsageSummary"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UsageSummary",
+                "description": "Lightweight recent usage summary for the deployment."
               }
-            ],
-            "nullable": true
+            ]
           },
           "created_at": {
             "type": "string",
@@ -2651,16 +2768,20 @@
             "minimum": 0
           },
           "desired_state": {
-            "$ref": "#/components/schemas/DesiredState"
+            "$ref": "#/components/schemas/DesiredState",
+            "description": "Desired state (running or stopped)."
           },
           "status": {
-            "$ref": "#/components/schemas/DeploymentStatus"
+            "$ref": "#/components/schemas/DeploymentStatus",
+            "description": "Current deployment status."
           },
           "assigned_node_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
-            "description": "Node assigned to run the deployment.",
-            "nullable": true
+            "description": "Node assigned to run the deployment."
           },
           "tunnel_only": {
             "type": "boolean",
@@ -2679,26 +2800,33 @@
             "description": "Generation number."
           },
           "placement": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementHints",
+                "description": "Placement hints (best-effort)."
               }
-            ],
-            "nullable": true
+            ]
           },
           "volumes": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/VolumeMount"
             },
-            "description": "Filesystem volumes to mount into the container.",
-            "nullable": true
+            "description": "Filesystem volumes to mount into the container."
           },
           "last_reported": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Timestamp of the last status report from the node.",
-            "nullable": true
+            "description": "Timestamp of the last status report from the node."
           }
         }
       },
@@ -2737,112 +2865,149 @@
         "description": "Deployment update payload accepted by the control-plane.",
         "properties": {
           "name": {
-            "type": "string",
-            "description": "New name (None means unchanged).",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New name (None means unchanged)."
           },
           "image": {
-            "type": "string",
-            "description": "New image (None means unchanged).",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "New image (None means unchanged)."
           },
           "replicas": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "description": "New replica count (None means unchanged).",
-            "nullable": true,
             "minimum": 0
           },
           "command": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "type": "string"
             },
-            "description": "Replace command (Some(None) clears it).",
-            "nullable": true
+            "description": "Replace command (Some(None) clears it)."
           },
           "env": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "description": "Replace environment (Some(None) clears it).",
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "secret_env": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretEnv"
             },
-            "description": "Replace secret env refs (Some(None) clears them).",
-            "nullable": true
+            "description": "Replace secret env refs (Some(None) clears them)."
           },
           "secret_files": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/SecretFile"
             },
-            "description": "Replace secret file refs (Some(None) clears them).",
-            "nullable": true
+            "description": "Replace secret file refs (Some(None) clears them)."
           },
           "ports": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/PortMapping"
             },
-            "description": "Replace ports (Some(None) clears them).",
-            "nullable": true
+            "description": "Replace ports (Some(None) clears them)."
           },
           "requires_public_ip": {
-            "type": "boolean",
+            "type": [
+              "boolean",
+              "null"
+            ],
             "description": "Set or clear the public ingress requirement.",
-            "example": true,
-            "nullable": true
+            "example": true
           },
           "tunnel_only": {
-            "type": "boolean",
-            "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port.",
-            "nullable": true
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Route traffic via the control-plane tunnel/relay instead of direct host:port."
           },
           "constraints": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementConstraints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementConstraints",
+                "description": "Replace constraints (Some(None) clears them)."
               }
-            ],
-            "nullable": true
+            ]
           },
           "placement": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementHints",
+                "description": "Replace placement hints (Some(None) clears them)."
               }
-            ],
-            "nullable": true
+            ]
           },
           "desired_state": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/DesiredState"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DesiredState",
+                "description": "New desired state (None means unchanged)."
               }
-            ],
-            "nullable": true
+            ]
           },
           "volumes": {
-            "type": "array",
+            "type": [
+              "array",
+              "null"
+            ],
             "items": {
               "$ref": "#/components/schemas/VolumeMount"
             },
-            "description": "Replace volumes (Some(None) clears them).",
-            "nullable": true
+            "description": "Replace volumes (Some(None) clears them)."
           },
           "health": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/DeploymentHealth"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DeploymentHealth",
+                "description": "Replace health probes (Some(None) clears them)."
               }
-            ],
-            "nullable": true
+            ]
           }
         },
         "additionalProperties": false
@@ -2873,22 +3038,29 @@
             "description": "Minimum node-agent version supported by the control-plane. The default\npolicy accepts agents from the previous minor through the next minor\nrelease (inclusive, any patch) unless overridden by control-plane\nconfiguration."
           },
           "max_supported_agent_version": {
-            "type": "string",
-            "description": "Maximum node-agent version supported by the control-plane.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Maximum node-agent version supported by the control-plane."
           },
           "upgrade_url": {
-            "type": "string",
-            "description": "Optional URL with upgrade guidance for incompatible agents.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional URL with upgrade guidance for incompatible agents."
           },
           "tunnel": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/TunnelEndpoint"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TunnelEndpoint",
+                "description": "Advertised tunnel endpoint for agents to reach the gateway."
               }
-            ],
-            "nullable": true
+            ]
           },
           "deployments": {
             "type": "array",
@@ -2917,37 +3089,46 @@
       "HealthProbe": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/HealthProbeKind"
+            "$ref": "#/components/schemas/HealthProbeKind",
+            "description": "Probe implementation and associated fields."
           },
           {
             "type": "object",
             "properties": {
               "interval_seconds": {
-                "type": "integer",
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "format": "int64",
                 "description": "Interval between probe executions (seconds).",
-                "nullable": true,
                 "minimum": 0
               },
               "timeout_seconds": {
-                "type": "integer",
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "format": "int64",
                 "description": "Timeout for each probe run (seconds).",
-                "nullable": true,
                 "minimum": 0
               },
               "failure_threshold": {
-                "type": "integer",
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "format": "int32",
                 "description": "Fail threshold before marking the probe as failing.",
-                "nullable": true,
                 "minimum": 0
               },
               "start_period_seconds": {
-                "type": "integer",
+                "type": [
+                  "integer",
+                  "null"
+                ],
                 "format": "int64",
                 "description": "Optional delay before running probes after container start.",
-                "nullable": true,
                 "minimum": 0
               }
             }
@@ -3030,10 +3211,7 @@
             }
           }
         ],
-        "description": "Supported health probe implementations.",
-        "discriminator": {
-          "propertyName": "type"
-        }
+        "description": "Supported health probe implementations."
       },
       "HealthResponse": {
         "type": "object",
@@ -3078,14 +3256,18 @@
             "type": "string"
           },
           "schema_version": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "target_schema_version": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
           },
           "pending_migrations": {
             "type": "integer",
@@ -3096,9 +3278,11 @@
             "minimum": 0
           },
           "tunnel_freshest_heartbeat_secs": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "nullable": true,
             "minimum": 0
           },
           "tunnel_statuses": {
@@ -3124,25 +3308,33 @@
             "description": "Whether the last probe reported success."
           },
           "last_probe_result": {
-            "type": "string",
-            "description": "Result string from the last probe run.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Result string from the last probe run."
           },
           "reason": {
-            "type": "string",
-            "description": "Optional reason for the last probe failure.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional reason for the last probe failure."
           },
           "last_error": {
-            "type": "string",
-            "description": "Optional error string from the last probe execution.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional error string from the last probe execution."
           },
           "last_checked_at": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Timestamp of the last probe attempt.",
-            "nullable": true
+            "description": "Timestamp of the last probe attempt."
           }
         },
         "additionalProperties": false
@@ -3155,7 +3347,8 @@
         ],
         "properties": {
           "node_status": {
-            "$ref": "#/components/schemas/NodeStatus"
+            "$ref": "#/components/schemas/NodeStatus",
+            "description": "Current node status (ready|unreachable|error|registering)."
           },
           "containers": {
             "type": "array",
@@ -3165,26 +3358,35 @@
             "description": "Per-replica status and recent usage samples (bounded by control-plane limits)."
           },
           "timestamp": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Optional timestamp set by the agent for skew detection.",
-            "nullable": true
+            "description": "Optional timestamp set by the agent for skew detection."
           },
           "inventory": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/NodeInventoryPayload"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NodeInventoryPayload",
+                "description": "Optional inventory updates merged into the stored node record."
               }
-            ],
-            "nullable": true
+            ]
           },
           "public_ip": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "public_host": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "example": {
@@ -3262,17 +3464,22 @@
             "minimum": 0
           },
           "container_id": {
-            "type": "string",
-            "description": "Optional container identifier.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional container identifier."
           },
           "state": {
-            "$ref": "#/components/schemas/InstanceState"
+            "$ref": "#/components/schemas/InstanceState",
+            "description": "Container state."
           },
           "message": {
-            "type": "string",
-            "description": "Optional status message.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional status message."
           },
           "restart_count": {
             "type": "integer",
@@ -3298,12 +3505,15 @@
             "description": "Reachable endpoints reported by the node agent."
           },
           "health": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/HealthStatus"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HealthStatus",
+                "description": "Optional health status reported for the replica."
               }
-            ],
-            "nullable": true
+            ]
           },
           "metrics": {
             "type": "array",
@@ -3339,17 +3549,22 @@
             "minimum": 0
           },
           "container_id": {
-            "type": "string",
-            "description": "Optional container identifier.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional container identifier."
           },
           "state": {
-            "$ref": "#/components/schemas/InstanceState"
+            "$ref": "#/components/schemas/InstanceState",
+            "description": "Container state."
           },
           "message": {
-            "type": "string",
-            "description": "Optional status message.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional status message."
           },
           "restart_count": {
             "type": "integer",
@@ -3380,12 +3595,15 @@
             "description": "Reachable endpoints reported by the node agent."
           },
           "health": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/HealthStatus"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/HealthStatus",
+                "description": "Optional health status reported for the replica."
               }
-            ],
-            "nullable": true
+            ]
           },
           "metrics": {
             "type": "array",
@@ -3400,20 +3618,26 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
-            "nullable": true,
             "minimum": 0
           },
           "offset": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
-            "nullable": true,
             "minimum": 0
           },
           "status": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -3485,9 +3709,11 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
-            "nullable": true,
             "minimum": 0
           }
         }
@@ -3548,27 +3774,38 @@
         "type": "object",
         "properties": {
           "arch": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "os": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "labels": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "capacity": {
-            "allOf": [
+            "oneOf": [
+              {
+                "type": "null"
+              },
               {
                 "$ref": "#/components/schemas/CapacityHints"
               }
-            ],
-            "nullable": true
+            ]
           }
         }
       },
@@ -3597,56 +3834,77 @@
             "description": "Node identifier."
           },
           "name": {
-            "type": "string",
-            "description": "Optional node name.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional node name."
           },
           "status": {
-            "$ref": "#/components/schemas/NodeStatus"
+            "$ref": "#/components/schemas/NodeStatus",
+            "description": "Current status of the node."
           },
           "last_seen": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Last heartbeat timestamp.",
-            "nullable": true
+            "description": "Last heartbeat timestamp."
           },
           "arch": {
-            "type": "string",
-            "description": "CPU architecture reported by the node.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "CPU architecture reported by the node."
           },
           "os": {
-            "type": "string",
-            "description": "Operating system reported by the node.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Operating system reported by the node."
           },
           "public_ip": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional public IP reported by the node.",
-            "example": "203.0.113.10",
-            "nullable": true
+            "example": "203.0.113.10"
           },
           "public_host": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional public host reported by the node.",
-            "example": "edge-01.example.com",
-            "nullable": true
+            "example": "edge-01.example.com"
           },
           "labels": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "description": "Node labels.",
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "capacity": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/CapacityHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapacityHints",
+                "description": "Optional capacity hints reported by the node."
               }
-            ],
-            "nullable": true
+            ]
           },
           "instances": {
             "type": "array",
@@ -3656,12 +3914,15 @@
             "description": "Instances running on the node."
           },
           "usage_summary": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/UsageSummary"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UsageSummary",
+                "description": "Lightweight recent usage summary for the node."
               }
-            ],
-            "nullable": true
+            ]
           }
         },
         "example": {
@@ -3699,56 +3960,77 @@
             "description": "Node identifier."
           },
           "name": {
-            "type": "string",
-            "description": "Optional node name.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional node name."
           },
           "status": {
-            "$ref": "#/components/schemas/NodeStatus"
+            "$ref": "#/components/schemas/NodeStatus",
+            "description": "Current status of the node."
           },
           "last_seen": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Last heartbeat timestamp.",
-            "nullable": true
+            "description": "Last heartbeat timestamp."
           },
           "arch": {
-            "type": "string",
-            "description": "CPU architecture reported by the node.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "CPU architecture reported by the node."
           },
           "os": {
-            "type": "string",
-            "description": "Operating system reported by the node.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Operating system reported by the node."
           },
           "public_ip": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional public IP reported by the node.",
-            "example": "203.0.113.10",
-            "nullable": true
+            "example": "203.0.113.10"
           },
           "public_host": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional public host reported by the node.",
-            "example": "edge-01.example.com",
-            "nullable": true
+            "example": "edge-01.example.com"
           },
           "labels": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "description": "Node labels.",
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "capacity": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/CapacityHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapacityHints",
+                "description": "Optional capacity hints reported by the node."
               }
-            ],
-            "nullable": true
+            ]
           }
         },
         "example": {
@@ -3815,19 +4097,25 @@
             "type": "string"
           },
           "last_heartbeat_secs": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "nullable": true,
             "minimum": 0
           },
           "last_error": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "last_event_secs": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "nullable": true,
             "minimum": 0
           }
         }
@@ -3860,6 +4148,9 @@
             "description": "Preferred node labels.",
             "additionalProperties": {
               "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
             }
           }
         },
@@ -3870,29 +4161,39 @@
         "description": "Placement constraints for deployments.",
         "properties": {
           "arch": {
-            "type": "string",
-            "description": "Required CPU architecture.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required CPU architecture."
           },
           "os": {
-            "type": "string",
-            "description": "Required operating system.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Required operating system."
           },
           "labels": {
             "type": "object",
             "description": "Required node labels.",
             "additionalProperties": {
               "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
             }
           },
           "capacity": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/CapacityHints"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapacityHints",
+                "description": "Required capacity hints."
               }
-            ],
-            "nullable": true
+            ]
           },
           "requires_public_ip": {
             "type": "boolean",
@@ -3906,20 +4207,26 @@
         "description": "Placement hints (best-effort).",
         "properties": {
           "affinity": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementAffinity"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementAffinity",
+                "description": "Prefer running alongside specific nodes/labels."
               }
-            ],
-            "nullable": true
+            ]
           },
           "anti_affinity": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/PlacementAffinity"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlacementAffinity",
+                "description": "Prefer avoiding nodes/labels."
               }
-            ],
-            "nullable": true
+            ]
           },
           "spread": {
             "type": "boolean",
@@ -3942,10 +4249,12 @@
             "minimum": 0
           },
           "host_port": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "description": "Optional host port to bind to (auto-assigned when omitted).",
-            "nullable": true,
             "minimum": 0
           },
           "protocol": {
@@ -3953,18 +4262,22 @@
             "description": "Protocol for the port mapping (defaults to tcp)."
           },
           "host_ip": {
-            "type": "string",
-            "description": "Optional host IP to bind to.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional host IP to bind to."
           },
           "expose": {
             "type": "boolean",
             "description": "Whether the port should be exposed externally."
           },
           "endpoint": {
-            "type": "string",
-            "description": "Optional host:port endpoint for an exposed port.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional host:port endpoint for an exposed port."
           }
         }
       },
@@ -3972,39 +4285,56 @@
         "type": "object",
         "properties": {
           "name": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "arch": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "os": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "labels": {
-            "type": "object",
+            "type": [
+              "object",
+              "null"
+            ],
             "additionalProperties": {
               "type": "string"
             },
-            "nullable": true
+            "propertyNames": {
+              "type": "string"
+            }
           },
           "capacity": {
-            "allOf": [
+            "oneOf": [
+              {
+                "type": "null"
+              },
               {
                 "$ref": "#/components/schemas/CapacityHints"
               }
-            ],
-            "nullable": true
+            ]
           },
           "public_ip": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "public_host": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4026,12 +4356,15 @@
             "description": "Bearer token for the node."
           },
           "tunnel": {
-            "allOf": [
+            "oneOf": [
               {
-                "$ref": "#/components/schemas/TunnelEndpoint"
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TunnelEndpoint",
+                "description": "Advertised tunnel endpoint for private agents."
               }
-            ],
-            "nullable": true
+            ]
           }
         }
       },
@@ -4045,8 +4378,10 @@
             "type": "string"
           },
           "last_error": {
-            "type": "string",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -4145,17 +4480,21 @@
             "minimum": 0
           },
           "blk_read_bytes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "description": "Block device bytes read (if available).",
-            "nullable": true,
             "minimum": 0
           },
           "blk_write_bytes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "description": "Block device bytes written (if available).",
-            "nullable": true,
             "minimum": 0
           }
         }
@@ -4228,21 +4567,27 @@
             "description": "PEM-encoded private key."
           },
           "ca_pem": {
-            "type": "string",
-            "description": "Optional PEM-encoded CA chain for peers/verification.",
-            "nullable": true
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Optional PEM-encoded CA chain for peers/verification."
           },
           "expires_at": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Expiry time of the certificate (UTC) for observability/refresh.",
-            "nullable": true
+            "description": "Expiry time of the certificate (UTC) for observability/refresh."
           },
           "rotate_after": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "Suggested time to refresh before expiry.",
-            "nullable": true
+            "description": "Suggested time to refresh before expiry."
           }
         },
         "additionalProperties": false,
@@ -4317,48 +4662,62 @@
         "type": "object",
         "properties": {
           "limit": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "description": "Page size (1-100, defaults to 50 when omitted).",
-            "nullable": true,
             "minimum": 0
           },
           "offset": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "description": "Pagination offset (defaults to 0).",
-            "nullable": true,
             "minimum": 0
           },
           "deployment_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
-            "description": "Deployment to filter by (required if `node_id` is absent).",
-            "nullable": true
+            "description": "Deployment to filter by (required if `node_id` is absent)."
           },
           "node_id": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "uuid",
-            "description": "Node to filter by (required if `deployment_id` is absent).",
-            "nullable": true
+            "description": "Node to filter by (required if `deployment_id` is absent)."
           },
           "replica_number": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "description": "Specific replica ordinal (optional).",
-            "nullable": true
+            "description": "Specific replica ordinal (optional)."
           },
           "since": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "RFC3339 timestamp for the start of the window. Defaults to now minus the allowed window.",
-            "nullable": true
+            "description": "RFC3339 timestamp for the start of the window. Defaults to now minus the allowed window."
           },
           "until": {
-            "type": "string",
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time",
-            "description": "RFC3339 timestamp for the end of the window. Defaults to current time.",
-            "nullable": true
+            "description": "RFC3339 timestamp for the end of the window. Defaults to current time."
           }
         }
       },
@@ -4423,16 +4782,20 @@
             "description": "Average network TX bytes for the bucket."
           },
           "avg_blk_read_bytes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "description": "Average block read bytes for the bucket, when reported.",
-            "nullable": true
+            "description": "Average block read bytes for the bucket, when reported."
           },
           "avg_blk_write_bytes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "description": "Average block write bytes for the bucket, when reported.",
-            "nullable": true
+            "description": "Average block write bytes for the bucket, when reported."
           }
         },
         "example": {
@@ -4528,16 +4891,20 @@
             "description": "Average network TX bytes per sample."
           },
           "avg_blk_read_bytes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "description": "Average block read bytes per sample (when reported).",
-            "nullable": true
+            "description": "Average block read bytes per sample (when reported)."
           },
           "avg_blk_write_bytes": {
-            "type": "integer",
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
-            "description": "Average block write bytes per sample (when reported).",
-            "nullable": true
+            "description": "Average block write bytes per sample (when reported)."
           }
         },
         "example": {
@@ -4569,9 +4936,11 @@
             "description": "Absolute path inside the container."
           },
           "read_only": {
-            "type": "boolean",
-            "description": "Optional read-only flag (default: read/write).",
-            "nullable": true
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Optional read-only flag (default: read/write)."
           }
         },
         "additionalProperties": false
