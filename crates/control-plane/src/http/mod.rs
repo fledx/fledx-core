@@ -4500,6 +4500,7 @@ mod tests {
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
                 .header("authorization", format!("Bearer {token}"))
+                .header("x-agent-version", crate::version::VERSION)
                 .header(axum::http::header::CONTENT_TYPE, "application/json")
                 .body(Body::from(serde_json::to_vec(&heartbeat).unwrap()))
                 .unwrap();
@@ -4787,6 +4788,7 @@ mod tests {
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
                 .header("authorization", format!("Bearer {token}"))
+                .header("x-agent-version", crate::version::VERSION)
                 .header(axum::http::header::CONTENT_TYPE, "application/json")
                 .body(Body::from(serde_json::to_vec(&heartbeat).unwrap()))
                 .unwrap();
@@ -4853,6 +4855,7 @@ mod tests {
                         .method("POST")
                         .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
                         .header("authorization", format!("Bearer {token}"))
+                        .header("x-agent-version", crate::version::VERSION)
                         .header(axum::http::header::CONTENT_TYPE, "application/json")
                         .body(Body::from(serde_json::to_vec(&heartbeat).unwrap()))
                         .unwrap(),
@@ -4985,6 +4988,7 @@ mod tests {
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
                 .header("authorization", format!("Bearer {token}"))
+                .header("x-agent-version", crate::version::VERSION)
                 .header(axum::http::header::CONTENT_TYPE, "application/json")
                 .body(Body::from(serde_json::to_vec(&heartbeat).unwrap()))
                 .unwrap();
@@ -5235,6 +5239,7 @@ mod tests {
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
                 .header("authorization", format!("Bearer {token}"))
+                .header("x-agent-version", crate::version::VERSION)
                 .header(axum::http::header::CONTENT_TYPE, "application/json")
                 .body(Body::from(serde_json::to_vec(&heartbeat).unwrap()))
                 .unwrap();

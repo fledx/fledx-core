@@ -517,7 +517,7 @@ async fn compatibility_enforcement_can_be_disabled() {
 }
 
 #[tokio::test]
-async fn legacy_agent_without_version_header_is_allowed() {
+async fn legacy_agent_without_version_header_is_rejected() {
     let (app, _db) = setup_app().await;
 
     let response = app
@@ -536,7 +536,7 @@ async fn legacy_agent_without_version_header_is_allowed() {
         .await
         .unwrap();
 
-    assert_eq!(response.status(), StatusCode::CREATED);
+    assert_eq!(response.status(), StatusCode::UPGRADE_REQUIRED);
     let headers = response.headers();
     assert!(
         headers.contains_key("x-agent-compat-min") && headers.contains_key("x-agent-compat-max"),
