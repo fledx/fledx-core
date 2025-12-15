@@ -23,6 +23,7 @@ pub type Result<T> = std::result::Result<T, anyhow::Error>;
 use std::{env, future::Future, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use axum::{http::HeaderName, Router};
+use metrics_exporter_prometheus::PrometheusHandle;
 use serde_json::json;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -33,6 +34,7 @@ use crate::metrics::{init_metrics_recorder, record_build_info, MetricsHistory};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandMode {
     Serve,
+    ServeStandalone,
     MigrationsDryRun,
 }
 
@@ -76,6 +78,7 @@ pub fn parse_command() -> Result<CommandMode> {
     };
 
     match first.as_str() {
+        "--standalone" | "standalone" => Ok(CommandMode::ServeStandalone),
         "--migrations-dry-run" | "migrations-dry-run" => Ok(CommandMode::MigrationsDryRun),
         "migrate" => match args.next().as_deref() {
             Some("--dry-run") | Some("dry-run") => Ok(CommandMode::MigrationsDryRun),
@@ -83,7 +86,7 @@ pub fn parse_command() -> Result<CommandMode> {
         },
         "--help" | "-h" => {
             println!(
-                "Usage: control-plane [--migrations-dry-run]|[migrate --dry-run]\n\
+                "Usage: control-plane [--standalone] [--migrations-dry-run]|[migrate --dry-run]\n\
                  Run without arguments to start the server."
             );
             std::process::exit(0);
@@ -94,10 +97,25 @@ pub fn parse_command() -> Result<CommandMode> {
 
 /// Boot the control-plane using the provided command mode.
 pub async fn run(mode: CommandMode) -> Result<()> {
-    run_with(mode, ControlPlaneHooks::default()).await
+    match mode {
+        CommandMode::Serve => run_with(mode, ControlPlaneHooks::default()).await,
+        CommandMode::ServeStandalone => run_standalone(ControlPlaneHooks::default()).await,
+        CommandMode::MigrationsDryRun => run_with(mode, ControlPlaneHooks::default()).await,
+    }
 }
 
 pub async fn run_with(mode: CommandMode, hooks: ControlPlaneHooks) -> Result<()> {
+    run_with_shutdown(mode, hooks, shutdown_signal()).await
+}
+
+pub async fn run_with_shutdown<S>(
+    mode: CommandMode,
+    hooks: ControlPlaneHooks,
+    shutdown: S,
+) -> Result<()>
+where
+    S: Future<Output = ()> + Send + 'static,
+{
     let app_config = config::load()?;
     let metrics_handle = init_metrics_recorder();
     let metrics_history = MetricsHistory::new(app_config.limits.metrics_summary_window_secs);
@@ -290,9 +308,54 @@ pub async fn run_with(mode: CommandMode, hooks: ControlPlaneHooks) -> Result<()>
     info!(%addr, "control-plane listening");
 
     axum::serve(listener, make_service)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown)
         .await?;
 
+    Ok(())
+}
+
+/// Run control-plane and an embedded node-agent in the same process.
+pub async fn run_standalone(hooks: ControlPlaneHooks) -> Result<()> {
+    // Install the metrics recorder once and reuse it for both components so
+    // counters land in the same `/metrics` endpoint.
+    let metrics_handle: PrometheusHandle = init_metrics_recorder();
+
+    let agent_cfg = node_agent::config::load()?;
+    let agent = node_agent::runner::start_agent(
+        agent_cfg,
+        node_agent::runner::AgentOptions {
+            init_tracing: false,
+            serve_metrics: false,
+            metrics_handle: Some(metrics_handle.clone()),
+        },
+    )
+    .await?;
+
+    let mut cp_shutdown_rx = agent.shutdown_signal();
+    let mut cp_task = tokio::spawn(async move {
+        run_with_shutdown(CommandMode::Serve, hooks, async move {
+            let _ = cp_shutdown_rx.changed().await;
+        })
+        .await
+    });
+
+    tokio::select! {
+        cp_res = &mut cp_task => {
+            agent.request_shutdown();
+            cp_res.map_err(|err| anyhow::anyhow!("control-plane task failed: {err}"))??;
+            agent.await_termination().await?;
+            return Ok(());
+        }
+        _ = shutdown_signal() => {
+            agent.request_shutdown();
+        }
+    }
+
+    // Shutdown was requested; wait for the control-plane to exit gracefully.
+    cp_task
+        .await
+        .map_err(|err| anyhow::anyhow!("control-plane task failed: {err}"))??;
+    agent.await_termination().await?;
     Ok(())
 }
 

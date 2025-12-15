@@ -603,6 +603,7 @@ dependencies = [
  "hyper",
  "metrics",
  "metrics-exporter-prometheus",
+ "node-agent",
  "rand 0.9.2",
  "rcgen",
  "semver",

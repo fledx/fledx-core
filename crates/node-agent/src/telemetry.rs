@@ -32,6 +32,13 @@ pub fn init_metrics_recorder() -> PrometheusHandle {
         .clone()
 }
 
+/// Register an existing Prometheus handle without installing a new recorder.
+/// Useful when embedding the agent into another binary that already installed
+/// a global recorder.
+pub fn register_metrics_handle(handle: PrometheusHandle) -> PrometheusHandle {
+    METRICS_HANDLE.get_or_init(|| handle).clone()
+}
+
 pub async fn serve_metrics(handle: PrometheusHandle, addr: SocketAddr) -> anyhow::Result<()> {
     let app = Router::new().route(
         "/metrics",

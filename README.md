@@ -142,6 +142,16 @@ export FLEDX_CP_SERVER_HOST=0.0.0.0
 export FLEDX_CP_SERVER_PORT=8080
 export FLEDX_CP_DATABASE_URL=sqlite://./fledx.db
 ./target/release/fledx-cp
+
+# Single-node shortcut: run control plane and agent together
+export FLEDX_AGENT_CONTROL_PLANE_URL=http://127.0.0.1:8080
+export FLEDX_AGENT_ALLOW_INSECURE_HTTP=true
+export FLEDX_AGENT_NODE_ID=550e8400-e29b-41d4-a716-446655440000
+export FLEDX_AGENT_NODE_TOKEN=your-node-token
+./target/release/fledx-cp --standalone
+
+# In standalone mode the agent uses the same /metrics endpoint as the control
+# plane. All existing FLEDX_AGENT_* flags/env vars are respected.
 ```
 
 #### 2. Register an Edge Node

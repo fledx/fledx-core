@@ -10,6 +10,7 @@ pub mod cp_client;
 pub mod health;
 pub mod heartbeat;
 pub mod reconcile;
+pub mod runner;
 pub mod runtime;
 pub mod sampler;
 pub mod services;
