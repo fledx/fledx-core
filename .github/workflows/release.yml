@@ -78,8 +78,11 @@ jobs:
       - name: Package binaries
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf fledx-${VERSION}-${{ matrix.arch }}-linux.tar.gz fledx fledx-cp fledx-agent
-          sha256sum fledx-${VERSION}-${{ matrix.arch }}-linux.tar.gz > fledx-${VERSION}-${{ matrix.arch }}-linux.tar.gz.sha256
+          for bin in fledx fledx-cp fledx-agent; do
+            archive="${bin}-${VERSION}-${{ matrix.arch }}-linux.tar.gz"
+            tar czf "$archive" "$bin"
+            sha256sum "$archive" > "$archive.sha256"
+          done
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
@@ -91,3 +94,7 @@ jobs:
           files: |
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
+            target/${{ matrix.target }}/release/fledx-cp-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
+            target/${{ matrix.target }}/release/fledx-cp-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
+            target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
+            target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
