@@ -187,7 +187,11 @@ where
             applied: Vec::new(),
         }
     } else {
-        persistence::migrations::run_migrations_with(&db_pool, hooks.migrations).await?
+        persistence::migrations::run_migrations_with_allowing_prior_versions(
+            &db_pool,
+            hooks.migrations,
+        )
+        .await?
     };
     let migration_outcome =
         persistence::migrations::merge_run_outcomes(&core_migrations, &hook_migrations);
