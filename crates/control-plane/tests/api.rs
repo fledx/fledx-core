@@ -546,12 +546,7 @@ async fn legacy_agent_without_version_header_is_rejected() {
 
 #[tokio::test]
 async fn supported_agent_version_allows_registration_and_reports_window() {
-    let version = control_plane::version::VERSION.to_string();
-    let cfg = TestAppConfig {
-        compat_min: Some(version.clone()),
-        compat_max: Some(version.clone()),
-        ..Default::default()
-    };
+    let cfg = TestAppConfig::default().with_current_agent_compat_window();
     let (app, _db) = setup_app_with_config(cfg).await;
 
     let payload = serde_json::json!({ "name": "compatible-agent" });

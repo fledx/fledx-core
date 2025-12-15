@@ -90,6 +90,20 @@ impl Default for TestAppConfig {
     }
 }
 
+impl TestAppConfig {
+    /// Configure the agent compatibility window to include the current
+    /// control-plane build version.
+    ///
+    /// `agent_request(...)` sends `x-agent-version = control_plane::version::VERSION`.
+    /// Pinning min/max to that value keeps tests stable across version bumps.
+    pub fn with_current_agent_compat_window(mut self) -> Self {
+        let version = control_plane::version::VERSION.to_string();
+        self.compat_min = Some(version.clone());
+        self.compat_max = Some(version);
+        self
+    }
+}
+
 pub type RegistrationResponse = api::RegistrationResponse;
 pub type DeploymentCreateResponse = api::DeploymentCreateResponse;
 pub type DeploymentStatusResponse = api::DeploymentStatusResponse;
