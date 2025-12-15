@@ -2,6 +2,7 @@
 name = "node-agent"
 version = "0.4.0-dev"
 edition = "2021"
+publish = false
 license = "BUSL-1.1"
 description = "Lightweight edge node agent for managing Docker containers in distributed deployments"
 repository = "https://github.com/fledx/fledx-core"

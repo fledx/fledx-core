@@ -37,12 +37,6 @@ allow = [
 ]
 
 confidence-threshold = 0.8
-exceptions = [
-    { name = "cli", allow = ["BUSL-1.1"] },
-    { name = "common", allow = ["BUSL-1.1"] },
-    { name = "control-plane", allow = ["BUSL-1.1"] },
-    { name = "node-agent", allow = ["BUSL-1.1"] },
-]
 
 [licenses.private]
 ignore = true
