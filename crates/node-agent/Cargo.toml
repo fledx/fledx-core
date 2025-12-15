@@ -1,6 +1,6 @@
 [package]
 name = "node-agent"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "BUSL-1.1"
 description = "Lightweight edge node agent for managing Docker containers in distributed deployments"
