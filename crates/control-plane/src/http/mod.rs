@@ -4676,7 +4676,7 @@ mod tests {
                         .method("POST")
                         .uri("/api/v1/nodes/register")
                         .header("authorization", "Bearer reg")
-                        .header("x-agent-version", "0.1.0")
+                        .header("x-agent-version", crate::version::VERSION)
                         .header(axum::http::header::CONTENT_TYPE, "application/json")
                         .body(Body::from(req_body.to_string()))
                         .unwrap(),
