@@ -3350,11 +3350,11 @@ async fn heartbeat_persists_instances_and_status_endpoints() {
     assert_eq!(inst.container_id.as_deref(), Some("abc123"));
     assert_eq!(inst.state, db::InstanceState::Running);
     assert!(
-        inst.last_seen >= hb_ts,
+        inst.last_seen.timestamp() >= hb_ts.timestamp(),
         "last_seen should be at least the heartbeat send time"
     );
     assert!(
-        (inst.last_seen - hb_ts).num_seconds() < 5,
+        (inst.last_seen.timestamp() - hb_ts.timestamp()) < 5,
         "last_seen should be close to heartbeat send time"
     );
     assert_eq!(inst.restart_count, 2);
