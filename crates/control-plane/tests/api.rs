@@ -546,9 +546,10 @@ async fn legacy_agent_without_version_header_is_rejected() {
 
 #[tokio::test]
 async fn supported_agent_version_allows_registration_and_reports_window() {
+    let version = control_plane::version::VERSION.to_string();
     let cfg = TestAppConfig {
-        compat_min: Some("0.1.0".into()),
-        compat_max: Some("0.2.0".into()),
+        compat_min: Some(version.clone()),
+        compat_max: Some(version.clone()),
         ..Default::default()
     };
     let (app, _db) = setup_app_with_config(cfg).await;
@@ -588,13 +589,13 @@ async fn supported_agent_version_allows_registration_and_reports_window() {
         health_json
             .get("min_supported_agent_version")
             .and_then(|v| v.as_str()),
-        Some("0.1.0")
+        Some(control_plane::version::VERSION)
     );
     assert_eq!(
         health_json
             .get("max_supported_agent_version")
             .and_then(|v| v.as_str()),
-        Some("0.2.0")
+        Some(control_plane::version::VERSION)
     );
 }
 
