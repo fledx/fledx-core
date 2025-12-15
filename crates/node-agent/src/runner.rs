@@ -145,8 +145,18 @@ pub async fn start_agent(
 
     if options.serve_metrics {
         let metrics_handle = metrics_handle.clone();
+        let mut shutdown = shutdown_rx.clone();
         tasks.push(tokio::spawn(async move {
-            if let Err(err) = telemetry::serve_metrics(metrics_handle, metrics_addr).await {
+            let shutdown_fut = async move {
+                if *shutdown.borrow() {
+                    return;
+                }
+                let _ = shutdown.changed().await;
+            };
+            if let Err(err) =
+                telemetry::serve_metrics_with_shutdown(metrics_handle, metrics_addr, shutdown_fut)
+                    .await
+            {
                 error!(?err, "metrics server exited with error");
             }
         }));

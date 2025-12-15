@@ -40,6 +40,17 @@ pub fn register_metrics_handle(handle: PrometheusHandle) -> PrometheusHandle {
 }
 
 pub async fn serve_metrics(handle: PrometheusHandle, addr: SocketAddr) -> anyhow::Result<()> {
+    serve_metrics_with_shutdown(handle, addr, std::future::pending::<()>()).await
+}
+
+pub async fn serve_metrics_with_shutdown<S>(
+    handle: PrometheusHandle,
+    addr: SocketAddr,
+    shutdown: S,
+) -> anyhow::Result<()>
+where
+    S: std::future::Future<Output = ()> + Send + 'static,
+{
     let app = Router::new().route(
         "/metrics",
         get(move || {
@@ -60,7 +71,9 @@ pub async fn serve_metrics(handle: PrometheusHandle, addr: SocketAddr) -> anyhow
     let listener = TcpListener::bind(addr).await?;
     let bound_addr = listener.local_addr().unwrap_or(addr);
     info!(%bound_addr, "metrics server listening");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown)
+        .await?;
     Ok(())
 }
 
