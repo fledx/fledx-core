@@ -69,6 +69,11 @@ jobs:
 
       - name: Build release binaries
         run: |
+          if [ -z "$FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS" ]; then
+            echo "missing secret FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS" >&2
+            exit 1
+          fi
+
           cargo build --release --target ${{ matrix.target }} --workspace
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
