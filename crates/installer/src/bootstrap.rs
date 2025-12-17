@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::net::{IpAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -85,7 +86,6 @@ impl SshTarget {
         if let Some(key) = &self.identity_file {
             cmd.arg("-i").arg(key);
         }
-        cmd.arg(self.destination());
         cmd
     }
 
@@ -95,6 +95,7 @@ impl SshTarget {
         if let Some(key) = &self.identity_file {
             cmd.arg("-i").arg(key);
         }
+        cmd.arg("--");
         cmd
     }
 
@@ -103,6 +104,9 @@ impl SshTarget {
         if sudo.interactive {
             cmd.arg("-tt");
         }
+
+        cmd.arg("--");
+        cmd.arg(self.destination());
 
         if sudo.required {
             cmd.arg("sudo");
@@ -142,6 +146,8 @@ stderr:\n{}",
 
     pub fn run_output(&self, script: &str) -> anyhow::Result<String> {
         let mut cmd = self.ssh_base();
+        cmd.arg("--");
+        cmd.arg(self.destination());
         cmd.arg("sh").arg("-c").arg(script);
         run_checked(cmd)
     }
@@ -680,7 +686,10 @@ fn systemd_state_local(service: &str) -> anyhow::Result<String> {
 }
 
 fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
-    ssh.run_output(&format!("systemctl is-active {service}"))
+    ssh.run_output(&format!(
+        "systemctl is-active -- {}",
+        sh_quote(service)
+    ))
 }
 
 pub async fn register_node(
@@ -869,74 +878,107 @@ pub struct ControlPlaneInstallSettings {
 }
 
 pub fn install_cp_local(bin: &Path, env: &str, unit: &str, settings: &ControlPlaneInstallSettings) -> anyhow::Result<()> {
+    validate_linux_username(&settings.service_user)?;
     let sudo = SudoMode::root(settings.sudo_interactive);
 
-    sudo_run(
+    if !local_user_exists(&settings.service_user)? {
+        sudo_run_cmd(
+            sudo,
+            "useradd",
+            vec![
+                OsString::from("-r"),
+                OsString::from("-s"),
+                OsString::from("/bin/false"),
+                OsString::from(settings.service_user.clone()),
+            ],
+        )?;
+    }
+
+    sudo_run_cmd(
         sudo,
-        &format!(
-            "useradd -r -s /bin/false {} 2>/dev/null || true",
-            settings.service_user
-        ),
+        "install",
+        vec![
+            OsString::from("-d"),
+            OsString::from("-o"),
+            OsString::from("root"),
+            OsString::from("-g"),
+            OsString::from("root"),
+            settings.bin_dir.clone().into_os_string(),
+        ],
     )?;
 
-    sudo_run(
+    sudo_run_cmd(
         sudo,
-        &format!(
-            "install -d -o root -g root {}",
-            settings.bin_dir.display()
-        ),
-    )?;
-
-    sudo_run(
-        sudo,
-        &format!(
-            "install -d -o root -g root {}",
-            settings.config_dir.display()
-        ),
+        "install",
+        vec![
+            OsString::from("-d"),
+            OsString::from("-o"),
+            OsString::from("root"),
+            OsString::from("-g"),
+            OsString::from("root"),
+            settings.config_dir.clone().into_os_string(),
+        ],
     )?;
 
     let cp_dir = settings.data_dir.join("cp");
-    sudo_run(
+    sudo_run_cmd(
         sudo,
-        &format!(
-            "install -d -o {u} -g {u} {}",
-            cp_dir.display(),
-            u = settings.service_user
-        ),
+        "install",
+        vec![
+            OsString::from("-d"),
+            OsString::from("-o"),
+            OsString::from(settings.service_user.clone()),
+            OsString::from("-g"),
+            OsString::from(settings.service_user.clone()),
+            cp_dir.into_os_string(),
+        ],
     )?;
 
-    sudo_run(
+    let bin_path = settings.bin_dir.join("fledx-cp");
+    sudo_run_cmd(
         sudo,
-        &format!(
-            "install -m 0755 {} {}/fledx-cp",
-            bin.display(),
-            settings.bin_dir.display()
-        ),
+        "install",
+        vec![
+            OsString::from("-m"),
+            OsString::from("0755"),
+            bin.as_os_str().to_os_string(),
+            bin_path.into_os_string(),
+        ],
     )?;
 
     let env_tmp = tempfile::NamedTempFile::new()?;
     fs::write(env_tmp.path(), env)?;
-    sudo_run(
+    let env_path = settings.config_dir.join("fledx-cp.env");
+    sudo_run_cmd(
         sudo,
-        &format!(
-            "install -m 0600 {} {}/fledx-cp.env",
-            env_tmp.path().display(),
-            settings.config_dir.display()
-        ),
+        "install",
+        vec![
+            OsString::from("-m"),
+            OsString::from("0600"),
+            env_tmp.path().as_os_str().to_os_string(),
+            env_path.into_os_string(),
+        ],
     )?;
 
     let unit_tmp = tempfile::NamedTempFile::new()?;
     fs::write(unit_tmp.path(), unit)?;
-    sudo_run(
+    sudo_run_cmd(
         sudo,
-        &format!(
-            "install -m 0644 {} /etc/systemd/system/fledx-cp.service",
-            unit_tmp.path().display()
-        ),
+        "install",
+        vec![
+            OsString::from("-m"),
+            OsString::from("0644"),
+            unit_tmp.path().as_os_str().to_os_string(),
+            OsString::from("/etc/systemd/system/fledx-cp.service"),
+        ],
     )?;
 
-    sudo_run(sudo, "systemctl daemon-reload")?;
-    sudo_run(sudo, "systemctl enable --now fledx-cp")?;
+    sudo_run_cmd(sudo, "systemctl", vec![OsString::from("daemon-reload")])?;
+    sudo_run_cmd(
+        sudo,
+        "systemctl",
+        vec![OsString::from("enable"), OsString::from("--now"), OsString::from("fledx-cp")],
+    )?;
     Ok(())
 }
 
@@ -948,24 +990,18 @@ pub fn install_cp_ssh(
     settings: &ControlPlaneInstallSettings,
 ) -> anyhow::Result<()> {
     let sudo = SudoMode::root(settings.sudo_interactive);
-    let remote_dir = format!("/tmp/fledx-bootstrap-cp-{}", generate_token_hex(4));
-    ssh.run(SudoMode { required: false, interactive: false }, &format!("mkdir -p {remote_dir}"))?;
+    validate_linux_username(&settings.service_user)?;
+    let remote_dir = ssh.run_output("umask 077; mktemp -d -t fledx-bootstrap-cp.XXXXXXXXXX")?;
 
     let local_dir = tempfile::tempdir()?;
     let local_bin = local_dir.path().join("fledx-cp");
     fs::copy(bin, &local_bin)?;
 
     let local_env = local_dir.path().join("fledx-cp.env");
-    fs::write(&local_env, env)?;
+    write_file_with_mode(&local_env, env, 0o600)?;
 
     let local_unit = local_dir.path().join("fledx-cp.service");
-    fs::write(&local_unit, unit)?;
-
-    let local_script = local_dir.path().join("install.sh");
-    fs::write(
-        &local_script,
-        render_cp_install_script(settings, &remote_dir),
-    )?;
+    write_file_with_mode(&local_unit, unit, 0o644)?;
 
     ssh.upload_file(&local_bin, &PathBuf::from(format!("{remote_dir}/fledx-cp")))?;
     ssh.upload_file(&local_env, &PathBuf::from(format!("{remote_dir}/fledx-cp.env")))?;
@@ -973,37 +1009,58 @@ pub fn install_cp_ssh(
         &local_unit,
         &PathBuf::from(format!("{remote_dir}/fledx-cp.service")),
     )?;
-    ssh.upload_file(&local_script, &PathBuf::from(format!("{remote_dir}/install.sh")))?;
 
-    ssh.run(sudo, &format!("sh {remote_dir}/install.sh"))?;
+    ssh.run(sudo, &render_cp_install_script(settings, &remote_dir))?;
     Ok(())
 }
 
 fn render_cp_install_script(settings: &ControlPlaneInstallSettings, remote_dir: &str) -> String {
     let env_path = settings.config_dir.join("fledx-cp.env");
     let bin_path = settings.bin_dir.join("fledx-cp");
+    let cp_dir = settings.data_dir.join("cp");
+
+    let remote_dir_q = sh_quote(remote_dir);
+    let service_user_q = sh_quote(&settings.service_user);
+    let bin_dir_q = sh_quote_path(&settings.bin_dir);
+    let config_dir_q = sh_quote_path(&settings.config_dir);
+    let cp_dir_q = sh_quote_path(&cp_dir);
+    let bin_path_q = sh_quote_path(&bin_path);
+    let env_path_q = sh_quote_path(&env_path);
+
     format!(
         "\
 set -eu
 
-useradd -r -s /bin/false {user} 2>/dev/null || true
-install -d -o root -g root {bin_dir}
-install -d -o root -g root {config_dir}
-install -d -o {user} -g {user} {data_dir}/cp
-install -m 0755 {remote_dir}/fledx-cp {bin_path}
-install -m 0600 {remote_dir}/fledx-cp.env {env_path}
-install -m 0644 {remote_dir}/fledx-cp.service /etc/systemd/system/fledx-cp.service
+REMOTE_DIR={remote_dir}
+SERVICE_USER={service_user}
+BIN_DIR={bin_dir}
+CONFIG_DIR={config_dir}
+CP_DIR={cp_dir}
+BIN_PATH={bin_path}
+ENV_PATH={env_path}
+
+cleanup() {{
+  rm -rf -- \"$REMOTE_DIR\"
+}}
+trap cleanup EXIT
+
+useradd -r -s /bin/false \"$SERVICE_USER\" 2>/dev/null || true
+install -d -o root -g root \"$BIN_DIR\"
+install -d -o root -g root \"$CONFIG_DIR\"
+install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$CP_DIR\"
+install -m 0755 \"$REMOTE_DIR/fledx-cp\" \"$BIN_PATH\"
+install -m 0600 \"$REMOTE_DIR/fledx-cp.env\" \"$ENV_PATH\"
+install -m 0644 \"$REMOTE_DIR/fledx-cp.service\" /etc/systemd/system/fledx-cp.service
 systemctl daemon-reload
 systemctl enable --now fledx-cp
-rm -rf {remote_dir}
 ",
-        user = settings.service_user,
-        bin_dir = settings.bin_dir.display(),
-        config_dir = settings.config_dir.display(),
-        data_dir = settings.data_dir.display(),
-        remote_dir = remote_dir,
-        bin_path = bin_path.display(),
-        env_path = env_path.display(),
+        remote_dir = remote_dir_q,
+        service_user = service_user_q,
+        bin_dir = bin_dir_q,
+        config_dir = config_dir_q,
+        cp_dir = cp_dir_q,
+        bin_path = bin_path_q,
+        env_path = env_path_q,
     )
 }
 
@@ -1023,24 +1080,18 @@ pub fn install_agent_ssh(
     bin_path: &Path,
 ) -> anyhow::Result<()> {
     let sudo = SudoMode::root(settings.sudo_interactive);
-    let remote_dir = format!("/tmp/fledx-bootstrap-agent-{}", generate_token_hex(4));
-    ssh.run(SudoMode { required: false, interactive: false }, &format!("mkdir -p {remote_dir}"))?;
+    validate_linux_username(&settings.service_user)?;
+    let remote_dir = ssh.run_output("umask 077; mktemp -d -t fledx-bootstrap-agent.XXXXXXXXXX")?;
 
     let local_dir = tempfile::tempdir()?;
     let local_bin = local_dir.path().join("fledx-agent");
     fs::copy(bin, &local_bin)?;
 
     let local_env = local_dir.path().join("fledx-agent.env");
-    fs::write(&local_env, env)?;
+    write_file_with_mode(&local_env, env, 0o600)?;
 
     let local_unit = local_dir.path().join("fledx-agent.service");
-    fs::write(&local_unit, unit)?;
-
-    let local_script = local_dir.path().join("install.sh");
-    fs::write(
-        &local_script,
-        render_agent_install_script(settings, &remote_dir, bin_path),
-    )?;
+    write_file_with_mode(&local_unit, unit, 0o644)?;
 
     ssh.upload_file(&local_bin, &PathBuf::from(format!("{remote_dir}/fledx-agent")))?;
     ssh.upload_file(
@@ -1051,20 +1102,43 @@ pub fn install_agent_ssh(
         &local_unit,
         &PathBuf::from(format!("{remote_dir}/fledx-agent.service")),
     )?;
-    ssh.upload_file(&local_script, &PathBuf::from(format!("{remote_dir}/install.sh")))?;
 
-    ssh.run(sudo, &format!("sh {remote_dir}/install.sh"))?;
+    ssh.run(sudo, &render_agent_install_script(settings, &remote_dir, bin_path))?;
     Ok(())
 }
 
 fn render_agent_install_script(settings: &AgentInstallSettings, remote_dir: &str, bin_path: &Path) -> String {
     let env_path = settings.config_dir.join("fledx-agent.env");
     let bin_dir = bin_path.parent().unwrap_or_else(|| Path::new("/"));
+    let agent_dir = settings.data_dir.join("agent");
     let volumes_dir = settings.data_dir.join("volumes");
+
+    let remote_dir_q = sh_quote(remote_dir);
+    let service_user_q = sh_quote(&settings.service_user);
+    let bin_dir_q = sh_quote_path(bin_dir);
+    let config_dir_q = sh_quote_path(&settings.config_dir);
+    let agent_dir_q = sh_quote_path(&agent_dir);
+    let volumes_dir_q = sh_quote_path(&volumes_dir);
+    let bin_path_q = sh_quote_path(bin_path);
+    let env_path_q = sh_quote_path(&env_path);
 
     format!(
         "\
 set -eu
+
+REMOTE_DIR={remote_dir}
+SERVICE_USER={service_user}
+BIN_DIR={bin_dir}
+CONFIG_DIR={config_dir}
+AGENT_DIR={agent_dir}
+VOLUMES_DIR={volumes_dir}
+BIN_PATH={bin_path}
+ENV_PATH={env_path}
+
+cleanup() {{
+  rm -rf -- \"$REMOTE_DIR\"
+}}
+trap cleanup EXIT
 
 if [ ! -S /var/run/docker.sock ]; then
   echo \"docker socket not found at /var/run/docker.sock\" >&2
@@ -1077,37 +1151,102 @@ if [ -z \"$docker_group\" ]; then
   exit 1
 fi
 
-useradd -r -s /bin/false {user} 2>/dev/null || true
-usermod -a -G \"$docker_group\" {user}
+useradd -r -s /bin/false \"$SERVICE_USER\" 2>/dev/null || true
+usermod -a -G \"$docker_group\" \"$SERVICE_USER\"
 
-install -d -o root -g root {bin_dir}
-install -d -o root -g root {config_dir}
-install -d -o {user} -g {user} {data_dir}/agent
-install -d -o {user} -g {user} {volumes_dir}
-install -m 0755 {remote_dir}/fledx-agent {bin_path}
-install -m 0600 {remote_dir}/fledx-agent.env {env_path}
-install -m 0644 {remote_dir}/fledx-agent.service /etc/systemd/system/fledx-agent.service
+install -d -o root -g root \"$BIN_DIR\"
+install -d -o root -g root \"$CONFIG_DIR\"
+install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$AGENT_DIR\"
+install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$VOLUMES_DIR\"
+install -m 0755 \"$REMOTE_DIR/fledx-agent\" \"$BIN_PATH\"
+install -m 0600 \"$REMOTE_DIR/fledx-agent.env\" \"$ENV_PATH\"
+install -m 0644 \"$REMOTE_DIR/fledx-agent.service\" /etc/systemd/system/fledx-agent.service
 systemctl daemon-reload
 systemctl enable --now fledx-agent
-rm -rf {remote_dir}
 ",
-        user = settings.service_user,
-        bin_dir = bin_dir.display(),
-        config_dir = settings.config_dir.display(),
-        data_dir = settings.data_dir.display(),
-        volumes_dir = volumes_dir.display(),
-        remote_dir = remote_dir,
-        bin_path = bin_path.display(),
-        env_path = env_path.display(),
+        remote_dir = remote_dir_q,
+        service_user = service_user_q,
+        bin_dir = bin_dir_q,
+        config_dir = config_dir_q,
+        agent_dir = agent_dir_q,
+        volumes_dir = volumes_dir_q,
+        bin_path = bin_path_q,
+        env_path = env_path_q,
     )
 }
 
-fn sudo_run(sudo: SudoMode, script: &str) -> anyhow::Result<()> {
+fn validate_linux_username(value: &str) -> anyhow::Result<()> {
+    if value.is_empty() {
+        anyhow::bail!("service user must not be empty");
+    }
+    if value.len() > 32 {
+        anyhow::bail!(
+            "service user '{}' is too long (max 32 characters)",
+            value
+        );
+    }
+
+    let mut chars = value.chars();
+    let Some(first) = chars.next() else {
+        anyhow::bail!("service user must not be empty");
+    };
+
+    if !matches!(first, 'a'..='z' | '_') {
+        anyhow::bail!(
+            "invalid service user '{}': must start with [a-z_] (ASCII lowercase)",
+            value
+        );
+    }
+
+    for ch in chars {
+        if !matches!(ch, 'a'..='z' | '0'..='9' | '_' | '-') {
+            anyhow::bail!(
+                "invalid service user '{}': unsupported character '{}'",
+                value,
+                ch
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn local_user_exists(user: &str) -> anyhow::Result<bool> {
+    let mut cmd = Command::new("id");
+    cmd.arg("-u").arg(user);
+    let output = run_capture(cmd)?;
+    Ok(output.status.success())
+}
+
+#[cfg(unix)]
+fn write_file_with_mode(path: &Path, contents: &str, mode: u32) -> anyhow::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(mode)
+        .open(path)
+        .with_context(|| format!("failed to create {}", path.display()))?;
+    file.write_all(contents.as_bytes())
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_file_with_mode(path: &Path, contents: &str, _mode: u32) -> anyhow::Result<()> {
+    fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn sudo_run_cmd(sudo: SudoMode, program: &str, args: Vec<OsString>) -> anyhow::Result<()> {
     let mut cmd = Command::new("sudo");
     if !sudo.interactive {
         cmd.arg("-n");
     }
-    cmd.arg("sh").arg("-c").arg(script);
+    cmd.arg(program);
+    cmd.args(args);
     let output = run_capture(cmd)?;
     if output.status.success() {
         return Ok(());
@@ -1131,6 +1270,28 @@ stderr:\n{}",
         output.stdout.trim_end(),
         output.stderr.trim_end()
     );
+}
+
+fn sh_quote(value: &str) -> String {
+    if value.is_empty() {
+        return "''".to_string();
+    }
+
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('\'');
+    for ch in value.chars() {
+        if ch == '\'' {
+            out.push_str("'\"'\"'");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+fn sh_quote_path(path: &Path) -> String {
+    sh_quote(&path.as_os_str().to_string_lossy())
 }
 
 fn run_checked(mut cmd: Command) -> anyhow::Result<String> {
