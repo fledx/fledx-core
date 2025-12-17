@@ -6,12 +6,6 @@ on:
     - cron: '0 9 * * 1'
   # Allow manual triggering
   workflow_dispatch:
-  # Run on pushes to main that modify dependencies
-  push:
-    branches: [main]
-    paths:
-      - '**/Cargo.toml'
-      - '**/Cargo.lock'
 
 env:
   CARGO_TERM_COLOR: always
