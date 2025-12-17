@@ -10,7 +10,7 @@ use tokio::time::{sleep, Instant};
 
 fn describe_timeout(timeout: Duration) -> String {
     // Keep this short and stable for CLI output.
-    if timeout.as_millis() % 1000 == 0 {
+    if timeout.as_millis().is_multiple_of(1000) {
         format!("{}s", timeout.as_secs())
     } else {
         format!("{:.1}s", timeout.as_secs_f32())
