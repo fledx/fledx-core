@@ -356,14 +356,23 @@ impl InstallTarget {
             InstallTarget::Ssh(ssh) => {
                 // Try a few probes since different distros expose arch info in
                 // different ways, and some SSH targets prepend banners.
-                let probe = ssh.run_output(
-                    "uname -m; dpkg --print-architecture 2>/dev/null || true; \
-                     apk --print-arch 2>/dev/null || true",
-                )?;
+                //
+                // Note: Some SSH configurations print banner/motd text to
+                // stdout even for non-login sessions. To make debugging easy,
+                // we include the raw probe output in error messages.
+                const ARCH_PROBE_SCRIPT: &str =
+                    "uname -m; \
+                     dpkg --print-architecture 2>/dev/null || true; \
+                     apk --print-arch 2>/dev/null || true";
+
+                let probe = ssh.run_output(ARCH_PROBE_SCRIPT)?;
 
                 let arch = LinuxArch::from_uname_output(&probe).with_context(|| {
                     format!(
-                        "failed to parse remote arch from arch probe output: {:?}",
+                        "failed to parse remote arch on {} using probe `{}`.\n\
+Raw output: {:?}",
+                        ssh.destination(),
+                        ARCH_PROBE_SCRIPT,
                         probe.trim_end()
                     )
                 })?;
