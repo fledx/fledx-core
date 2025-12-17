@@ -1,0 +1,29 @@
+[package]
+name = "installer"
+version = "0.4.0-dev"
+edition = "2021"
+publish = false
+license = "BUSL-1.1"
+description = "Reusable installer/bootstrap utilities for fledx binaries"
+repository = "https://github.com/fledx/fledx-core"
+homepage = "https://github.com/fledx/fledx-core"
+authors = ["Thomas Schmitz <dev@tschmitz.de>"]
+keywords = ["edge-computing", "containers", "installer", "bootstrap", "systemd"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+rand.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+common = { path = "../common" }
+tar = "0.4"
+flate2 = "1"
+
+[dev-dependencies]
+tempfile.workspace = true

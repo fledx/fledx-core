@@ -20,6 +20,13 @@ path = "src/lib.rs"
 name = "fledx"
 path = "src/main.rs"
 
+[features]
+# The core CLI binary should ship with bootstrap support enabled by default,
+# but enterprise CLI embeds `cli` as a dependency and disables default features
+# to avoid subcommand name conflicts.
+default = ["bootstrap"]
+bootstrap = ["dep:installer", "dep:toml", "dep:tempfile"]
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
@@ -34,6 +41,9 @@ common = { path = "../common" }
 chrono.workspace = true
 ratatui = { version = "0.29.0", features = ["crossterm"] }
 crossterm = "0.29.0"
+installer = { path = "../installer", optional = true }
+toml = { version = "0.9", optional = true }
+tempfile = { workspace = true, optional = true }
 
 [build-dependencies]
 chrono.workspace = true

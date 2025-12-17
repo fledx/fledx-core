@@ -9,6 +9,10 @@ pub mod metrics;
 pub mod nodes;
 pub mod status;
 pub mod usage;
+#[cfg(feature = "bootstrap")]
+pub mod bootstrap;
+#[cfg(feature = "bootstrap")]
+pub mod profiles;
 
 pub use common::*;
 pub use deploy::*;
@@ -16,6 +20,10 @@ pub use metrics::*;
 pub use nodes::*;
 pub use status::*;
 pub use usage::*;
+#[cfg(feature = "bootstrap")]
+pub use bootstrap::*;
+#[cfg(feature = "bootstrap")]
+pub use profiles::*;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -25,6 +33,11 @@ pub use usage::*;
     about = "fledx - Distributed Edge Hosting CLI"
 )]
 pub struct Cli {
+    /// Name of the local CLI profile to use (from ~/.config/fledx/config.toml).
+    #[cfg(feature = "bootstrap")]
+    #[arg(long, global = true)]
+    pub profile: Option<String>,
+
     #[command(flatten)]
     pub globals: GlobalArgs,
 
@@ -97,6 +110,20 @@ pub enum Commands {
         /// Shell to generate completions for.
         #[arg(value_enum)]
         shell: CompletionShell,
+    },
+
+    /// Bootstrap (install + configure) control-plane and agents.
+    #[cfg(feature = "bootstrap")]
+    Bootstrap {
+        #[command(subcommand)]
+        command: BootstrapCommands,
+    },
+
+    /// Local CLI profile management.
+    #[cfg(feature = "bootstrap")]
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommands,
     },
 }
 

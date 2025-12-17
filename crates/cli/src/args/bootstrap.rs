@@ -1,0 +1,157 @@
+use std::path::PathBuf;
+
+use clap::{Args, Subcommand};
+
+#[derive(Debug, Subcommand)]
+pub enum BootstrapCommands {
+    /// Install + configure the control-plane (local or via SSH).
+    Cp(BootstrapCpArgs),
+    /// Install + configure a node agent via SSH and auto-enroll it.
+    Agent(BootstrapAgentArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BootstrapCpArgs {
+    /// Hostname or IP that must be reachable by agents.
+    ///
+    /// This value is used when generating agent configuration.
+    #[arg(long = "cp-hostname", value_name = "HOST")]
+    pub cp_hostname: String,
+
+    /// SSH target host to install the control-plane on (user@host or host).
+    ///
+    /// If omitted, installs locally.
+    #[arg(long = "ssh-host", visible_alias = "host", value_name = "HOST")]
+    pub ssh_host: Option<String>,
+
+    /// SSH username (overrides user@host if provided).
+    #[arg(long = "ssh-user", value_name = "USER")]
+    pub ssh_user: Option<String>,
+
+    /// SSH port.
+    #[arg(long = "ssh-port", default_value_t = 22)]
+    pub ssh_port: u16,
+
+    /// SSH identity file (private key).
+    #[arg(long = "ssh-identity-file", value_name = "PATH")]
+    pub ssh_identity_file: Option<PathBuf>,
+
+    /// Control-plane version to install (defaults to latest release; supports `latest`).
+    #[arg(long = "version", value_name = "VERSION")]
+    pub version: Option<String>,
+
+    /// Directory to install binaries into.
+    #[arg(long = "bin-dir", default_value = "/usr/local/bin", value_name = "PATH")]
+    pub bin_dir: PathBuf,
+
+    /// Directory to write config/env files into.
+    #[arg(long = "config-dir", default_value = "/etc/fledx", value_name = "PATH")]
+    pub config_dir: PathBuf,
+
+    /// Directory to store persistent data into.
+    #[arg(long = "data-dir", default_value = "/var/lib/fledx", value_name = "PATH")]
+    pub data_dir: PathBuf,
+
+    /// Control-plane HTTP server port.
+    #[arg(long = "server-port", default_value_t = 8080)]
+    pub server_port: u16,
+
+    /// Control-plane tunnel listener port.
+    #[arg(long = "tunnel-port", default_value_t = 7443)]
+    pub tunnel_port: u16,
+
+    /// Dedicated system user to run the control-plane service as.
+    #[arg(long = "service-user", default_value = "fledx-cp")]
+    pub service_user: String,
+
+    /// Tokens pepper used to hash stored tokens (defaults to random).
+    #[arg(long = "tokens-pepper", value_name = "VALUE")]
+    pub tokens_pepper: Option<String>,
+
+    /// Allow interactive sudo (prompts for password). Default uses `sudo -n`.
+    #[arg(long = "sudo-interactive", default_value_t = false)]
+    pub sudo_interactive: bool,
+
+    /// Do not wait for services to become ready after starting them.
+    #[arg(long = "no-wait", default_value_t = false)]
+    pub no_wait: bool,
+
+    /// Maximum seconds to wait for readiness checks.
+    #[arg(long = "wait-timeout-secs", default_value_t = 120)]
+    pub wait_timeout_secs: u64,
+}
+
+#[derive(Debug, Args)]
+pub struct BootstrapAgentArgs {
+    /// SSH target host to install the agent on (user@host or host).
+    #[arg(long = "ssh-host", visible_alias = "host", value_name = "HOST")]
+    pub ssh_host: String,
+
+    /// SSH username (overrides user@host if provided).
+    #[arg(long = "ssh-user", value_name = "USER")]
+    pub ssh_user: Option<String>,
+
+    /// SSH port.
+    #[arg(long = "ssh-port", default_value_t = 22)]
+    pub ssh_port: u16,
+
+    /// SSH identity file (private key).
+    #[arg(long = "ssh-identity-file", value_name = "PATH")]
+    pub ssh_identity_file: Option<PathBuf>,
+
+    /// Node name to register (defaults to ssh host).
+    #[arg(long = "name", value_name = "NAME")]
+    pub name: Option<String>,
+
+    /// Agent version to install.
+    ///
+    /// Defaults to the control-plane version (queried from `GET /health`).
+    /// Use `latest` to install the latest core release.
+    #[arg(long = "version", value_name = "VERSION")]
+    pub version: Option<String>,
+
+    /// Directory to install binaries into.
+    #[arg(long = "bin-dir", default_value = "/usr/local/bin", value_name = "PATH")]
+    pub bin_dir: PathBuf,
+
+    /// Binary install path (overrides --bin-dir).
+    #[arg(long = "install-path", value_name = "PATH")]
+    pub install_path: Option<PathBuf>,
+
+    /// Directory to write config/env files into.
+    #[arg(long = "config-dir", default_value = "/etc/fledx", value_name = "PATH")]
+    pub config_dir: PathBuf,
+
+    /// Directory to store persistent data into.
+    #[arg(long = "data-dir", default_value = "/var/lib/fledx", value_name = "PATH")]
+    pub data_dir: PathBuf,
+
+    /// Dedicated system user to run the agent service as.
+    #[arg(long = "service-user", default_value = "fledx-agent")]
+    pub service_user: String,
+
+    /// Node label in KEY=VALUE form (repeatable).
+    #[arg(long = "label", visible_alias = "labels", value_name = "KEY=VALUE")]
+    pub labels: Vec<String>,
+
+    /// Capacity hint: CPU milli-cores (forwarded during enrollment).
+    #[arg(long = "capacity-cpu-millis", value_name = "MILLIS")]
+    pub capacity_cpu_millis: Option<u32>,
+
+    /// Capacity hint: memory bytes (forwarded during enrollment).
+    #[arg(long = "capacity-memory-bytes", value_name = "BYTES")]
+    pub capacity_memory_bytes: Option<u64>,
+
+    /// Allow interactive sudo (prompts for password). Default uses `sudo -n`.
+    #[arg(long = "sudo-interactive", default_value_t = false)]
+    pub sudo_interactive: bool,
+
+    /// Do not wait for services to become ready after starting them.
+    #[arg(long = "no-wait", default_value_t = false)]
+    pub no_wait: bool,
+
+    /// Maximum seconds to wait for readiness checks.
+    #[arg(long = "wait-timeout-secs", default_value_t = 120)]
+    pub wait_timeout_secs: u64,
+}
+

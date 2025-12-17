@@ -5,6 +5,7 @@ members = [
     "crates/node-agent",
     "crates/cli",
     "crates/common",
+    "crates/installer",
 ]
 
 [workspace.package]
