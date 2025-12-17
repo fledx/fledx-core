@@ -3,6 +3,16 @@
 **Distributed Edge Hosting** – A lightweight container orchestration platform for managing Docker containers across
 multiple edge nodes.
 
+## Key Features
+
+- **One-Command Setup** – Bootstrap control plane and agents via SSH
+- **Intelligent Scheduling** – Placement constraints, affinity, and anti-affinity rules
+- **Health Monitoring** – HTTP, TCP, and exec health checks with auto-restart
+- **Tunnel Connectivity** – NAT/firewall-friendly agent connections
+- **Public Ingress** – Envoy-based gateway for external traffic routing
+- **Real-Time Status Watch** – Live terminal updates for monitoring deployments
+- **Prometheus Metrics** – Built-in observability and monitoring
+
 ## Quick Start
 
 Get your edge platform running in minutes with the built-in bootstrap commands.
@@ -80,16 +90,6 @@ fledx status --watch
 ```
 
 That's it! Your application is now running across your edge nodes.
-
-## Key Features
-
-- **One-Command Setup** – Bootstrap control plane and agents via SSH
-- **Intelligent Scheduling** – Placement constraints, affinity, and anti-affinity rules
-- **Health Monitoring** – HTTP, TCP, and exec health checks with auto-restart
-- **Tunnel Connectivity** – NAT/firewall-friendly agent connections
-- **Public Ingress** – Envoy-based gateway for external traffic routing
-- **Real-Time Status Watch** – Live terminal updates for monitoring deployments
-- **Prometheus Metrics** – Built-in observability and monitoring
 
 ## Architecture
 
