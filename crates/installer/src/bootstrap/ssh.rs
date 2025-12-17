@@ -25,8 +25,36 @@ impl LinuxArch {
         match normalized {
             "x86_64" | "amd64" => Ok(Self::X86_64),
             "aarch64" | "arm64" => Ok(Self::Aarch64),
+            // Raspberry Pi OS 32-bit and other 32-bit ARM distros commonly
+            // report these values via `uname -m` / package managers.
+            "armv7l" | "armv6l" | "armhf" => anyhow::bail!(
+                "unsupported arch '{}' (32-bit ARM); supported: x86_64, aarch64.\n\
+Hint: install a 64-bit OS image on the target (so `uname -m` returns aarch64) \
+or use a target that matches a supported release asset.",
+                normalized
+            ),
             other => anyhow::bail!("unsupported arch '{}'; supported: x86_64, aarch64", other),
         }
+    }
+
+    /// Parse a noisy `uname` output.
+    ///
+    /// Some SSH targets print banners/motd text to stdout even for non-login,
+    /// non-interactive sessions. In those cases the output may include multiple
+    /// whitespace-separated tokens/lines; we scan for a known arch token.
+    pub fn from_uname_output(output: &str) -> anyhow::Result<Self> {
+        // Prefer tokens near the end since banners usually come first.
+        for token in output.split_whitespace().rev() {
+            if let Ok(arch) = Self::from_uname(token) {
+                return Ok(arch);
+            }
+        }
+
+        anyhow::bail!(
+            "unsupported arch output; expected one of: x86_64, aarch64.\n\
+Raw output: {:?}",
+            output.trim_end()
+        );
     }
 
     pub fn detect_local() -> anyhow::Result<Self> {
@@ -326,9 +354,18 @@ impl InstallTarget {
         match self {
             InstallTarget::Local => LinuxArch::detect_local(),
             InstallTarget::Ssh(ssh) => {
-                let uname = ssh.run_output("uname -m")?;
-                let arch = LinuxArch::from_uname(&uname).with_context(|| {
-                    format!("failed to parse remote arch from uname: {}", uname)
+                // Try a few probes since different distros expose arch info in
+                // different ways, and some SSH targets prepend banners.
+                let probe = ssh.run_output(
+                    "uname -m; dpkg --print-architecture 2>/dev/null || true; \
+                     apk --print-arch 2>/dev/null || true",
+                )?;
+
+                let arch = LinuxArch::from_uname_output(&probe).with_context(|| {
+                    format!(
+                        "failed to parse remote arch from arch probe output: {:?}",
+                        probe.trim_end()
+                    )
                 })?;
                 ssh.run(SudoMode::root(sudo_interactive), "true")
                     .context("remote sudo check failed")?;
@@ -369,12 +406,26 @@ mod tests {
     }
 
     #[test]
+    fn linux_arch_can_be_extracted_from_noisy_uname_output() {
+        let out = "Welcome\nLinux\narm64\n";
+        assert_eq!(LinuxArch::from_uname_output(out).unwrap().as_str(), "aarch64");
+    }
+
+    #[test]
     fn linux_arch_rejects_unknown_values() {
         let err = LinuxArch::from_uname("i686").expect_err("should fail");
         let msg = err.to_string();
         assert!(msg.contains("unsupported arch"), "{msg}");
         assert!(msg.contains("i686"), "{msg}");
         assert!(msg.contains("x86_64"), "{msg}");
+        assert!(msg.contains("aarch64"), "{msg}");
+    }
+
+    #[test]
+    fn linux_arch_rejects_32bit_arm_with_hint() {
+        let err = LinuxArch::from_uname("armv7l").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("32-bit ARM"), "{msg}");
         assert!(msg.contains("aarch64"), "{msg}");
     }
 
