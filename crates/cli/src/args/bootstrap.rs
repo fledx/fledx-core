@@ -1,6 +1,16 @@
 use std::path::PathBuf;
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+pub enum SshHostKeyChecking {
+    /// Accept unknown host keys and add them to known_hosts (TOFU).
+    AcceptNew,
+    /// Require the host key to already exist in known_hosts.
+    Strict,
+    /// Disable host key checking (insecure).
+    Off,
+}
 
 #[derive(Debug, Subcommand)]
 pub enum BootstrapCommands {
@@ -35,6 +45,20 @@ pub struct BootstrapCpArgs {
     /// SSH identity file (private key).
     #[arg(long = "ssh-identity-file", value_name = "PATH")]
     pub ssh_identity_file: Option<PathBuf>,
+
+    /// Allow interactive SSH auth (password prompts, host key prompts).
+    ///
+    /// Default uses `BatchMode=yes` to avoid hanging on prompts.
+    #[arg(long = "ssh-interactive", default_value_t = false)]
+    pub ssh_interactive: bool,
+
+    /// SSH connection timeout (seconds).
+    #[arg(long = "ssh-connect-timeout-secs", default_value_t = 10)]
+    pub ssh_connect_timeout_secs: u16,
+
+    /// SSH host key checking policy (defaults to `accept-new` / TOFU).
+    #[arg(long = "ssh-host-key-checking", value_enum, default_value_t = SshHostKeyChecking::AcceptNew)]
+    pub ssh_host_key_checking: SshHostKeyChecking,
 
     /// Control-plane version to install (defaults to latest release; supports `latest`).
     #[arg(long = "version", value_name = "VERSION")]
@@ -105,6 +129,20 @@ pub struct BootstrapAgentArgs {
     /// SSH identity file (private key).
     #[arg(long = "ssh-identity-file", value_name = "PATH")]
     pub ssh_identity_file: Option<PathBuf>,
+
+    /// Allow interactive SSH auth (password prompts, host key prompts).
+    ///
+    /// Default uses `BatchMode=yes` to avoid hanging on prompts.
+    #[arg(long = "ssh-interactive", default_value_t = false)]
+    pub ssh_interactive: bool,
+
+    /// SSH connection timeout (seconds).
+    #[arg(long = "ssh-connect-timeout-secs", default_value_t = 10)]
+    pub ssh_connect_timeout_secs: u16,
+
+    /// SSH host key checking policy (defaults to `accept-new` / TOFU).
+    #[arg(long = "ssh-host-key-checking", value_enum, default_value_t = SshHostKeyChecking::AcceptNew)]
+    pub ssh_host_key_checking: SshHostKeyChecking,
 
     /// Node name to register (defaults to ssh host).
     #[arg(long = "name", value_name = "NAME")]

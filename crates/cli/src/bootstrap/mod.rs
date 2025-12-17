@@ -16,12 +16,27 @@ pub async fn bootstrap_cp(
     args: BootstrapCpArgs,
 ) -> anyhow::Result<()> {
     let target = match &args.ssh_host {
-        Some(host) => installer::bootstrap::InstallTarget::Ssh(installer::bootstrap::SshTarget::from_user_at_host(
-            host,
-            args.ssh_user.clone(),
-            args.ssh_port,
-            args.ssh_identity_file.clone(),
-        )),
+        Some(host) => {
+            let mut ssh = installer::bootstrap::SshTarget::from_user_at_host(
+                host,
+                args.ssh_user.clone(),
+                args.ssh_port,
+                args.ssh_identity_file.clone(),
+            );
+            ssh.options.batch_mode = !args.ssh_interactive;
+            ssh.options.connect_timeout_secs = args.ssh_connect_timeout_secs;
+            ssh.options.host_key_checking = match args.ssh_host_key_checking {
+                crate::args::SshHostKeyChecking::AcceptNew => {
+                    installer::bootstrap::SshHostKeyChecking::AcceptNew
+                }
+                crate::args::SshHostKeyChecking::Strict => {
+                    installer::bootstrap::SshHostKeyChecking::Strict
+                }
+                crate::args::SshHostKeyChecking::Off => installer::bootstrap::SshHostKeyChecking::Off,
+            };
+
+            installer::bootstrap::InstallTarget::Ssh(ssh)
+        }
         None => installer::bootstrap::InstallTarget::Local,
     };
 
@@ -215,12 +230,19 @@ pub async fn bootstrap_agent(
     let registration_token =
         resolve_registration_token_for_bootstrap(profiles, &selected_profile, globals)?;
 
-    let ssh = installer::bootstrap::SshTarget::from_user_at_host(
+    let mut ssh = installer::bootstrap::SshTarget::from_user_at_host(
         &args.ssh_host,
         args.ssh_user.clone(),
         args.ssh_port,
         args.ssh_identity_file.clone(),
     );
+    ssh.options.batch_mode = !args.ssh_interactive;
+    ssh.options.connect_timeout_secs = args.ssh_connect_timeout_secs;
+    ssh.options.host_key_checking = match args.ssh_host_key_checking {
+        crate::args::SshHostKeyChecking::AcceptNew => installer::bootstrap::SshHostKeyChecking::AcceptNew,
+        crate::args::SshHostKeyChecking::Strict => installer::bootstrap::SshHostKeyChecking::Strict,
+        crate::args::SshHostKeyChecking::Off => installer::bootstrap::SshHostKeyChecking::Off,
+    };
 
     if !args.no_wait {
         let timeout = Duration::from_secs(args.wait_timeout_secs);
@@ -511,6 +533,9 @@ mod tests {
 	            ssh_user: None,
 	            ssh_port: 22,
 	            ssh_identity_file: None,
+	            ssh_interactive: false,
+	            ssh_connect_timeout_secs: 10,
+	            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
 	            name: None,
 	            version: None,
 	            bin_dir: PathBuf::from("/usr/local/bin"),
@@ -539,6 +564,9 @@ mod tests {
 	            ssh_user: None,
 	            ssh_port: 22,
 	            ssh_identity_file: None,
+	            ssh_interactive: false,
+	            ssh_connect_timeout_secs: 10,
+	            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
 	            name: None,
 	            version: None,
 	            bin_dir: PathBuf::from("/usr/local/bin"),
@@ -567,6 +595,9 @@ mod tests {
 	            ssh_user: None,
 	            ssh_port: 22,
 	            ssh_identity_file: None,
+	            ssh_interactive: false,
+	            ssh_connect_timeout_secs: 10,
+	            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
 	            name: None,
 	            version: None,
 	            bin_dir: PathBuf::from("/usr/local/bin"),
