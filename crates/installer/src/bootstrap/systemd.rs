@@ -126,15 +126,68 @@ pub async fn wait_for_systemd_active_ssh(
 fn systemd_state_local(service: &str) -> anyhow::Result<String> {
     let unit = normalize_unit_name(service);
     let mut cmd = Command::new("systemctl");
-    cmd.arg("is-active").arg(unit);
+    cmd.arg("is-active").arg("--quiet").arg("--").arg(&unit);
     let output = run_capture(cmd)?;
-    Ok(output.stdout.trim().to_string())
+    if output.status.success() {
+        return Ok("active".to_string());
+    }
+
+    let mut cmd = Command::new("systemctl");
+    cmd.arg("is-failed").arg("--quiet").arg("--").arg(&unit);
+    let output = run_capture(cmd)?;
+    if output.status.success() {
+        return Ok("failed".to_string());
+    }
+
+    let mut cmd = Command::new("systemctl");
+    cmd.arg("is-active").arg("--").arg(&unit);
+    let output = run_capture(cmd)?;
+    Ok(parse_systemctl_is_active_output(&format!(
+        "{}\n{}",
+        output.stdout, output.stderr
+    )))
 }
 
 fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
     let unit = normalize_unit_name(service);
-    let raw = ssh.run_output(&format!("systemctl is-active -- {}", sh_quote(&unit)))?;
-    Ok(parse_systemctl_is_active_output(&raw))
+    let output = ssh.run_capture_command(
+        "systemctl",
+        &[
+            OsString::from("is-active"),
+            OsString::from("--quiet"),
+            OsString::from("--"),
+            OsString::from(&unit),
+        ],
+    )?;
+    if output.status.success() {
+        return Ok("active".to_string());
+    }
+
+    let output = ssh.run_capture_command(
+        "systemctl",
+        &[
+            OsString::from("is-failed"),
+            OsString::from("--quiet"),
+            OsString::from("--"),
+            OsString::from(&unit),
+        ],
+    )?;
+    if output.status.success() {
+        return Ok("failed".to_string());
+    }
+
+    let output = ssh.run_capture_command(
+        "systemctl",
+        &[
+            OsString::from("is-active"),
+            OsString::from("--"),
+            OsString::from(&unit),
+        ],
+    )?;
+    Ok(parse_systemctl_is_active_output(&format!(
+        "{}\n{}",
+        output.stdout, output.stderr
+    )))
 }
 
 fn systemd_debug_bundle_local(service: &str) -> String {
@@ -154,10 +207,7 @@ fn systemd_debug_bundle_local(service: &str) -> String {
         systemd_status_local(&unit).unwrap_or_else(|e| e.to_string())
     );
 
-    let _ = writeln!(
-        &mut out,
-        "\njournalctl (sudo -n, optional, last 10 lines):"
-    );
+    let _ = writeln!(&mut out, "\njournalctl (sudo -n, optional, last 10 lines):");
     let _ = writeln!(
         &mut out,
         "{}",
@@ -197,11 +247,7 @@ fn systemd_journal_local(service: &str) -> anyhow::Result<String> {
 
     let output = match run_capture(cmd) {
         Ok(output) => output,
-        Err(e) => {
-            return Ok(format!(
-                "skipped (failed to run sudo -n journalctl): {e:#}"
-            ))
-        }
+        Err(e) => return Ok(format!("skipped (failed to run sudo -n journalctl): {e:#}")),
     };
 
     if !output.status.success() && looks_like_noninteractive_sudo_failure(&output.stderr) {

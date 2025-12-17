@@ -9,6 +9,13 @@ use super::{
     looks_like_noninteractive_sudo_failure, run_capture, run_checked, sh_quote, sh_quote_path,
 };
 
+#[derive(Debug)]
+pub(crate) struct CapturedOutput {
+    pub stdout: String,
+    pub stderr: String,
+    pub status: std::process::ExitStatus,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinuxArch {
     X86_64,
@@ -373,6 +380,25 @@ stderr:\n{}",
             );
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    pub(crate) fn run_capture_command(
+        &self,
+        program: &str,
+        args: &[OsString],
+    ) -> anyhow::Result<CapturedOutput> {
+        let mut cmd = self.ssh_base();
+        cmd.arg("--");
+        cmd.arg(self.destination());
+        cmd.arg(program);
+        cmd.args(args);
+
+        let output = run_capture(cmd)?;
+        Ok(CapturedOutput {
+            stdout: output.stdout,
+            stderr: output.stderr,
+            status: output.status,
+        })
     }
 
     pub fn upload_file(&self, local: &Path, remote: &Path) -> anyhow::Result<()> {
