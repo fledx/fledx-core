@@ -4,8 +4,38 @@ use std::path::Path;
 use anyhow::Context;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use serde::Deserialize;
+use std::time::Duration;
+use tokio::time::timeout as tokio_timeout;
 
 use super::GITHUB_USER_AGENT;
+
+async fn send_with_timeout(
+    req: reqwest::RequestBuilder,
+    timeout: Duration,
+    url: &str,
+) -> anyhow::Result<reqwest::Response> {
+    match tokio_timeout(timeout, req.send()).await {
+        Ok(Ok(res)) => Ok(res),
+        Ok(Err(err)) => Err(err).with_context(|| format!("request failed: {url}")),
+        Err(_) => anyhow::bail!("request timed out after {}s: {}", timeout.as_secs(), url),
+    }
+}
+
+async fn read_bytes_with_timeout(
+    res: reqwest::Response,
+    timeout: Duration,
+    url: &str,
+) -> anyhow::Result<Vec<u8>> {
+    match tokio_timeout(timeout, res.bytes()).await {
+        Ok(Ok(bytes)) => Ok(bytes.to_vec()),
+        Ok(Err(err)) => Err(err).with_context(|| format!("failed to read response body: {url}")),
+        Err(_) => anyhow::bail!(
+            "reading response body timed out after {}s: {}",
+            timeout.as_secs(),
+            url
+        ),
+    }
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GitHubRelease {
@@ -25,12 +55,15 @@ pub async fn fetch_release(
     version: Option<&str>,
 ) -> anyhow::Result<GitHubRelease> {
     let url = release_api_url(repo, version);
-    let res = client
-        .get(&url)
-        .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT)
-        .send()
-        .await
-        .with_context(|| format!("failed to fetch GitHub release metadata: {url}"))?;
+    let res = send_with_timeout(
+        client
+            .get(&url)
+            .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT),
+        Duration::from_secs(15),
+        &url,
+    )
+    .await
+    .with_context(|| format!("failed to fetch GitHub release metadata: {url}"))?;
     let res = res
         .error_for_status()
         .with_context(|| format!("GitHub release request failed: {url}"))?;
@@ -78,25 +111,29 @@ pub async fn download_asset(
             )
         })?;
 
-    let bytes = client
-        .get(&asset.browser_download_url)
-        .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT)
-        .send()
-        .await
-        .with_context(|| {
-            format!(
-                "failed to download {}@{} asset {} from {}",
-                repo, release.tag_name, name, asset.browser_download_url
-            )
-        })?
-        .error_for_status()
-        .with_context(|| {
-            format!(
-                "failed to download {}@{} asset {} from {}",
-                repo, release.tag_name, name, asset.browser_download_url
-            )
-        })?
-        .bytes()
+    let res = send_with_timeout(
+        client
+            .get(&asset.browser_download_url)
+            .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT),
+        Duration::from_secs(30),
+        &asset.browser_download_url,
+    )
+    .await
+    .with_context(|| {
+        format!(
+            "failed to download {}@{} asset {} from {}",
+            repo, release.tag_name, name, asset.browser_download_url
+        )
+    })?
+    .error_for_status()
+    .with_context(|| {
+        format!(
+            "failed to download {}@{} asset {} from {}",
+            repo, release.tag_name, name, asset.browser_download_url
+        )
+    })?;
+
+    let bytes = read_bytes_with_timeout(res, Duration::from_secs(300), &asset.browser_download_url)
         .await
         .with_context(|| {
             format!(

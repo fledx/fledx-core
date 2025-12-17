@@ -54,8 +54,10 @@ pub async fn bootstrap_cp(
     let sha_path = dir.path().join(format!("{archive_name}.sha256"));
     let sha_sig_path = dir.path().join(format!("{archive_name}.sha256.sig"));
 
+    eprintln!("downloading asset: {}", archive_name);
     installer::bootstrap::download_asset(client, CORE_REPO, &release, &archive_name, &archive_path)
         .await?;
+    eprintln!("downloading asset: {}.sha256", archive_name);
     installer::bootstrap::download_asset(
         client,
         CORE_REPO,
@@ -89,6 +91,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
                 sig_asset_name
             );
         }
+        eprintln!("downloading asset: {}", sig_asset_name);
         installer::bootstrap::download_asset(
             client,
             CORE_REPO,
@@ -285,6 +288,11 @@ pub async fn bootstrap_agent(
             )?,
     };
 
+    eprintln!(
+        "resolving agent release: core@{} for arch {}",
+        requested_version,
+        arch.as_str()
+    );
     let release = installer::bootstrap::fetch_release(client, CORE_REPO, Some(&requested_version))
         .await
         .with_context(|| {
@@ -305,8 +313,10 @@ pub async fn bootstrap_agent(
     let sha_path = dir.path().join(format!("{archive_name}.sha256"));
     let sha_sig_path = dir.path().join(format!("{archive_name}.sha256.sig"));
 
+    eprintln!("downloading asset: {}", archive_name);
     installer::bootstrap::download_asset(client, CORE_REPO, &release, &archive_name, &archive_path)
         .await?;
+    eprintln!("downloading asset: {}.sha256", archive_name);
     installer::bootstrap::download_asset(
         client,
         CORE_REPO,
@@ -340,6 +350,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
                 sig_asset_name
             );
         }
+        eprintln!("downloading asset: {}", sig_asset_name);
         installer::bootstrap::download_asset(
             client,
             CORE_REPO,

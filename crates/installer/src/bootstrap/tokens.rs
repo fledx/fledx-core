@@ -5,7 +5,50 @@ use std::time::Duration;
 use anyhow::Context;
 use rand::TryRngCore;
 use serde::Deserialize;
+use tokio::time::timeout as tokio_timeout;
 use tokio::time::{sleep, Instant};
+
+fn describe_timeout(timeout: Duration) -> String {
+    // Keep this short and stable for CLI output.
+    if timeout.as_millis() % 1000 == 0 {
+        format!("{}s", timeout.as_secs())
+    } else {
+        format!("{:.1}s", timeout.as_secs_f32())
+    }
+}
+
+async fn send_with_timeout(
+    req: reqwest::RequestBuilder,
+    timeout: Duration,
+    url: &str,
+) -> anyhow::Result<reqwest::Response> {
+    match tokio_timeout(timeout, req.send()).await {
+        Ok(Ok(res)) => Ok(res),
+        Ok(Err(err)) => Err(err).with_context(|| format!("request failed: {url}")),
+        Err(_) => anyhow::bail!(
+            "request timed out after {}: {}",
+            describe_timeout(timeout),
+            url
+        ),
+    }
+}
+
+async fn read_text_with_timeout(
+    res: reqwest::Response,
+    timeout: Duration,
+    url: &str,
+) -> anyhow::Result<(reqwest::StatusCode, String)> {
+    let status = res.status();
+    match tokio_timeout(timeout, res.text()).await {
+        Ok(Ok(body)) => Ok((status, body)),
+        Ok(Err(err)) => Err(err).with_context(|| format!("failed to read response body: {url}")),
+        Err(_) => anyhow::bail!(
+            "reading response body timed out after {}: {}",
+            describe_timeout(timeout),
+            url
+        ),
+    }
+}
 
 pub fn generate_master_key_hex() -> String {
     let mut bytes = [0u8; 32];
@@ -97,16 +140,15 @@ pub async fn fetch_control_plane_health(
     base_url: &str,
 ) -> anyhow::Result<ControlPlaneHealthResponse> {
     let url = health_url(base_url);
-    let res = client
-        .get(&url)
-        .send()
+    // Keep individual requests short; callers already implement a total timeout
+    // by retrying and checking elapsed time.
+    let request_timeout = Duration::from_secs(3);
+    let body_timeout = Duration::from_secs(3);
+
+    let res = send_with_timeout(client.get(&url), request_timeout, &url)
         .await
         .with_context(|| format!("failed to query control-plane health: {url}"))?;
-    let status = res.status();
-    let body = res
-        .text()
-        .await
-        .with_context(|| format!("failed to read control-plane health response body: {url}"))?;
+    let (status, body) = read_text_with_timeout(res, body_timeout, &url).await?;
     if !status.is_success() {
         anyhow::bail!(
             "control-plane health request failed (status {}): {}",
@@ -196,10 +238,10 @@ pub async fn wait_for_http_ok(
 
     loop {
         attempt = attempt.saturating_add(1);
-        let res = client.get(url).send().await;
+        let res = tokio_timeout(Duration::from_secs(3), client.get(url).send()).await;
         match res {
-            Ok(res) if res.status().is_success() => return Ok(()),
-            Ok(res) => {
+            Ok(Ok(res)) if res.status().is_success() => return Ok(()),
+            Ok(Ok(res)) => {
                 if last_log.elapsed() >= Duration::from_secs(5) {
                     eprintln!(
                         "health check not ready yet (attempt {attempt}): status {}",
@@ -208,9 +250,15 @@ pub async fn wait_for_http_ok(
                     last_log = Instant::now();
                 }
             }
-            Err(err) => {
+            Ok(Err(err)) => {
                 if last_log.elapsed() >= Duration::from_secs(5) {
                     eprintln!("health check not ready yet (attempt {attempt}): {err}");
+                    last_log = Instant::now();
+                }
+            }
+            Err(_) => {
+                if last_log.elapsed() >= Duration::from_secs(5) {
+                    eprintln!("health check not ready yet (attempt {attempt}): request timed out");
                     last_log = Instant::now();
                 }
             }
