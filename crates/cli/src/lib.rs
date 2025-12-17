@@ -137,29 +137,160 @@ fn apply_profile_overrides(
         }
     };
 
-    if matches.value_source("control_plane_url") == Some(ValueSource::DefaultValue) {
+    // Precedence: CLI flags > env vars > profile > defaults.
+    if profile_can_override(matches, "control_plane_url") {
         if let Some(url) = profile.control_plane_url.clone() {
             globals.control_plane_url = url;
         }
     }
 
-    if matches.value_source("operator_header") == Some(ValueSource::DefaultValue) {
+    if profile_can_override(matches, "operator_header") {
         if let Some(header) = profile.operator_header.clone() {
             globals.operator_header = header;
         }
     }
 
-    if matches.value_source("operator_token").is_none() {
+    if profile_can_override(matches, "operator_token") {
         if let Some(token) = profile.operator_token.clone() {
             globals.operator_token = Some(token);
         }
     }
 
-    if matches.value_source("registration_token").is_none() {
+    if profile_can_override(matches, "registration_token") {
         if let Some(token) = profile.registration_token.clone() {
             globals.registration_token = Some(token);
         }
     }
 
     Ok(())
+}
+
+#[cfg(feature = "bootstrap")]
+fn profile_can_override(matches: &clap::ArgMatches, arg_id: &str) -> bool {
+    matches!(
+        matches.value_source(arg_id),
+        None | Some(ValueSource::DefaultValue)
+    )
+}
+
+#[cfg(all(test, feature = "bootstrap"))]
+mod profile_override_tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    fn store_with_default_profile() -> ProfileStore {
+        let mut store = ProfileStore::default();
+        store.default_profile = Some("default".into());
+        store.profiles.insert(
+            "default".into(),
+            crate::profile_store::Profile {
+                control_plane_url: Some("http://profile.example:8080".to_string()),
+                operator_header: Some("x-profile-operator-token".to_string()),
+                operator_token: Some("op".to_string()),
+                registration_token: Some("reg".to_string()),
+            },
+        );
+        store
+    }
+
+    #[test]
+    fn profile_overrides_defaults_and_missing_values() {
+        let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
+        std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
+        std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
+        std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
+        std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+
+        let store = store_with_default_profile();
+        let selected_profile = Some("default".to_string());
+
+        let matches = Cli::command().get_matches_from(["fledx", "profile", "list"]);
+        let cli = Cli::from_arg_matches(&matches).expect("parse");
+        let Cli {
+            mut globals,
+            command,
+            profile: _,
+        } = cli;
+
+        apply_profile_overrides(&matches, &command, &selected_profile, &store, &mut globals)
+            .expect("apply");
+
+        assert_eq!(globals.control_plane_url, "http://profile.example:8080");
+        assert_eq!(globals.operator_header, "x-profile-operator-token");
+        assert_eq!(globals.operator_token.as_deref(), Some("op"));
+        assert_eq!(globals.registration_token.as_deref(), Some("reg"));
+    }
+
+    #[test]
+    fn profile_does_not_override_cli_flags() {
+        let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
+        std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
+        std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
+        std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
+        std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+
+        let store = store_with_default_profile();
+        let selected_profile = Some("default".to_string());
+
+        let matches = Cli::command().get_matches_from([
+            "fledx",
+            "--control-plane-url",
+            "http://cli.example:8080",
+            "--operator-header",
+            "x-cli-operator-token",
+            "--operator-token",
+            "cli-op",
+            "--registration-token",
+            "cli-reg",
+            "profile",
+            "list",
+        ]);
+        let cli = Cli::from_arg_matches(&matches).expect("parse");
+        let Cli {
+            mut globals,
+            command,
+            profile: _,
+        } = cli;
+
+        apply_profile_overrides(&matches, &command, &selected_profile, &store, &mut globals)
+            .expect("apply");
+
+        assert_eq!(globals.control_plane_url, "http://cli.example:8080");
+        assert_eq!(globals.operator_header, "x-cli-operator-token");
+        assert_eq!(globals.operator_token.as_deref(), Some("cli-op"));
+        assert_eq!(globals.registration_token.as_deref(), Some("cli-reg"));
+    }
+
+    #[test]
+    fn profile_does_not_override_env_vars() {
+        let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
+        std::env::set_var("FLEDX_CLI_CONTROL_PLANE_URL", "http://env.example:8080");
+        std::env::set_var("FLEDX_CLI_OPERATOR_HEADER", "x-env-operator-token");
+        std::env::set_var("FLEDX_CLI_OPERATOR_TOKEN", "env-op");
+        std::env::set_var("FLEDX_CLI_REGISTRATION_TOKEN", "env-reg");
+
+        let store = store_with_default_profile();
+        let selected_profile = Some("default".to_string());
+
+        let matches = Cli::command().get_matches_from(["fledx", "profile", "list"]);
+        let cli = Cli::from_arg_matches(&matches).expect("parse");
+        let Cli {
+            mut globals,
+            command,
+            profile: _,
+        } = cli;
+
+        apply_profile_overrides(&matches, &command, &selected_profile, &store, &mut globals)
+            .expect("apply");
+
+        assert_eq!(globals.control_plane_url, "http://env.example:8080");
+        assert_eq!(globals.operator_header, "x-env-operator-token");
+        assert_eq!(globals.operator_token.as_deref(), Some("env-op"));
+        assert_eq!(globals.registration_token.as_deref(), Some("env-reg"));
+
+        std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
+        std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
+        std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
+        std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+    }
 }
