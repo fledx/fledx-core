@@ -461,9 +461,19 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
 
     println!("agent installed (core) version {}", version);
     println!("node registered: {}", node_id);
-    println!("verify node status via:");
+    println!("node name: {}", node_name);
+    println!();
+    println!("next steps (verify the node becomes ready):");
+    println!("  fledx status --nodes-only --wide");
+    println!("  fledx status --nodes-only --wide --watch");
     println!("  fledx nodes status --wide");
     println!("  fledx nodes list --wide");
+    println!();
+    println!("machine-readable checks:");
+    println!("  fledx status --nodes-only --json");
+    println!("  fledx nodes list --json");
+    println!();
+    println!("tip: look for node id {}", node_id);
     Ok(())
 }
 
