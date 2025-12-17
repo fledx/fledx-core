@@ -237,7 +237,11 @@ or pass --insecure-allow-unsigned to skip signature verification.\n\
     let sig_len = sig_bytes.len();
     let sig_array: [u8; 64] = sig_bytes.as_slice().try_into().map_err(|_| {
         anyhow::anyhow!(
-            "invalid ed25519 signature length for {}@{} asset {}: expected 64 bytes, got {}",
+            "invalid ed25519 signature length for {}@{} asset {}: expected 64 bytes, got {}.\n\
+Hint: this usually means the release was signed with a non-Ed25519 key, or the \
+signature is not a raw 64-byte Ed25519 signature.\n\
+The release workflow must use an Ed25519 private key and write raw signature \
+bytes (e.g. `openssl pkeyutl -sign -rawin`).",
             repo,
             tag,
             asset,
@@ -344,4 +348,3 @@ mod tests {
         ));
     }
 }
-

@@ -103,9 +103,24 @@ jobs:
           umask 077
           printf '%s' "$FLEDX_RELEASE_SIGNING_PRIVATE_KEY" > signing-key.pem
 
+          key_header="$(openssl pkey -in signing-key.pem -noout -text 2>/dev/null | head -n 1 || true)"
+          if ! printf '%s' "$key_header" | grep -q 'ED25519'; then
+            echo "FLEDX_RELEASE_SIGNING_PRIVATE_KEY must be an Ed25519 key." >&2
+            if [ -n "$key_header" ]; then
+              echo "Got: $key_header" >&2
+            fi
+            exit 1
+          fi
+
           for checksum in *.sha256; do
             openssl pkeyutl -sign -inkey signing-key.pem -rawin \
               -in "$checksum" -out "$checksum.sig"
+
+            sig_size="$(wc -c < "$checksum.sig" | tr -d ' ')"
+            if [ "$sig_size" -ne 64 ]; then
+              echo "unexpected signature length for $checksum.sig: expected 64 bytes, got $sig_size" >&2
+              exit 1
+            fi
           done
 
           rm signing-key.pem
