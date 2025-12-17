@@ -127,8 +127,8 @@ fledx bootstrap cp --cp-hostname <HOST> [OPTIONS]
 | `--ssh-host`          | -              | SSH target for remote install (user@host) |
 | `--ssh-identity-file` | -              | SSH private key path                      |
 | `--version`           | latest         | Version to install                        |
-| `--server-port`       | 8080           | HTTP API port                             |
-| `--tunnel-port`       | 7443           | Agent tunnel port                         |
+| `--server-port`       | 49421          | HTTP API port                             |
+| `--tunnel-port`       | 49423          | Agent tunnel port                         |
 | `--bin-dir`           | /usr/local/bin | Binary installation directory             |
 | `--config-dir`        | /etc/fledx     | Configuration directory                   |
 | `--data-dir`          | /var/lib/fledx | Persistent data directory                 |
@@ -371,17 +371,17 @@ Prometheus metrics are exported by the control plane:
 
 ```bash
 # Metrics endpoint
-curl http://localhost:8080/metrics
+curl http://localhost:49422/metrics
 ```
 
 ### Health Checks
 
 ```bash
 # Control plane health
-curl http://localhost:8080/health
+curl http://localhost:49421/health
 
 # Node agent health
-curl http://localhost:9901/health  # Envoy admin endpoint
+curl http://localhost:49441/ready  # Envoy admin endpoint (host port)
 ```
 
 ## Advanced Configuration
@@ -395,12 +395,14 @@ handle all of this automatically.
 ```bash
 # Server
 FLEDX_CP_SERVER_HOST=0.0.0.0
-FLEDX_CP_SERVER_PORT=8080
+FLEDX_CP_SERVER_PORT=49421
+FLEDX_CP_METRICS_HOST=0.0.0.0
+FLEDX_CP_METRICS_PORT=49422
 FLEDX_CP_DATABASE_URL=sqlite:///var/lib/fledx/fledx.db
 
 # Tunnel
 FLEDX_CP_TUNNEL_ADVERTISED_HOST=your-server.example.com
-FLEDX_CP_TUNNEL_ADVERTISED_PORT=7443
+FLEDX_CP_TUNNEL_ADVERTISED_PORT=49423
 FLEDX_CP_TUNNEL_USE_TLS=false
 
 # Authentication
@@ -430,7 +432,7 @@ FLEDX_AGENT_CAPACITY_MEMORY_BYTES=8589934592
 
 # Tunnel
 FLEDX_AGENT_TUNNEL_ENDPOINT_HOST=your-server.example.com
-FLEDX_AGENT_TUNNEL_ENDPOINT_PORT=7443
+FLEDX_AGENT_TUNNEL_ENDPOINT_PORT=49423
 
 # Gateway (Envoy)
 FLEDX_AGENT_GATEWAY_ENABLED=true
@@ -443,7 +445,7 @@ FLEDX_AGENT_GATEWAY_ENVOY_IMAGE=envoyproxy/envoy:v1.33-latest
 <summary>CLI Environment Variables</summary>
 
 ```bash
-FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080
+FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:49421
 FLEDX_CLI_OPERATOR_TOKEN=your-operator-token
 ```
 

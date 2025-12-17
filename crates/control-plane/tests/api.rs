@@ -13,9 +13,9 @@ use chrono::{Duration as ChronoDuration, Utc};
 use common::{
     agent_request, legacy_hash, register_ready_node, register_ready_node_with_ingress,
     register_ready_node_with_payload, setup_app, setup_app_with_config, setup_app_with_state,
-    DeploymentCreateResponse, DeploymentStatus, DeploymentStatusResponse, DesiredState,
-    DesiredStateResponse, NodeConfigResponse, NodeStatus, NodeStatusResponse, RegistrationResponse,
-    TestAppConfig, TEST_OPERATOR_TOKEN, TEST_REG_TOKEN,
+    setup_apps, setup_apps_with_config, DeploymentCreateResponse, DeploymentStatus,
+    DeploymentStatusResponse, DesiredState, DesiredStateResponse, NodeConfigResponse, NodeStatus,
+    NodeStatusResponse, RegistrationResponse, TestAppConfig, TEST_OPERATOR_TOKEN, TEST_REG_TOKEN,
 };
 use control_plane::{
     config::{PortsConfig, ReachabilityConfig, VolumesConfig},
@@ -34,7 +34,7 @@ use std::os::unix::fs as unix_fs;
 
 #[tokio::test]
 async fn metrics_endpoint_reports_http_requests() {
-    let (app, _db) = setup_app().await;
+    let (app, metrics_app, _db) = setup_apps().await;
 
     let _ = app
         .clone()
@@ -48,7 +48,7 @@ async fn metrics_endpoint_reports_http_requests() {
         .await
         .unwrap();
 
-    let response = app
+    let response = metrics_app
         .oneshot(
             HttpRequest::builder()
                 .method("GET")
@@ -69,7 +69,7 @@ async fn metrics_endpoint_reports_http_requests() {
 
 #[tokio::test]
 async fn health_and_metrics_report_schema_versions() {
-    let (app, _db) = setup_app().await;
+    let (app, metrics_app, _db) = setup_apps().await;
     let expected_version = migrations::latest_migration_version();
     let expected_label = expected_version
         .map(|v| v.to_string())
@@ -106,7 +106,7 @@ async fn health_and_metrics_report_schema_versions() {
         Some(0)
     );
 
-    let metrics = app
+    let metrics = metrics_app
         .oneshot(
             HttpRequest::builder()
                 .method("GET")
@@ -345,7 +345,7 @@ async fn missing_agent_version_header_uses_fallback_and_respects_bounds() {
         compat_max: Some("1.2.9".into()),
         ..Default::default()
     };
-    let (app, _db) = setup_app_with_config(cfg).await;
+    let (app, metrics_app, _db) = setup_apps_with_config(cfg).await;
 
     let payload = serde_json::json!({ "name": "no-agent-version" });
 
@@ -389,7 +389,7 @@ async fn missing_agent_version_header_uses_fallback_and_respects_bounds() {
         Some("1.2.9")
     );
 
-    let metrics = app
+    let metrics = metrics_app
         .oneshot(
             HttpRequest::builder()
                 .method("GET")

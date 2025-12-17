@@ -23,8 +23,9 @@ OP_TOKEN="quickstart-op-$(openssl rand -hex 8)"
 PEPPER="quickstart-pepper-$(openssl rand -hex 16)"
 
 # Ports
-CP_PORT=8080
-TUNNEL_PORT=7443
+CP_PORT=49421
+CP_METRICS_PORT=49422
+TUNNEL_PORT=49423
 
 # PIDs
 CP_PID=""
@@ -126,6 +127,10 @@ if command -v ss &> /dev/null; then
         log_error "Port $CP_PORT is already in use. Please stop the service using it."
         exit 1
     fi
+    if ss -tuln | grep -q ":${CP_METRICS_PORT} "; then
+        log_error "Port $CP_METRICS_PORT is already in use. Please stop the service using it."
+        exit 1
+    fi
     if ss -tuln | grep -q ":${TUNNEL_PORT} "; then
         log_error "Port $TUNNEL_PORT is already in use. Please stop the service using it."
         exit 1
@@ -135,6 +140,10 @@ elif command -v netstat &> /dev/null; then
         log_error "Port $CP_PORT is already in use. Please stop the service using it."
         exit 1
     fi
+    if netstat -tuln | grep -q ":${CP_METRICS_PORT} "; then
+        log_error "Port $CP_METRICS_PORT is already in use. Please stop the service using it."
+        exit 1
+    fi
     if netstat -tuln | grep -q ":${TUNNEL_PORT} "; then
         log_error "Port $TUNNEL_PORT is already in use. Please stop the service using it."
         exit 1
@@ -142,6 +151,10 @@ elif command -v netstat &> /dev/null; then
 elif command -v lsof &> /dev/null; then
     if lsof -i ":${CP_PORT}" > /dev/null 2>&1; then
         log_error "Port $CP_PORT is already in use. Please stop the service using it."
+        exit 1
+    fi
+    if lsof -i ":${CP_METRICS_PORT}" > /dev/null 2>&1; then
+        log_error "Port $CP_METRICS_PORT is already in use. Please stop the service using it."
         exit 1
     fi
     if lsof -i ":${TUNNEL_PORT}" > /dev/null 2>&1; then
@@ -180,6 +193,8 @@ log_info "Starting control plane on port $CP_PORT..."
 
 export FLEDX_CP_SERVER_HOST="0.0.0.0"
 export FLEDX_CP_SERVER_PORT="$CP_PORT"
+export FLEDX_CP_METRICS_HOST="0.0.0.0"
+export FLEDX_CP_METRICS_PORT="$CP_METRICS_PORT"
 export FLEDX_CP_DATABASE_URL="sqlite://${DATA_DIR}/fledx-cp.db"
 export FLEDX_CP_REGISTRATION_TOKEN="$REG_TOKEN"
 export FLEDX_CP_OPERATOR_TOKENS="$OP_TOKEN"
@@ -370,7 +385,7 @@ echo ""
 echo -e "${BLUE}Access Points:${NC}"
 echo "  Control Plane API: http://localhost:$CP_PORT"
 echo "  Control Plane Health: http://localhost:$CP_PORT/health"
-echo "  Control Plane Metrics: http://localhost:$CP_PORT/metrics"
+echo "  Control Plane Metrics: http://localhost:$CP_METRICS_PORT/metrics"
 echo "  Nginx Demo: http://localhost:$NGINX_PORT"
 echo ""
 

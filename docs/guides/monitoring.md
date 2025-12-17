@@ -20,7 +20,7 @@ Day-2 operations encompass all activities required to keep Distributed Edge Host
 The control plane exposes a health endpoint:
 
 ```bash
-curl -fsSL http://localhost:8080/health
+curl -fsSL http://localhost:49421/health
 ```
 
 Response format:
@@ -142,13 +142,13 @@ See detailed setup instructions below for configuration files and alert rules.
 **Control Plane Metrics:**
 
 ```bash
-curl http://localhost:8080/metrics
+curl http://localhost:49422/metrics
 ```
 
 **Node Agent Metrics:**
 
 ```bash
-curl http://<node-ip>:9091/metrics
+curl http://<node-ip>:49431/metrics
 ```
 
 Both endpoints expose Prometheus-compatible metrics.
@@ -168,16 +168,16 @@ scrape_configs:
   # Control Plane
   - job_name: 'fledx-control-plane'
     static_configs:
-      - targets: [ 'control-plane.example.com:8080' ]
+      - targets: [ 'control-plane.example.com:49422' ]
     metrics_path: '/metrics'
 
   # Node Agents
   - job_name: 'fledx-node-agents'
     static_configs:
       - targets:
-          - 'node-1.example.com:9091'
-          - 'node-2.example.com:9091'
-          - 'node-3.example.com:9091'
+          - 'node-1.example.com:49431'
+          - 'node-2.example.com:49431'
+          - 'node-3.example.com:49431'
     relabel_configs:
       - source_labels: [ _address__ ]
         target_label: instance
@@ -199,16 +199,16 @@ scrape_configs:
   # Control Plane
   - job_name: 'fledx-control-plane'
     static_configs:
-      - targets: ['control-plane.example.com:8080']
+      - targets: ['control-plane.example.com:49422']
     metrics_path: '/metrics'
 
   # Node Agents
   - job_name: 'fledx-node-agents'
     static_configs:
       - targets:
-        - 'node-1.example.com:9091'
-        - 'node-2.example.com:9091'
-        - 'node-3.example.com:9091'
+        - 'node-1.example.com:49431'
+        - 'node-2.example.com:49431'
+        - 'node-3.example.com:49431'
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
@@ -597,7 +597,7 @@ sudo cp /var/lib/fledx/backups/fledx-cp.db.YYYYMMDD-HHMMSS /var/lib/fledx/fledx-
 sudo systemctl start fledx-cp
 
 # Verify
-curl http://localhost:8080/health
+curl http://localhost:49421/health
 fledx nodes status
 fledx deployments status
 ```

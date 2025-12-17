@@ -12,7 +12,7 @@ This guide covers production installations with a single control plane and one o
 
 - Linux hosts with systemd (recommended) and outbound HTTPS.
 - Docker Engine on every node agent host.
-- Ports: control plane default 8080 (HTTP) or 8443 (HTTPS behind proxy).
+- Ports: control plane default 49421 (HTTP) or 8443 (HTTPS behind proxy); metrics default 49422.
 - SSH access to target hosts (for bootstrap method).
 
 ## Installation Methods
@@ -47,8 +47,8 @@ sudo install -m 0755 fledx /usr/local/bin/
 fledx bootstrap cp \
   --cp-hostname control-plane.example.com \
   --ssh-host root@control-plane.example.com \
-  --server-port 8080 \
-  --tunnel-port 7443
+  --server-port 49421 \
+  --tunnel-port 49423
 ```
 
 This command:
@@ -99,7 +99,7 @@ fledx nodes status --wide
 | `--ssh-identity-file` | -              | SSH private key                 |
 | `--version`           | latest         | Version to install              |
 | `--server-port`       | 8080           | HTTP API port                   |
-| `--tunnel-port`       | 7443           | Agent tunnel port               |
+| `--tunnel-port`       | 49423          | Agent tunnel port               |
 | `--bin-dir`           | /usr/local/bin | Binary directory                |
 | `--config-dir`        | /etc/fledx     | Config directory                |
 | `--data-dir`          | /var/lib/fledx | Data directory                  |
@@ -148,7 +148,9 @@ Environment file `/etc/fledx/fledx-cp.env` (edit secrets):
 
 ```
 FLEDX_CP_SERVER_HOST=0.0.0.0
-FLEDX_CP_SERVER_PORT=8080
+FLEDX_CP_SERVER_PORT=49421
+FLEDX_CP_METRICS_HOST=0.0.0.0
+FLEDX_CP_METRICS_PORT=49422
 FLEDX_CP_DATABASE_URL=sqlite:///var/lib/fledx/fledx-cp.db
 FLEDX_CP_REGISTRATION_TOKEN=change-me-registration
 FLEDX_CP_OPERATOR_TOKENS=change-me-operator
@@ -187,7 +189,7 @@ Enable and verify:
 sudo systemctl daemon-reload
 sudo systemctl enable --now fledx-cp
 sudo systemctl status fledx-cp
-curl -fsSL http://127.0.0.1:8080/health
+curl -fsSL http://127.0.0.1:49421/health
 ```
 
 TLS: terminate with your reverse proxy (nginx/Caddy/Traefik) and forward to

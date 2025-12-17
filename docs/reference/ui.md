@@ -15,16 +15,16 @@ in `localStorage` so you do not have to type it again during the next browser se
    # or: just demo
    ```
 
-   The script boots the control-plane on `127.0.0.1:8080` with a demo SQLite database, registers a node, starts the node
+   The script boots the control-plane on `127.0.0.1:49421` with a demo SQLite database, registers a node, starts the node
    agent, and deploys `hashicorp/http-echo`. It also wires the demo operator token (`dev-operator-token`) into the
    control-plane and the CLI so you can paste it into the UI login box without extra steps. Once the script is running,
-   point your browser to `http://127.0.0.1:8080/ui`.
+   point your browser to `http://127.0.0.1:49421/ui`.
 
 2. **Manual control-plane run (for production-style installs).**
 
    ```bash
    FLEDX_CP_SERVER_HOST=0.0.0.0 \
-     FLEDX_CP_SERVER_PORT=8080 \
+     FLEDX_CP_SERVER_PORT=49421 \
      FLEDX_CP_DATABASE_URL=sqlite:///var/lib/fledx/control-plane.db \
      FLEDX_CP_OPERATOR_TOKENS="op-token-1,op-token-2" \
      FLEDX_CP_OPERATOR_HEADER_NAME=authorization \
@@ -94,13 +94,13 @@ in `localStorage` so you do not have to type it again during the next browser se
   instead of clicking through the UI:
 
   ```bash
-  FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080 \
+  FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:49421 \
     FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
     cargo run -p cli -- deployments create --name web --image nginx:alpine
   ```
 
   ```bash
-  FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080 \
+  FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:49421 \
     FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
     cargo run -p cli -- deployments stop --id <id>
   ```

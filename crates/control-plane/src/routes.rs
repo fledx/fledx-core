@@ -1,3 +1,4 @@
+pub use crate::http::build_metrics_router;
 pub use crate::http::build_router;
 pub use crate::http::ApiDoc;
 pub use crate::tasks::reachability::{

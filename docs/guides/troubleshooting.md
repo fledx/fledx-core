@@ -725,7 +725,7 @@ sudo cp /usr/local/bin/fledx-cp.backup /usr/local/bin/fledx-cp
 sudo systemctl start fledx-cp
 
 # Check health
-curl http://localhost:8080/health
+curl http://localhost:49421/health
 ```
 
 ### Node Agent Incompatible Version

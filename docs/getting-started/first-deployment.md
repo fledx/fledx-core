@@ -162,7 +162,7 @@ fledx deployments delete --id $DEPLOY_ID
 
 You can also manage deployments through the Web UI:
 
-1. Open `http://<control-plane>:8080/ui`
+1. Open `http://<control-plane>:49421/ui`
 2. Enter your operator token
 3. Navigate to the "Create Deployment" tab
 4. Fill in the form (image, ports, environment, etc.)

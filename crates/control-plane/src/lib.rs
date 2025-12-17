@@ -25,6 +25,7 @@ use std::{env, future::Future, net::SocketAddr, pin::Pin, sync::Arc, time::Durat
 use axum::{http::HeaderName, Router};
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde_json::json;
+use tokio::sync::watch;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -301,19 +302,73 @@ where
     (hooks.start_background)(state.clone(), &app_config).await?;
     services::tunnel::serve(state.clone()).await?;
 
-    let addr: SocketAddr = format!("{}:{}", app_config.server.host, app_config.server.port)
+    let api_addr: SocketAddr = format!("{}:{}", app_config.server.host, app_config.server.port)
         .parse()
         .map_err(|err| anyhow::anyhow!("invalid listen address: {}", err))?;
+    let metrics_addr: SocketAddr =
+        format!("{}:{}", app_config.metrics.host, app_config.metrics.port)
+            .parse()
+            .map_err(|err| anyhow::anyhow!("invalid metrics listen address: {}", err))?;
 
     let base_router: Router<AppState> = routes::build_router(state.clone());
-    let app = (hooks.extend_router)(state.clone(), base_router).with_state(state);
+    let app = (hooks.extend_router)(state.clone(), base_router).with_state(state.clone());
     let make_service = app.into_make_service_with_connect_info::<SocketAddr>();
-    let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!(%addr, "control-plane listening");
 
-    axum::serve(listener, make_service)
-        .with_graceful_shutdown(shutdown)
-        .await?;
+    let metrics_app = crate::http::build_metrics_router().with_state(state.clone());
+    let metrics_service = metrics_app.into_make_service_with_connect_info::<SocketAddr>();
+
+    let api_listener = tokio::net::TcpListener::bind(api_addr).await?;
+    let metrics_listener = tokio::net::TcpListener::bind(metrics_addr).await?;
+    info!(%api_addr, "control-plane listening");
+    info!(%metrics_addr, "control-plane metrics listening");
+
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let shutdown_tx_for_signal = shutdown_tx.clone();
+    tokio::spawn(async move {
+        shutdown.await;
+        let _ = shutdown_tx_for_signal.send(true);
+    });
+
+    let mut api_shutdown = shutdown_rx.clone();
+    let mut metrics_shutdown = shutdown_rx.clone();
+
+    let mut api_task = tokio::spawn(async move {
+        axum::serve(api_listener, make_service)
+            .with_graceful_shutdown(async move {
+                let _ = api_shutdown.changed().await;
+            })
+            .await
+    });
+
+    let mut metrics_task = tokio::spawn(async move {
+        axum::serve(metrics_listener, metrics_service)
+            .with_graceful_shutdown(async move {
+                let _ = metrics_shutdown.changed().await;
+            })
+            .await
+    });
+
+    tokio::select! {
+        res = &mut api_task => {
+            let _ = shutdown_tx.send(true);
+            res.map_err(|err| anyhow::anyhow!("control-plane task failed: {err}"))?
+                .map_err(|err| anyhow::anyhow!("control-plane server failed: {err}"))?;
+        }
+        res = &mut metrics_task => {
+            let _ = shutdown_tx.send(true);
+            res.map_err(|err| anyhow::anyhow!("control-plane metrics task failed: {err}"))?
+                .map_err(|err| anyhow::anyhow!("control-plane metrics server failed: {err}"))?;
+        }
+    }
+
+    api_task
+        .await
+        .map_err(|err| anyhow::anyhow!("control-plane task failed: {err}"))?
+        .map_err(|err| anyhow::anyhow!("control-plane server failed: {err}"))?;
+    metrics_task
+        .await
+        .map_err(|err| anyhow::anyhow!("control-plane metrics task failed: {err}"))?
+        .map_err(|err| anyhow::anyhow!("control-plane metrics server failed: {err}"))?;
 
     Ok(())
 }

@@ -323,7 +323,7 @@ curl -X DELETE "$CONTROL_PLANE/api/v1/configs/<config-id>/nodes/<node-id>" \
 Check agent metrics:
 
 ```bash
-curl http://<node-ip>:9091/metrics | grep config
+curl http://<node-ip>:49431/metrics | grep config
 ```
 
 Key metrics:
@@ -452,7 +452,7 @@ fledx configs attach deployment --config-id <id> --deployment-id <prod-id>
 
 3. Verify agent is fetching configs:
    ```bash
-   curl http://<node-ip>:9091/metrics | grep config_fetch_total
+   curl http://<node-ip>:49431/metrics | grep config_fetch_total
    ```
 
 ### Payload Too Large Error

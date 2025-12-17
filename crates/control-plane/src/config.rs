@@ -7,6 +7,7 @@ pub const ENV_PREFIX: &str = "FLEDX_CP";
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub server: ServerConfig,
+    pub metrics: MetricsConfig,
     pub tunnel: TunnelConfig,
     pub database: DatabaseConfig,
     pub registration: RegistrationConfig,
@@ -23,6 +24,12 @@ pub struct AppConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerConfig {
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MetricsConfig {
     pub host: String,
     pub port: u16,
 }
@@ -156,6 +163,8 @@ pub struct FeatureFlags {
 const ENV_OVERRIDES: &[(&str, &str, bool)] = &[
     ("FLEDX_CP_SERVER_HOST", "server.host", false),
     ("FLEDX_CP_SERVER_PORT", "server.port", false),
+    ("FLEDX_CP_METRICS_HOST", "metrics.host", false),
+    ("FLEDX_CP_METRICS_PORT", "metrics.port", false),
     (
         "FLEDX_CP_TUNNEL_ADVERTISED_HOST",
         "tunnel.advertised_host",
@@ -455,7 +464,7 @@ impl Default for TunnelConfig {
     fn default() -> Self {
         Self {
             advertised_host: "127.0.0.1".into(),
-            advertised_port: 7443,
+            advertised_port: 49423,
             use_tls: default_tunnel_use_tls(),
             connect_timeout_secs: default_tunnel_connect_timeout_secs(),
             heartbeat_interval_secs: default_tunnel_heartbeat_interval_secs(),
@@ -479,9 +488,11 @@ pub fn load() -> anyhow::Result<AppConfig> {
     let mut builder = config::Config::builder()
         .add_source(config::File::with_name("config").required(false))
         .set_default("server.host", "0.0.0.0")?
-        .set_default("server.port", 8080)?
+        .set_default("server.port", 49421)?
+        .set_default("metrics.host", "0.0.0.0")?
+        .set_default("metrics.port", 49422)?
         .set_default("tunnel.advertised_host", "127.0.0.1")?
-        .set_default("tunnel.advertised_port", 7443)?
+        .set_default("tunnel.advertised_port", 49423)?
         .set_default("tunnel.use_tls", default_tunnel_use_tls())?
         .set_default(
             "tunnel.connect_timeout_secs",

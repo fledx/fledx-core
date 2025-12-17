@@ -176,11 +176,11 @@ fn normalize_path_prefix(prefix: &str) -> String {
 }
 
 fn default_gateway_admin_port() -> u16 {
-    9_901
+    49_441
 }
 
 fn default_gateway_listener_port() -> u16 {
-    10_000
+    49_442
 }
 
 fn default_gateway_xds_port() -> u16 {
@@ -211,7 +211,7 @@ impl Default for TunnelConfig {
     fn default() -> Self {
         Self {
             endpoint_host: "127.0.0.1".into(),
-            endpoint_port: 7443,
+            endpoint_port: 49423,
             use_tls: default_tunnel_use_tls(),
             connect_timeout_secs: default_tunnel_connect_timeout_secs(),
             heartbeat_interval_secs: default_tunnel_heartbeat_interval_secs(),
@@ -481,7 +481,7 @@ pub fn load() -> anyhow::Result<AppConfig> {
         .set_default("gateway.xds_host", Option::<String>::None)?
         .set_default("gateway.xds_port", default_gateway_xds_port())?
         .set_default("tunnel.endpoint_host", "127.0.0.1")?
-        .set_default("tunnel.endpoint_port", 7443)?
+        .set_default("tunnel.endpoint_port", 49423)?
         .set_default("tunnel.use_tls", default_tunnel_use_tls())?
         .set_default(
             "tunnel.connect_timeout_secs",
@@ -519,7 +519,7 @@ pub fn load() -> anyhow::Result<AppConfig> {
         .set_default("tls_insecure_skip_verify", false)?
         .set_default("service_identity_dir", "/var/lib/fledx/service-identities")?
         .set_default("metrics_host", "127.0.0.1")?
-        .set_default("metrics_port", 9091)?
+        .set_default("metrics_port", 49431)?
         .set_default("public_host", Option::<String>::None)?
         .set_default("public_ip", Option::<String>::None)?
         .set_default("allowed_volume_prefixes", vec!["/var/lib/fledx/volumes"])? // safe default

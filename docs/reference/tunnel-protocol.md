@@ -10,7 +10,7 @@ messages so the gateway can reach agents that sit behind NAT/firewalls.
 - Auth header: bearer token in `x-fledx-tunnel-token` (configurable)
 - Defaults (control-plane / agent):
     - `advertised_host` / `endpoint_host`: `127.0.0.1`
-    - `advertised_port` / `endpoint_port`: `7443`
+    - `advertised_port` / `endpoint_port`: `49423`
     - `connect_timeout_secs`: `10`
     - `heartbeat_interval_secs`: `30`
     - `heartbeat_timeout_secs`: `90`

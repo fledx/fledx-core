@@ -18,7 +18,6 @@ use crate::{
 };
 
 const GATEWAY_CONTAINER_NAME: &str = "fledx-gateway";
-const ADMIN_PORT_CONTAINER: u16 = 9901;
 
 #[derive(Default)]
 pub(crate) struct GatewayManager {
@@ -202,7 +201,7 @@ fn build_spec(cfg: &AppConfig, bootstrap_path: &str) -> anyhow::Result<Container
     });
 
     spec.ports.push(PortMapping {
-        container_port: ADMIN_PORT_CONTAINER,
+        container_port: cfg.gateway.admin_port,
         host_port: cfg.gateway.admin_port,
         protocol: PortProtocol::Tcp,
         host_ip: Some("0.0.0.0".into()),
@@ -326,12 +325,13 @@ mod tests {
         cfg.gateway.enabled = true;
         cfg.gateway.envoy_image = Some("envoyproxy/envoy:v1.33-latest".into());
         cfg.gateway.listener_port = 10080;
-        cfg.gateway.admin_port = 9901;
+        cfg.gateway.admin_port = 49441;
         cfg.gateway.xds_host = Some("127.0.0.1".into());
         cfg.gateway.xds_port = 18000;
         let tmp = tempfile::tempdir()?;
         cfg.volume_data_dir = tmp.path().to_string_lossy().to_string();
         cfg.allowed_volume_prefixes = vec![cfg.volume_data_dir.clone()];
+        let admin_port = cfg.gateway.admin_port;
 
         let state: SharedState = state_with_runtime_and_config(runtime.clone(), cfg);
         let mut manager = GatewayManager::default();
@@ -346,7 +346,7 @@ mod tests {
         assert!(spec
             .ports
             .iter()
-            .any(|p| p.container_port == 9901 && p.host_port == 9901));
+            .any(|p| p.container_port == admin_port && p.host_port == admin_port));
         assert!(spec
             .ports
             .iter()

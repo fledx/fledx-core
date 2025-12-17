@@ -20,7 +20,7 @@ use control_plane::{
     metrics::{init_metrics_recorder, record_build_info, MetricsHistory},
     persistence as db,
     persistence::{migrations, nodes},
-    routes::build_router,
+    routes::{build_metrics_router, build_router},
     scheduler,
 };
 use http_body_util::BodyExt;
@@ -119,6 +119,10 @@ pub async fn setup_app() -> (Router, db::Db) {
     setup_app_with_config(TestAppConfig::default()).await
 }
 
+pub async fn setup_apps() -> (Router, Router, db::Db) {
+    setup_apps_with_config(TestAppConfig::default()).await
+}
+
 pub async fn setup_app_with_config(config: TestAppConfig) -> (Router, db::Db) {
     let db = migrations::init_pool("sqlite::memory:")
         .await
@@ -127,6 +131,17 @@ pub async fn setup_app_with_config(config: TestAppConfig) -> (Router, db::Db) {
     let state = make_state(db.clone(), &config, migration_outcome.snapshot);
     let app = build_router(state.clone()).with_state(state);
     (app, db)
+}
+
+pub async fn setup_apps_with_config(config: TestAppConfig) -> (Router, Router, db::Db) {
+    let db = migrations::init_pool("sqlite::memory:")
+        .await
+        .expect("db init");
+    let migration_outcome = migrations::run_migrations(&db).await.expect("migrations");
+    let state = make_state(db.clone(), &config, migration_outcome.snapshot);
+    let app = build_router(state.clone()).with_state(state.clone());
+    let metrics_app = build_metrics_router().with_state(state);
+    (app, metrics_app, db)
 }
 
 pub async fn setup_app_with_state(reachability: Option<ReachabilityConfig>) -> (Router, AppState) {

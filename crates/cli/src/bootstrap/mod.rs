@@ -844,9 +844,9 @@ mod tests {
     #[test]
     fn cp_env_quotes_values_for_systemd_env_file() {
         let env = render_cp_env(&CpEnvInputs {
-            server_port: 8080,
+            server_port: 49421,
             tunnel_host: "localhost".to_string(),
-            tunnel_port: 7443,
+            tunnel_port: 49423,
             db_url: "sqlite:////var/lib/fledx dir/control-plane.db".to_string(),
             registration_token: "deadbeef".to_string(),
             operator_token: "cafebabe".to_string(),
@@ -869,7 +869,7 @@ mod tests {
         store.profiles.insert(
             "default".into(),
             Profile {
-                control_plane_url: Some("http://profile.example:8080".into()),
+                control_plane_url: Some("http://profile.example:49421".into()),
                 operator_header: None,
                 operator_token: None,
                 registration_token: Some("from-profile".into()),
@@ -877,7 +877,7 @@ mod tests {
         );
 
         let globals = crate::GlobalArgs {
-            control_plane_url: "http://127.0.0.1:8080".into(),
+            control_plane_url: "http://127.0.0.1:49421".into(),
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: Some("from-globals".into()),
@@ -894,7 +894,7 @@ mod tests {
         store.profiles.insert(
             "prod".into(),
             Profile {
-                control_plane_url: Some("http://profile.example:8080".into()),
+                control_plane_url: Some("http://profile.example:49421".into()),
                 operator_header: None,
                 operator_token: None,
                 registration_token: Some("from-profile".into()),
@@ -902,7 +902,7 @@ mod tests {
         );
 
         let globals = crate::GlobalArgs {
-            control_plane_url: "http://127.0.0.1:8080".into(),
+            control_plane_url: "http://127.0.0.1:49421".into(),
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,
@@ -923,7 +923,7 @@ mod tests {
         store.profiles.insert(
             "default".into(),
             Profile {
-                control_plane_url: Some("http://profile.example:8080".into()),
+                control_plane_url: Some("http://profile.example:49421".into()),
                 operator_header: None,
                 operator_token: None,
                 registration_token: Some("from-default".into()),
@@ -931,7 +931,7 @@ mod tests {
         );
 
         let globals = crate::GlobalArgs {
-            control_plane_url: "http://127.0.0.1:8080".into(),
+            control_plane_url: "http://127.0.0.1:49421".into(),
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,
@@ -946,7 +946,7 @@ mod tests {
     fn bootstrap_agent_errors_when_profile_is_missing() {
         let store = ProfileStore::default();
         let globals = crate::GlobalArgs {
-            control_plane_url: "http://127.0.0.1:8080".into(),
+            control_plane_url: "http://127.0.0.1:49421".into(),
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,
@@ -967,7 +967,7 @@ mod tests {
         store.profiles.insert("prod".into(), Profile::default());
 
         let globals = crate::GlobalArgs {
-            control_plane_url: "http://127.0.0.1:8080".into(),
+            control_plane_url: "http://127.0.0.1:49421".into(),
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,

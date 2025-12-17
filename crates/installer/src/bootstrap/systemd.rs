@@ -1080,7 +1080,7 @@ authorization: bearer qwerty
     #[test]
     fn render_agent_env_quotes_values_for_systemd_env_file() {
         let env = render_agent_env(&AgentEnvInputs {
-            control_plane_url: "http://localhost:8080".to_string(),
+            control_plane_url: "http://localhost:49421".to_string(),
             node_id: uuid::Uuid::nil(),
             node_token: "deadbeef".to_string(),
             allow_insecure_http: true,

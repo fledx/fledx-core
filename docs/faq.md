@@ -68,7 +68,7 @@ See the [Upgrade Guide](guides/upgrades.md) for detailed procedures.
 
 - **Control Plane Logs:** `sudo journalctl -u fledx-cp -f`
 - **Node Agent Logs:** `sudo journalctl -u fledx-agent -f`
-- **Metrics Endpoint:** `http://<control-plane>:8080/metrics` (Prometheus format)
+- **Metrics Endpoint:** `http://<control-plane>:49422/metrics` (Prometheus format)
 - **Deployment Logs:** `fledx deployments logs --resource-type deployment --resource-id <id>`
 
 See the [Monitoring Guide](guides/monitoring.md) for more information.
@@ -233,7 +233,7 @@ sqlite3 /var/lib/fledx/fledx-cp.db "PRAGMA integrity_check;"
 sudo systemctl start fledx-cp
 
 # Verify health
-curl http://localhost:8080/health
+curl http://localhost:49421/health
 ```
 
 Always maintain regular automated backups. See [Monitoring Guide](guides/monitoring.md#automated-backups) for setup.

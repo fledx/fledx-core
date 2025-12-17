@@ -121,7 +121,7 @@ mod tests {
         store.profiles.insert(
             "default".into(),
             Profile {
-                control_plane_url: Some("http://127.0.0.1:8080".into()),
+                control_plane_url: Some("http://127.0.0.1:49421".into()),
                 operator_header: Some("authorization".into()),
                 operator_token: Some("op".into()),
                 registration_token: Some("reg".into()),

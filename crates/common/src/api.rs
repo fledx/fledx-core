@@ -1383,7 +1383,7 @@ pub struct TunnelEndpoint {
     #[schema(example = "tunnel.edge.example.com")]
     pub host: String,
     /// Port where the gateway exposes the tunnel listener.
-    #[schema(example = 7443)]
+    #[schema(example = 49423)]
     pub port: u16,
     /// Whether the tunnel listener expects TLS (HTTPS). Defaults to true.
     #[serde(default = "default_tunnel_use_tls")]

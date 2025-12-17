@@ -444,7 +444,7 @@ fn write_json_artifact(name: &str, value: serde_json::Value) {
 
 fn test_base_config() -> config::AppConfig {
     config::AppConfig {
-        control_plane_url: "http://localhost:8080".into(),
+        control_plane_url: "http://localhost:49421".into(),
         node_id: Uuid::nil(),
         node_token: "t".into(),
         secrets_dir: "/var/run/secrets".into(),

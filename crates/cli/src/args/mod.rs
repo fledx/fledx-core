@@ -47,11 +47,11 @@ pub struct Cli {
 
 #[derive(Debug, Clone, Args)]
 pub struct GlobalArgs {
-    /// Control-plane base URL, e.g. http://127.0.0.1:8080
+    /// Control-plane base URL, e.g. http://127.0.0.1:49421
     #[arg(
         long,
         env = "FLEDX_CLI_CONTROL_PLANE_URL",
-        default_value = "http://127.0.0.1:8080"
+        default_value = "http://127.0.0.1:49421"
     )]
     pub control_plane_url: String,
 

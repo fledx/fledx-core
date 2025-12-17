@@ -32,7 +32,7 @@ pub struct ProfileSetArgs {
     #[arg(long = "name", value_name = "NAME")]
     pub name: String,
 
-    /// Control-plane base URL, e.g. http://127.0.0.1:8080
+    /// Control-plane base URL, e.g. http://127.0.0.1:49421
     #[arg(long = "control-plane-url", value_name = "URL")]
     pub control_plane_url: Option<String>,
 

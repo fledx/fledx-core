@@ -70,20 +70,20 @@ mod tests {
     #[test]
     fn heartbeat_url_trims_trailing_slash() {
         let mut cfg = base_config();
-        cfg.control_plane_url = "http://localhost:8080/".into();
+        cfg.control_plane_url = "http://localhost:49421/".into();
         cfg.node_id = Uuid::nil();
 
         let url = heartbeat_url(&cfg);
         assert_eq!(
             url,
-            "http://localhost:8080/api/v1/nodes/00000000-0000-0000-0000-000000000000/heartbeats"
+            "http://localhost:49421/api/v1/nodes/00000000-0000-0000-0000-000000000000/heartbeats"
         );
     }
 
     #[test]
     fn reject_http_when_not_allowed() {
         let mut cfg = base_config();
-        cfg.control_plane_url = "http://localhost:8080".into();
+        cfg.control_plane_url = "http://localhost:49421".into();
         cfg.node_id = Uuid::nil();
         cfg.allow_insecure_http = false;
 
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn allow_http_when_explicitly_enabled() {
         let mut cfg = base_config();
-        cfg.control_plane_url = "http://localhost:8080".into();
+        cfg.control_plane_url = "http://localhost:49421".into();
         cfg.node_id = Uuid::nil();
         cfg.allow_insecure_http = true;
 

@@ -89,11 +89,11 @@ pub struct BootstrapCpArgs {
     pub data_dir: PathBuf,
 
     /// Control-plane HTTP server port.
-    #[arg(long = "server-port", default_value_t = 8080)]
+    #[arg(long = "server-port", default_value_t = 49421)]
     pub server_port: u16,
 
     /// Control-plane tunnel listener port.
-    #[arg(long = "tunnel-port", default_value_t = 7443)]
+    #[arg(long = "tunnel-port", default_value_t = 49423)]
     pub tunnel_port: u16,
 
     /// Dedicated system user to run the control-plane service as.

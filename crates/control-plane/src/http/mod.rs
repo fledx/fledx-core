@@ -93,7 +93,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
     let middleware_stack =
         ServiceBuilder::new().layer(HttpMetricsLayer::new(state.metrics_history.clone()));
     Router::<AppState>::new()
-        .merge(system::router())
+        .merge(system::api_router())
         .merge(agents::router(state.clone()))
         .merge(deployments::router(state.clone()))
         .merge(relay::router(state.clone()))
@@ -101,6 +101,10 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .merge(metrics::router(state.clone()))
         .merge(auth::router(state.clone()))
         .layer(middleware_stack)
+}
+
+pub fn build_metrics_router() -> Router<AppState> {
+    Router::<AppState>::new().merge(system::metrics_router())
 }
 
 async fn enforce_agent_compatibility(
@@ -4145,7 +4149,7 @@ mod tests {
         #[tokio::test]
         async fn list_endpoints_require_operator_auth() {
             let state = setup_state().await;
-            let app = build_router(state.clone()).with_state(state);
+            let app = build_router(state.clone()).with_state(state.clone());
             for uri in ["/api/v1/nodes", "/api/v1/metrics/summary"] {
                 let response = app
                     .clone()
@@ -4495,7 +4499,8 @@ mod tests {
                 public_host: None,
             };
 
-            let app = build_router(state.clone()).with_state(state);
+            let app = build_router(state.clone()).with_state(state.clone());
+            let metrics_app = build_metrics_router().with_state(state);
             let request = Request::builder()
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
@@ -4524,7 +4529,7 @@ mod tests {
             let replica = &metrics.replicas[0];
             assert_eq!(replica.metrics, vec![recent_metric]);
 
-            let response = app
+            let response = metrics_app
                 .oneshot(
                     Request::builder()
                         .method("GET")
@@ -4984,6 +4989,7 @@ mod tests {
             };
 
             let app = build_router(state.clone()).with_state(state.clone());
+            let metrics_app = build_metrics_router().with_state(state.clone());
             let request = Request::builder()
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
@@ -5113,7 +5119,7 @@ mod tests {
             let node_status: NodeStatusResponse = serde_json::from_slice(&node_body).unwrap();
             assert!(node_status.usage_summary.is_some());
 
-            let metrics_response = app
+            let metrics_response = metrics_app
                 .clone()
                 .oneshot(
                     Request::builder()

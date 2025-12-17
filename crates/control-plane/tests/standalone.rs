@@ -127,6 +127,7 @@ struct CpEnv {
     _tmp: TempDir,
     db_path: PathBuf,
     cp_port: u16,
+    metrics_port: u16,
     tunnel_port: u16,
     operator_token: String,
     registration_token: String,
@@ -140,6 +141,7 @@ impl CpEnv {
             _tmp: tmp,
             db_path,
             cp_port: free_port(),
+            metrics_port: free_port(),
             tunnel_port: free_port(),
             operator_token: "op-token".to_string(),
             registration_token: "reg-token".to_string(),
@@ -155,6 +157,8 @@ impl CpEnv {
         let mut cmd = Command::new(bin);
         cmd.env("FLEDX_CP_SERVER_HOST", "127.0.0.1")
             .env("FLEDX_CP_SERVER_PORT", self.cp_port.to_string())
+            .env("FLEDX_CP_METRICS_HOST", "127.0.0.1")
+            .env("FLEDX_CP_METRICS_PORT", self.metrics_port.to_string())
             .env("FLEDX_CP_TUNNEL_ADVERTISED_HOST", "127.0.0.1")
             .env(
                 "FLEDX_CP_TUNNEL_ADVERTISED_PORT",
@@ -358,7 +362,7 @@ async fn standalone_metrics_include_agent_and_cp() -> anyhow::Result<()> {
     )
     .await?;
 
-    let metrics_url = format!("http://127.0.0.1:{}/metrics", env.cp_port);
+    let metrics_url = format!("http://127.0.0.1:{}/metrics", env.metrics_port);
     wait_http_ok_while_running(&metrics_url, &mut child, Duration::from_secs(10)).await?;
     let body = reqwest::get(metrics_url).await?.text().await?;
 

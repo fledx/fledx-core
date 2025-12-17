@@ -110,8 +110,8 @@ fledx bootstrap cp --cp-hostname <HOST> [OPTIONS]
 | `--ssh-host`          | -              | SSH target for remote install (user@host) |
 | `--ssh-identity-file` | -              | SSH private key path                      |
 | `--version`           | latest         | Version to install                        |
-| `--server-port`       | 8080           | HTTP API port                             |
-| `--tunnel-port`       | 7443           | Agent tunnel port                         |
+| `--server-port`       | 49421          | HTTP API port                             |
+| `--tunnel-port`       | 49423          | Agent tunnel port                         |
 | `--bin-dir`           | /usr/local/bin | Binary installation directory             |
 | `--config-dir`        | /etc/fledx     | Configuration directory                   |
 | `--data-dir`          | /var/lib/fledx | Persistent data directory                 |

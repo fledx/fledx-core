@@ -128,7 +128,7 @@ sudo systemctl start fledx-cp
 sudo systemctl status fledx-cp
 
 # Verify health endpoint shows new version
-curl -fsSL http://localhost:8080/health | jq .
+curl -fsSL http://localhost:49421/health | jq .
 ```
 
 Expected response:
@@ -148,7 +148,7 @@ Expected response:
 
 ```bash
 # Check compatibility settings
-curl -fsSL http://localhost:8080/health | jq '.compatibility'
+curl -fsSL http://localhost:49421/health | jq '.compatibility'
 ```
 
 Ensure the window includes your current agent versions.
@@ -218,7 +218,7 @@ After all components are upgraded:
 
 ```bash
 # Check control plane version
-curl http://localhost:8080/health | jq '.version'
+curl http://localhost:49421/health | jq '.version'
 
 # Check all nodes are connected
 fledx nodes status
@@ -251,7 +251,7 @@ sudo cp /usr/local/bin/fledx-cp.old /usr/local/bin/fledx-cp
 sudo systemctl start fledx-cp
 
 # Verify
-curl http://localhost:8080/health
+curl http://localhost:49421/health
 sudo systemctl status fledx-cp
 ```
 
@@ -495,7 +495,7 @@ For large deployments, consider automation:
 
     - name: Verify health
       uri:
-        url: http://localhost:8080/health
+        url: http://localhost:49421/health
         return_content: yes
       register: health_check
       failed_when: "'healthy' not in health_check.content"

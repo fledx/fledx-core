@@ -19,7 +19,7 @@ use crate::{
 
 pub(crate) fn base_config() -> config::AppConfig {
     config::AppConfig {
-        control_plane_url: "http://localhost:8080".into(),
+        control_plane_url: "http://localhost:49421".into(),
         node_id: Uuid::new_v4(),
         node_token: "t".into(),
         secrets_dir: "/var/run/secrets".into(),

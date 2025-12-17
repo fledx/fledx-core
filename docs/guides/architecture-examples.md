@@ -293,7 +293,7 @@ fledx deployments create \
 # All nodes connect to cloud control plane via VPN
 
 # On-premise nodes configuration:
-FLEDX_AGENT_CONTROL_PLANE_URL=https://control-plane.internal.vpc:8080
+FLEDX_AGENT_CONTROL_PLANE_URL=https://control-plane.internal.vpc:49421
 ```
 
 ### Benefits

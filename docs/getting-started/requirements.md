@@ -19,8 +19,9 @@ This page lists the system requirements and prerequisites for running Distribute
 
 ### Ports
 
-- **8080** (HTTP) or **8443** (HTTPS) for API, UI, and agent communication
-- Configurable via `FLEDX_CP_SERVER_PORT`
+- **49421** (HTTP) or **8443** (HTTPS) for API, UI, and agent communication
+- **49422** for Prometheus metrics (`/metrics`)
+- Configurable via `FLEDX_CP_SERVER_PORT` and `FLEDX_CP_METRICS_PORT`
 
 ## Node Agent Requirements
 
@@ -73,7 +74,7 @@ If Docker is not installed, follow the [official Docker installation guide](http
 
 ### Firewall Rules
 
-- **Control Plane:** Allow inbound on port 8080 (HTTP) or 8443 (HTTPS)
+- **Control Plane:** Allow inbound on port 49421 (HTTP) or 8443 (HTTPS), plus 49422 for metrics
 - **Node Agents:** Allow outbound HTTPS to control plane
 - **Workloads:** Allow inbound on assigned ports (configurable per deployment)
 
