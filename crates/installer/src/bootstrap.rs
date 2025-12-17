@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{IpAddr, ToSocketAddrs};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -90,16 +90,6 @@ impl SshTarget {
         cmd
     }
 
-    fn scp_base(&self) -> Command {
-        let mut cmd = Command::new("scp");
-        cmd.arg("-P").arg(self.port.to_string());
-        if let Some(key) = &self.identity_file {
-            cmd.arg("-i").arg(key);
-        }
-        cmd.arg("--");
-        cmd
-    }
-
     pub fn run(&self, sudo: SudoMode, script: &str) -> anyhow::Result<()> {
         let mut cmd = self.ssh_base();
         if sudo.interactive {
@@ -154,11 +144,42 @@ stderr:\n{}",
     }
 
     pub fn upload_file(&self, local: &Path, remote: &Path) -> anyhow::Result<()> {
-        let mut cmd = self.scp_base();
-        cmd.arg(local);
-        cmd.arg(format!("{}:{}", self.destination(), remote.display()));
-        run_checked(cmd).map(|_| ())
+        let local_file = fs::File::open(local)
+            .with_context(|| format!("failed to open local upload file {}", local.display()))?;
+        let remote_cmd = render_upload_command(remote)?;
+
+        let mut cmd = self.ssh_base();
+        cmd.arg("--");
+        cmd.arg(self.destination());
+        cmd.arg("sh").arg("-c").arg(remote_cmd);
+        cmd.stdin(Stdio::from(local_file));
+
+        let output = run_capture(cmd)?;
+        if output.status.success() {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "failed to upload {} to {}:{} (status {}):\nstdout:\n{}\nstderr:\n{}",
+            local.display(),
+            self.destination(),
+            remote.display(),
+            output.status,
+            output.stdout.trim_end(),
+            output.stderr.trim_end()
+        );
     }
+}
+
+fn render_upload_command(remote: &Path) -> anyhow::Result<String> {
+    let parent = remote.parent().ok_or_else(|| {
+        anyhow::anyhow!("invalid upload path (missing parent directory): {}", remote.display())
+    })?;
+
+    Ok(format!(
+        "umask 077; mkdir -p -- {}; cat > {}",
+        sh_quote_path(parent),
+        sh_quote_path(remote),
+    ))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1794,5 +1815,19 @@ mod tests {
 
         assert!(env.contains("FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=\"/var/lib/fledx/volumes dir\""));
         assert!(env.contains("FLEDX_AGENT_ALLOW_INSECURE_HTTP=\"true\""));
+    }
+
+    #[test]
+    fn render_upload_command_quotes_parent_and_path() {
+        let remote = PathBuf::from("/tmp/fledx dir/it's-here.bin");
+        let cmd = render_upload_command(&remote).expect("command");
+
+        let parent = remote.parent().expect("parent");
+        let expected = format!(
+            "umask 077; mkdir -p -- {}; cat > {}",
+            sh_quote_path(parent),
+            sh_quote_path(&remote)
+        );
+        assert_eq!(cmd, expected);
     }
 }
