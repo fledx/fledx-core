@@ -154,7 +154,10 @@ fn systemd_debug_bundle_local(service: &str) -> String {
         systemd_status_local(&unit).unwrap_or_else(|e| e.to_string())
     );
 
-    let _ = writeln!(&mut out, "\njournalctl (best-effort, last 10 lines):");
+    let _ = writeln!(
+        &mut out,
+        "\njournalctl (sudo -n, optional, last 10 lines):"
+    );
     let _ = writeln!(
         &mut out,
         "{}",
@@ -183,13 +186,28 @@ fn systemd_status_local(service: &str) -> anyhow::Result<String> {
 }
 
 fn systemd_journal_local(service: &str) -> anyhow::Result<String> {
-    let mut cmd = Command::new("journalctl");
-    cmd.arg("-u")
+    let mut cmd = Command::new("sudo");
+    cmd.arg("-n")
+        .arg("journalctl")
+        .arg("-u")
         .arg(service)
         .arg("-n")
         .arg("10")
         .arg("--no-pager");
-    let output = run_capture(cmd)?;
+
+    let output = match run_capture(cmd) {
+        Ok(output) => output,
+        Err(e) => {
+            return Ok(format!(
+                "skipped (failed to run sudo -n journalctl): {e:#}"
+            ))
+        }
+    };
+
+    if !output.status.success() && looks_like_noninteractive_sudo_failure(&output.stderr) {
+        return Ok("skipped (sudo -n not permitted)".to_string());
+    }
+
     Ok(format!(
         "exit: {}\nstdout:\n{}\nstderr:\n{}",
         output.status,
