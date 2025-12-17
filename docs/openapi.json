@@ -4621,7 +4621,7 @@
             "type": "integer",
             "format": "int32",
             "description": "Port where the gateway exposes the tunnel listener.",
-            "example": 49423,
+            "example": 7443,
             "minimum": 0
           },
           "use_tls": {
