@@ -5,9 +5,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::Context;
 
-use super::{
-    looks_like_noninteractive_sudo_failure, run_capture, run_checked, sh_quote, sh_quote_path,
-};
+use super::{looks_like_noninteractive_sudo_failure, run_capture, sh_quote, sh_quote_path};
 
 #[derive(Debug)]
 pub(crate) struct CapturedOutput {
@@ -116,7 +114,7 @@ impl Default for SshOptions {
         Self {
             batch_mode: true,
             connect_timeout_secs: 10,
-            host_key_checking: SshHostKeyChecking::AcceptNew,
+            host_key_checking: SshHostKeyChecking::Strict,
         }
     }
 }
@@ -327,6 +325,14 @@ stderr:\n{}",
             return Ok(());
         }
 
+        if self.options.batch_mode && looks_like_ssh_host_key_failure(&output.stderr) {
+            anyhow::bail!(
+                "{}\n\nssh stderr:\n{}",
+                render_ssh_host_key_failure_hint(self),
+                output.stderr.trim_end()
+            );
+        }
+
         if sudo.required
             && !sudo.interactive
             && looks_like_noninteractive_sudo_failure(&output.stderr)
@@ -359,7 +365,24 @@ stderr:\n{}",
         cmd.arg("sh").arg("-c").arg(script);
 
         if self.options.batch_mode {
-            return run_checked(cmd);
+            let output = run_capture(cmd)?;
+            if output.status.success() {
+                return Ok(output.stdout.trim().to_string());
+            }
+            if looks_like_ssh_host_key_failure(&output.stderr) {
+                anyhow::bail!(
+                    "{}\n\nssh stderr:\n{}",
+                    render_ssh_host_key_failure_hint(self),
+                    output.stderr.trim_end()
+                );
+            }
+            anyhow::bail!(
+                "command failed on {} (status {}):\nstdout:\n{}\nstderr:\n{}",
+                self.destination(),
+                output.status,
+                output.stdout.trim_end(),
+                output.stderr.trim_end()
+            );
         }
 
         cmd.stdin(Stdio::inherit());
@@ -436,6 +459,13 @@ stderr:\n{}",
         if output.status.success() {
             return Ok(());
         }
+        if self.options.batch_mode && looks_like_ssh_host_key_failure(&output.stderr) {
+            anyhow::bail!(
+                "{}\n\nssh stderr:\n{}",
+                render_ssh_host_key_failure_hint(self),
+                output.stderr.trim_end()
+            );
+        }
         anyhow::bail!(
             "failed to upload {} to {}:{} (status {}):\nstdout:\n{}\nstderr:\n{}",
             local.display(),
@@ -446,6 +476,35 @@ stderr:\n{}",
             output.stderr.trim_end()
         );
     }
+}
+
+fn looks_like_ssh_host_key_failure(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("host key verification failed")
+        || lower.contains("remote host identification has changed")
+        || lower.contains("offending key")
+        || lower.contains("man-in-the-middle")
+}
+
+fn render_ssh_host_key_failure_hint(target: &SshTarget) -> String {
+    let dest = target.destination();
+    let host = target.host.as_str();
+    let port = target.port;
+
+    format!(
+        "ssh host key verification failed for {dest}.\n\
+fledx defaults to strict host key checking.\n\
+\n\
+Fix: establish trust out-of-band, then add the host key to your known_hosts.\n\
+\n\
+Option 1 (recommended): connect once interactively and verify the fingerprint:\n\
+  ssh -p {port} {dest}\n\
+\n\
+Option 2 (non-interactive): pre-populate known_hosts (verify the fingerprint):\n\
+  ssh-keyscan -H -p {port} {host} >> ~/.ssh/known_hosts\n\
+\n\
+Override (less secure): pass --ssh-host-key-checking accept-new (TOFU) or off."
+    )
 }
 
 fn extract_remote_mktemp_dir(output: &str, template_prefix: &str) -> anyhow::Result<String> {

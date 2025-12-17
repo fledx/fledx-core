@@ -42,23 +42,6 @@ fn sh_quote_path(path: &Path) -> String {
     sh_quote(&path.as_os_str().to_string_lossy())
 }
 
-fn run_checked(mut cmd: Command) -> anyhow::Result<String> {
-    let output = cmd
-        .output()
-        .with_context(|| format!("failed to run {:?}", cmd))?;
-    if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "command failed (status {}):\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            stdout.trim_end(),
-            stderr.trim_end()
-        );
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
 fn looks_like_noninteractive_sudo_failure(stderr: &str) -> bool {
     let lower = stderr.to_ascii_lowercase();
     if !lower.contains("sudo") {

@@ -5,8 +5,12 @@ use clap::{Args, Subcommand, ValueEnum};
 #[derive(Debug, Clone, Copy, ValueEnum)]
 pub enum SshHostKeyChecking {
     /// Accept unknown host keys and add them to known_hosts (TOFU).
+    ///
+    /// WARNING: vulnerable to MITM on the first connection.
     AcceptNew,
     /// Require the host key to already exist in known_hosts.
+    ///
+    /// This is the recommended policy for production deployments.
     Strict,
     /// Disable host key checking (insecure).
     Off,
@@ -56,8 +60,8 @@ pub struct BootstrapCpArgs {
     #[arg(long = "ssh-connect-timeout-secs", default_value_t = 10)]
     pub ssh_connect_timeout_secs: u16,
 
-    /// SSH host key checking policy (defaults to `accept-new` / TOFU).
-    #[arg(long = "ssh-host-key-checking", value_enum, default_value_t = SshHostKeyChecking::AcceptNew)]
+    /// SSH host key checking policy (defaults to `strict`).
+    #[arg(long = "ssh-host-key-checking", value_enum, default_value_t = SshHostKeyChecking::Strict)]
     pub ssh_host_key_checking: SshHostKeyChecking,
 
     /// Control-plane version to install (defaults to latest release; supports `latest`).
@@ -148,8 +152,8 @@ pub struct BootstrapAgentArgs {
     #[arg(long = "ssh-connect-timeout-secs", default_value_t = 10)]
     pub ssh_connect_timeout_secs: u16,
 
-    /// SSH host key checking policy (defaults to `accept-new` / TOFU).
-    #[arg(long = "ssh-host-key-checking", value_enum, default_value_t = SshHostKeyChecking::AcceptNew)]
+    /// SSH host key checking policy (defaults to `strict`).
+    #[arg(long = "ssh-host-key-checking", value_enum, default_value_t = SshHostKeyChecking::Strict)]
     pub ssh_host_key_checking: SshHostKeyChecking,
 
     /// Node name to register (defaults to ssh host).
