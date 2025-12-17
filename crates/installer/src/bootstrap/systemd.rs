@@ -35,8 +35,15 @@ pub async fn wait_for_systemd_active_local(service: &str, timeout: Duration) -> 
         if state == "active" {
             return Ok(());
         }
+        if state == "failed" {
+            let debug = systemd_debug_bundle_local(service);
+            anyhow::bail!("systemd service {service} entered 'failed' state.\n\n{debug}");
+        }
         if start.elapsed() >= timeout {
-            anyhow::bail!("timed out waiting for systemd service {service} to become active");
+            let debug = systemd_debug_bundle_local(service);
+            anyhow::bail!(
+                "timed out waiting for systemd service {service} to become active.\n\n{debug}"
+            );
         }
         sleep(Duration::from_millis(500)).await;
     }
@@ -59,9 +66,19 @@ pub async fn wait_for_systemd_active_ssh(
         if state == "active" {
             return Ok(());
         }
-        if start.elapsed() >= timeout {
+        if state == "failed" {
+            let debug = systemd_debug_bundle_ssh(ssh, service)
+                .unwrap_or_else(|e| format!("failed to collect systemd debug bundle: {e:#}"));
             anyhow::bail!(
-                "timed out waiting for systemd service {service} to become active on {}",
+                "systemd service {service} entered 'failed' state on {}.\n\n{debug}",
+                ssh.destination()
+            );
+        }
+        if start.elapsed() >= timeout {
+            let debug = systemd_debug_bundle_ssh(ssh, service)
+                .unwrap_or_else(|e| format!("failed to collect systemd debug bundle: {e:#}"));
+            anyhow::bail!(
+                "timed out waiting for systemd service {service} to become active on {}.\n\n{debug}",
                 ssh.destination()
             );
         }
@@ -78,6 +95,95 @@ fn systemd_state_local(service: &str) -> anyhow::Result<String> {
 
 fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
     ssh.run_output(&format!("systemctl is-active -- {}", sh_quote(service)))
+}
+
+fn systemd_debug_bundle_local(service: &str) -> String {
+    let mut out = String::new();
+    let _ = writeln!(&mut out, "systemctl is-active:");
+    let _ = writeln!(
+        &mut out,
+        "{}",
+        systemd_state_local(service).unwrap_or_else(|e| e.to_string())
+    );
+
+    let _ = writeln!(&mut out, "\nsystemctl status:");
+    let _ = writeln!(
+        &mut out,
+        "{}",
+        systemd_status_local(service).unwrap_or_else(|e| e.to_string())
+    );
+
+    let _ = writeln!(&mut out, "\njournalctl (best-effort):");
+    let _ = writeln!(
+        &mut out,
+        "{}",
+        systemd_journal_local(service).unwrap_or_else(|e| e.to_string())
+    );
+
+    out
+}
+
+fn systemd_status_local(service: &str) -> anyhow::Result<String> {
+    let mut cmd = Command::new("systemctl");
+    cmd.arg("status")
+        .arg("--no-pager")
+        .arg("-l")
+        .arg("-n")
+        .arg("100")
+        .arg("--")
+        .arg(service);
+    let output = run_capture(cmd)?;
+    Ok(format!(
+        "exit: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        output.stdout.trim_end(),
+        output.stderr.trim_end()
+    ))
+}
+
+fn systemd_journal_local(service: &str) -> anyhow::Result<String> {
+    let mut cmd = Command::new("journalctl");
+    cmd.arg("-u")
+        .arg(service)
+        .arg("-n")
+        .arg("200")
+        .arg("--no-pager");
+    let output = run_capture(cmd)?;
+    Ok(format!(
+        "exit: {}\nstdout:\n{}\nstderr:\n{}",
+        output.status,
+        output.stdout.trim_end(),
+        output.stderr.trim_end()
+    ))
+}
+
+fn systemd_debug_bundle_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
+    // Best-effort bundle that never fails the SSH command. We try both
+    // non-sudo and sudo(-n) journalctl access.
+    let service_q = sh_quote(service);
+    let script = format!(
+        "\
+echo 'systemctl is-active:'
+systemctl is-active -- {service} 2>&1 || true
+echo
+echo 'systemctl status:'
+systemctl status --no-pager -l -n 100 -- {service} 2>&1 || true
+echo
+echo 'journalctl (sudo -n):'
+sudo -n journalctl -u {service} -n 200 --no-pager 2>&1 || true
+echo
+echo 'journalctl (no sudo):'
+journalctl -u {service} -n 200 --no-pager 2>&1 || true
+true
+",
+        service = service_q
+    );
+    ssh.run_output(&script).with_context(|| {
+        format!(
+            "failed to collect systemd debug bundle on {}",
+            ssh.destination()
+        )
+    })
 }
 
 pub fn render_agent_env(input: &AgentEnvInputs) -> String {
