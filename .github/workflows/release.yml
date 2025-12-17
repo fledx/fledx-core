@@ -141,6 +141,7 @@ jobs:
           cd target/${{ matrix.target }}/release
           umask 077
           printf '%s' "$FLEDX_RELEASE_SIGNING_PRIVATE_KEY" > signing-key.pem
+          trap 'rm -f signing-key.pem' EXIT
 
           key_header="$(openssl pkey -in signing-key.pem -noout -text 2>/dev/null | head -n 1 || true)"
           if ! printf '%s' "$key_header" | grep -q 'ED25519'; then
@@ -185,8 +186,6 @@ jobs:
               exit 1
             fi
           done
-
-          rm signing-key.pem
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
