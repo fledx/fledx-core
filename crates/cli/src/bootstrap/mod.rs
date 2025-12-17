@@ -73,11 +73,24 @@ pub async fn bootstrap_cp(
             &sha_path,
         )?;
     } else {
+        let sig_asset_name = format!("{archive_name}.sha256.sig");
+        let has_sig_asset = release.assets.iter().any(|asset| asset.name == sig_asset_name);
+        if !has_sig_asset {
+            anyhow::bail!(
+                "release {}@{} does not contain the expected checksum signature asset: {}.\n\
+This usually means the release is unsigned (older release schema).\n\
+\nFor secure installs, wait for a newer release that includes signed checksums.\n\
+If you understand the risk, rerun with --insecure-allow-unsigned to skip signature verification.",
+                CORE_REPO,
+                release.tag_name,
+                sig_asset_name
+            );
+        }
         installer::bootstrap::download_asset(
             client,
             CORE_REPO,
             &release,
-            &format!("{archive_name}.sha256.sig"),
+            &sig_asset_name,
             &sha_sig_path,
         )
         .await?;
@@ -308,11 +321,24 @@ pub async fn bootstrap_agent(
             &sha_path,
         )?;
     } else {
+        let sig_asset_name = format!("{archive_name}.sha256.sig");
+        let has_sig_asset = release.assets.iter().any(|asset| asset.name == sig_asset_name);
+        if !has_sig_asset {
+            anyhow::bail!(
+                "release {}@{} does not contain the expected checksum signature asset: {}.\n\
+This usually means the release is unsigned (older release schema).\n\
+\nFor secure installs, wait for a newer release that includes signed checksums.\n\
+If you understand the risk, rerun with --insecure-allow-unsigned to skip signature verification.",
+                CORE_REPO,
+                release.tag_name,
+                sig_asset_name
+            );
+        }
         installer::bootstrap::download_asset(
             client,
             CORE_REPO,
             &release,
-            &format!("{archive_name}.sha256.sig"),
+            &sig_asset_name,
             &sha_sig_path,
         )
         .await?;
