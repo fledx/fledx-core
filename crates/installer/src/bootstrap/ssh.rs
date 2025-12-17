@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -221,6 +222,79 @@ Raw output: {:?}",
         }
 
         cmd.arg("sh").arg("-c").arg(script);
+
+        if sudo.interactive || !self.options.batch_mode {
+            cmd.stdin(Stdio::inherit());
+            cmd.stdout(Stdio::inherit());
+            cmd.stderr(Stdio::inherit());
+
+            let status = cmd
+                .status()
+                .with_context(|| format!("failed to run {:?}", cmd))?;
+            if status.success() {
+                return Ok(());
+            }
+
+            anyhow::bail!(
+                "command failed on {} (status {})",
+                self.destination(),
+                status
+            );
+        }
+
+        let output = run_capture(cmd)?;
+        if output.status.success() {
+            return Ok(());
+        }
+
+        if sudo.required
+            && !sudo.interactive
+            && looks_like_noninteractive_sudo_failure(&output.stderr)
+        {
+            anyhow::bail!(
+                "sudo failed in non-interactive mode on {}.\n\
+Hint: rerun with `--sudo-interactive` or configure passwordless sudo \
+(NOPASSWD) for this user.\n\
+\nstdout:\n{}\n\
+stderr:\n{}",
+                self.destination(),
+                output.stdout.trim_end(),
+                output.stderr.trim_end()
+            );
+        }
+
+        anyhow::bail!(
+            "command failed on {} (status {}):\nstdout:\n{}\nstderr:\n{}",
+            self.destination(),
+            output.status,
+            output.stdout.trim_end(),
+            output.stderr.trim_end()
+        );
+    }
+
+    pub fn run_command(
+        &self,
+        sudo: SudoMode,
+        program: &str,
+        args: &[OsString],
+    ) -> anyhow::Result<()> {
+        let mut cmd = self.ssh_base();
+        if sudo.interactive {
+            cmd.arg("-tt");
+        }
+
+        cmd.arg("--");
+        cmd.arg(self.destination());
+
+        if sudo.required {
+            cmd.arg("sudo");
+            if !sudo.interactive {
+                cmd.arg("-n");
+            }
+        }
+
+        cmd.arg(program);
+        cmd.args(args);
 
         if sudo.interactive || !self.options.batch_mode {
             cmd.stdin(Stdio::inherit());

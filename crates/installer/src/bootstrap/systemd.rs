@@ -374,7 +374,9 @@ pub fn install_cp_ssh(
 
     let remote_script = PathBuf::from(format!("{remote_dir}/install-cp.sh"));
     ssh.upload_file(&local_script, &remote_script)?;
-    ssh.run(sudo, &format!("sh {}", sh_quote_path(&remote_script)))?;
+    // Run the uploaded script directly to avoid `sh -c` argument-boundary
+    // issues that can drop into an interactive shell when a TTY is allocated.
+    ssh.run_command(sudo, "sh", &[remote_script.as_os_str().to_os_string()])?;
     Ok(())
 }
 
@@ -482,7 +484,9 @@ pub fn install_agent_ssh(
 
     let remote_script = PathBuf::from(format!("{remote_dir}/install-agent.sh"));
     ssh.upload_file(&local_script, &remote_script)?;
-    ssh.run(sudo, &format!("sh {}", sh_quote_path(&remote_script)))?;
+    // Run the uploaded script directly to avoid `sh -c` argument-boundary
+    // issues that can drop into an interactive shell when a TTY is allocated.
+    ssh.run_command(sudo, "sh", &[remote_script.as_os_str().to_os_string()])?;
     Ok(())
 }
 
