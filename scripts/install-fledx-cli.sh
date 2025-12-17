@@ -51,6 +51,56 @@ need_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+hex_to_bin() {
+  hex="$1"
+
+  if command -v xxd >/dev/null 2>&1; then
+    printf '%s' "$hex" | xxd -r -p
+    return 0
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$hex" <<'PY'
+import binascii
+import sys
+
+sys.stdout.buffer.write(binascii.unhexlify(sys.argv[1].strip()))
+PY
+    return 0
+  fi
+
+  if command -v perl >/dev/null 2>&1; then
+    perl -e 'print pack("H*", $ARGV[0])' "$hex"
+    return 0
+  fi
+
+  if command -v awk >/dev/null 2>&1; then
+    awk -v hex="$hex" '
+      function hexval(c) {
+        c = tolower(c)
+        return index("0123456789abcdef", c) - 1
+      }
+      function hexbyte(s,    hi, lo) {
+        hi = hexval(substr(s, 1, 1))
+        lo = hexval(substr(s, 2, 1))
+        return (hi * 16) + lo
+      }
+      BEGIN {
+        gsub(/[[:space:]]/, "", hex)
+        if (length(hex) % 2 != 0) {
+          exit 2
+        }
+        for (i = 1; i <= length(hex); i += 2) {
+          printf "%c", hexbyte(substr(hex, i, 2))
+        }
+      }
+    ' || die "failed to decode hex to binary"
+    return 0
+  fi
+
+  die "missing tool to decode hex (install xxd, python3, perl, or awk)"
+}
+
 curl_get() {
   url="$1"
   out="$2"
@@ -143,7 +193,6 @@ verify_ed25519_signature() {
   [ -f "$sig_file" ] || die "signature file not found: $sig_file"
 
   need_cmd openssl
-  need_cmd xxd
 
   sig_size="$(wc -c < "$sig_file" | tr -d ' ')"
   [ "$sig_size" -eq 64 ] || die "unexpected signature length: $sig_size bytes (expected 64)"
@@ -164,7 +213,7 @@ verify_ed25519_signature() {
     der_path="$TMPDIR/pubkey.der"
     pem_path="$TMPDIR/pubkey.pem"
 
-    printf '%s' "$der_hex" | xxd -r -p > "$der_path"
+    hex_to_bin "$der_hex" > "$der_path"
     openssl pkey -pubin -inform DER -in "$der_path" -out "$pem_path" >/dev/null 2>&1 || {
       IFS=','
       continue
