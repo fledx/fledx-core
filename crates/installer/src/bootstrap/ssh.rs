@@ -4,7 +4,9 @@ use std::process::{Command, Stdio};
 
 use anyhow::Context;
 
-use super::{looks_like_noninteractive_sudo_failure, run_capture, run_checked, sh_quote_path};
+use super::{
+    looks_like_noninteractive_sudo_failure, run_capture, run_checked, sh_quote, sh_quote_path,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinuxArch {
@@ -169,6 +171,39 @@ impl SshTarget {
         cmd
     }
 
+    pub fn mktemp_dir(&self, template_prefix: &str) -> anyhow::Result<String> {
+        if template_prefix.is_empty() {
+            anyhow::bail!("mktemp template prefix must not be empty");
+        }
+        if template_prefix.chars().any(|ch| ch.is_whitespace()) {
+            anyhow::bail!("mktemp template prefix must not contain whitespace");
+        }
+
+        let template = format!("{template_prefix}.XXXXXXXXXX");
+        let script = format!(
+            "umask 077; TMPDIR=/tmp mktemp -d -t {}",
+            sh_quote(&template)
+        );
+
+        let raw = self.run_output(&script).with_context(|| {
+            format!(
+                "failed to create remote temp dir on {} using mktemp template {:?}",
+                self.destination(),
+                template
+            )
+        })?;
+
+        extract_remote_mktemp_dir(&raw, template_prefix).with_context(|| {
+            format!(
+                "failed to parse mktemp output from {} (template prefix {:?}).\n\
+Raw output: {:?}",
+                self.destination(),
+                template_prefix,
+                raw.trim_end()
+            )
+        })
+    }
+
     pub fn run(&self, sudo: SudoMode, script: &str) -> anyhow::Result<()> {
         let mut cmd = self.ssh_base();
         if sudo.interactive {
@@ -313,6 +348,44 @@ stderr:\n{}",
     }
 }
 
+fn extract_remote_mktemp_dir(output: &str, template_prefix: &str) -> anyhow::Result<String> {
+    // We expect `mktemp` to output a path that contains the template prefix.
+    // However, some SSH targets prepend banner/motd text to stdout even for
+    // non-interactive sessions. In those cases the output may contain multiple
+    // lines/tokens; we scan for an absolute path token that includes the prefix.
+    //
+    // We prefer tokens near the end since banners usually come first.
+    for token in output.split_whitespace().rev() {
+        // Strip common ANSI noise by finding the first slash (if any).
+        let Some(slash) = token.find('/') else {
+            continue;
+        };
+        let mut candidate = &token[slash..];
+
+        // Remove common trailing punctuation (\r, :, etc.) which can happen when
+        // banners are printed without newlines.
+        candidate = candidate.trim_end_matches(
+            |ch: char| !matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '/' | '.' | '_' | '-'),
+        );
+
+        if !candidate.starts_with('/') {
+            continue;
+        }
+        if !candidate.contains(template_prefix) {
+            continue;
+        }
+        if candidate.chars().any(|ch| ch.is_control()) {
+            continue;
+        }
+        return Ok(candidate.to_string());
+    }
+
+    anyhow::bail!(
+        "mktemp output did not contain an absolute path that includes {:?}",
+        template_prefix
+    );
+}
+
 fn render_upload_command(remote: &Path) -> anyhow::Result<String> {
     let parent = remote.parent().ok_or_else(|| {
         anyhow::anyhow!(
@@ -360,8 +433,7 @@ impl InstallTarget {
                 // Note: Some SSH configurations print banner/motd text to
                 // stdout even for non-login sessions. To make debugging easy,
                 // we include the raw probe output in error messages.
-                const ARCH_PROBE_SCRIPT: &str =
-                    "uname -m; \
+                const ARCH_PROBE_SCRIPT: &str = "uname -m; \
                      dpkg --print-architecture 2>/dev/null || true; \
                      apk --print-arch 2>/dev/null || true";
 
@@ -417,7 +489,10 @@ mod tests {
     #[test]
     fn linux_arch_can_be_extracted_from_noisy_uname_output() {
         let out = "Welcome\nLinux\narm64\n";
-        assert_eq!(LinuxArch::from_uname_output(out).unwrap().as_str(), "aarch64");
+        assert_eq!(
+            LinuxArch::from_uname_output(out).unwrap().as_str(),
+            "aarch64"
+        );
     }
 
     #[test]
@@ -450,5 +525,19 @@ mod tests {
             super::super::sh_quote_path(&remote)
         );
         assert_eq!(cmd, expected);
+    }
+
+    #[test]
+    fn mktemp_dir_extractor_handles_banners_and_ansi_noise() {
+        let out = "\u{1b}[0mWelcome!\r\n/tmp/fledx-bootstrap-agent.ABCDEF\r\n";
+        let dir = extract_remote_mktemp_dir(out, "fledx-bootstrap-agent").expect("dir");
+        assert_eq!(dir, "/tmp/fledx-bootstrap-agent.ABCDEF");
+    }
+
+    #[test]
+    fn mktemp_dir_extractor_finds_path_in_mixed_output() {
+        let out = "Last login: ...\nSome banner text\n/tmp/fledx-bootstrap-cp.123456\n";
+        let dir = extract_remote_mktemp_dir(out, "fledx-bootstrap-cp").expect("dir");
+        assert_eq!(dir, "/tmp/fledx-bootstrap-cp.123456");
     }
 }

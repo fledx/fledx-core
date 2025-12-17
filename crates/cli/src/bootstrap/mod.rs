@@ -74,7 +74,10 @@ pub async fn bootstrap_cp(
         )?;
     } else {
         let sig_asset_name = format!("{archive_name}.sha256.sig");
-        let has_sig_asset = release.assets.iter().any(|asset| asset.name == sig_asset_name);
+        let has_sig_asset = release
+            .assets
+            .iter()
+            .any(|asset| asset.name == sig_asset_name);
         if !has_sig_asset {
             anyhow::bail!(
                 "release {}@{} does not contain the expected checksum signature asset: {}.\n\
@@ -322,7 +325,10 @@ pub async fn bootstrap_agent(
         )?;
     } else {
         let sig_asset_name = format!("{archive_name}.sha256.sig");
-        let has_sig_asset = release.assets.iter().any(|asset| asset.name == sig_asset_name);
+        let has_sig_asset = release
+            .assets
+            .iter()
+            .any(|asset| asset.name == sig_asset_name);
         if !has_sig_asset {
             anyhow::bail!(
                 "release {}@{} does not contain the expected checksum signature asset: {}.\n\

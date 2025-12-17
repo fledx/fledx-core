@@ -340,7 +340,7 @@ pub fn install_cp_ssh(
 ) -> anyhow::Result<()> {
     let sudo = SudoMode::root(settings.sudo_interactive);
     validate_linux_username(&settings.service_user)?;
-    let remote_dir = ssh.run_output("umask 077; mktemp -d -t fledx-bootstrap-cp.XXXXXXXXXX")?;
+    let remote_dir = ssh.mktemp_dir("fledx-bootstrap-cp")?;
 
     let local_dir = tempfile::tempdir()?;
     let local_bin = local_dir.path().join("fledx-cp");
@@ -451,7 +451,7 @@ pub fn install_agent_ssh(
 ) -> anyhow::Result<()> {
     let sudo = SudoMode::root(settings.sudo_interactive);
     validate_linux_username(&settings.service_user)?;
-    let remote_dir = ssh.run_output("umask 077; mktemp -d -t fledx-bootstrap-agent.XXXXXXXXXX")?;
+    let remote_dir = ssh.mktemp_dir("fledx-bootstrap-agent")?;
 
     let local_dir = tempfile::tempdir()?;
     let local_bin = local_dir.path().join("fledx-agent");
