@@ -48,4 +48,3 @@ pub struct ProfileSetArgs {
     #[arg(long = "registration-token", value_name = "TOKEN")]
     pub registration_token: Option<String>,
 }
-

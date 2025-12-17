@@ -180,7 +180,10 @@ mod tests {
         let loaded = ProfileStore::load().expect("load");
         assert_eq!(loaded.default_profile.as_deref(), Some("prod"));
         let profile = loaded.profiles.get("prod").expect("profile");
-        assert_eq!(profile.control_plane_url.as_deref(), Some("https://cp.example:8443"));
+        assert_eq!(
+            profile.control_plane_url.as_deref(),
+            Some("https://cp.example:8443")
+        );
     }
 
     #[cfg(unix)]
@@ -203,4 +206,3 @@ mod tests {
         assert!(err.to_string().contains("too permissive"));
     }
 }
-

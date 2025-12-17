@@ -32,7 +32,9 @@ pub async fn bootstrap_cp(
                 crate::args::SshHostKeyChecking::Strict => {
                     installer::bootstrap::SshHostKeyChecking::Strict
                 }
-                crate::args::SshHostKeyChecking::Off => installer::bootstrap::SshHostKeyChecking::Off,
+                crate::args::SshHostKeyChecking::Off => {
+                    installer::bootstrap::SshHostKeyChecking::Off
+                }
             };
 
             installer::bootstrap::InstallTarget::Ssh(ssh)
@@ -42,8 +44,8 @@ pub async fn bootstrap_cp(
 
     let arch = target.detect_arch(args.sudo_interactive)?;
 
-    let release = installer::bootstrap::fetch_release(client, CORE_REPO, args.version.as_deref())
-        .await?;
+    let release =
+        installer::bootstrap::fetch_release(client, CORE_REPO, args.version.as_deref()).await?;
     let version = installer::bootstrap::normalize_version(&release.tag_name);
     let archive_name = format!("fledx-cp-{}-{}-linux.tar.gz", version, arch.as_str());
 
@@ -89,13 +91,14 @@ pub async fn bootstrap_cp(
         )?;
     }
 
-    let extracted = installer::bootstrap::extract_single_file(&archive_path, "fledx-cp", dir.path())
-        .with_context(|| {
-            format!(
-                "failed to extract fledx-cp from {}@{} asset {}",
-                CORE_REPO, release.tag_name, archive_name
-            )
-        })?;
+    let extracted =
+        installer::bootstrap::extract_single_file(&archive_path, "fledx-cp", dir.path())
+            .with_context(|| {
+                format!(
+                    "failed to extract fledx-cp from {}@{} asset {}",
+                    CORE_REPO, release.tag_name, archive_name
+                )
+            })?;
 
     let registration_token = globals
         .registration_token
@@ -239,7 +242,9 @@ pub async fn bootstrap_agent(
     ssh.options.batch_mode = !args.ssh_interactive;
     ssh.options.connect_timeout_secs = args.ssh_connect_timeout_secs;
     ssh.options.host_key_checking = match args.ssh_host_key_checking {
-        crate::args::SshHostKeyChecking::AcceptNew => installer::bootstrap::SshHostKeyChecking::AcceptNew,
+        crate::args::SshHostKeyChecking::AcceptNew => {
+            installer::bootstrap::SshHostKeyChecking::AcceptNew
+        }
         crate::args::SshHostKeyChecking::Strict => installer::bootstrap::SshHostKeyChecking::Strict,
         crate::args::SshHostKeyChecking::Off => installer::bootstrap::SshHostKeyChecking::Off,
     };
@@ -364,11 +369,12 @@ pub async fn bootstrap_agent(
     });
 
     let bin_path = agent_bin_path(&args)?;
-    let agent_unit = installer::bootstrap::render_agent_unit(&installer::bootstrap::AgentUnitInputs {
-        service_user: args.service_user.clone(),
-        env_path: args.config_dir.join("fledx-agent.env"),
-        bin_path: bin_path.clone(),
-    });
+    let agent_unit =
+        installer::bootstrap::render_agent_unit(&installer::bootstrap::AgentUnitInputs {
+            service_user: args.service_user.clone(),
+            env_path: args.config_dir.join("fledx-agent.env"),
+            bin_path: bin_path.clone(),
+        });
 
     let settings = installer::bootstrap::AgentInstallSettings {
         config_dir: args.config_dir.clone(),
@@ -416,7 +422,10 @@ fn agent_bin_path(args: &BootstrapAgentArgs) -> anyhow::Result<PathBuf> {
         .unwrap_or_default()
         .is_empty()
     {
-        anyhow::bail!("invalid --install-path (missing file name): {}", path.display());
+        anyhow::bail!(
+            "invalid --install-path (missing file name): {}",
+            path.display()
+        );
     }
 
     let parent = path.parent().ok_or_else(|| {
@@ -426,7 +435,10 @@ fn agent_bin_path(args: &BootstrapAgentArgs) -> anyhow::Result<PathBuf> {
         )
     })?;
     if parent.as_os_str().is_empty() {
-        anyhow::bail!("invalid --install-path (missing parent directory): {}", path.display());
+        anyhow::bail!(
+            "invalid --install-path (missing parent directory): {}",
+            path.display()
+        );
     }
 
     Ok(path)
@@ -528,30 +540,30 @@ mod tests {
 
     #[test]
     fn agent_bin_path_defaults_to_bin_dir() {
-	        let args = BootstrapAgentArgs {
-	            ssh_host: "root@example.com".into(),
-	            ssh_user: None,
-	            ssh_port: 22,
-	            ssh_identity_file: None,
-	            ssh_interactive: false,
-	            ssh_connect_timeout_secs: 10,
-	            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
-	            name: None,
-	            version: None,
-	            bin_dir: PathBuf::from("/usr/local/bin"),
-	            install_path: None,
-	            config_dir: PathBuf::from("/etc/fledx"),
-	            data_dir: PathBuf::from("/var/lib/fledx"),
-	            service_user: "fledx-agent".into(),
-	            no_docker_group: false,
-	            labels: Vec::new(),
-	            capacity_cpu_millis: None,
-	            capacity_memory_bytes: None,
-	            sudo_interactive: false,
-	            insecure_allow_unsigned: false,
-	            no_wait: true,
-	            wait_timeout_secs: 1,
-	        };
+        let args = BootstrapAgentArgs {
+            ssh_host: "root@example.com".into(),
+            ssh_user: None,
+            ssh_port: 22,
+            ssh_identity_file: None,
+            ssh_interactive: false,
+            ssh_connect_timeout_secs: 10,
+            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
+            name: None,
+            version: None,
+            bin_dir: PathBuf::from("/usr/local/bin"),
+            install_path: None,
+            config_dir: PathBuf::from("/etc/fledx"),
+            data_dir: PathBuf::from("/var/lib/fledx"),
+            service_user: "fledx-agent".into(),
+            no_docker_group: false,
+            labels: Vec::new(),
+            capacity_cpu_millis: None,
+            capacity_memory_bytes: None,
+            sudo_interactive: false,
+            insecure_allow_unsigned: false,
+            no_wait: true,
+            wait_timeout_secs: 1,
+        };
 
         let path = agent_bin_path(&args).expect("path");
         assert_eq!(path, PathBuf::from("/usr/local/bin/fledx-agent"));
@@ -559,30 +571,30 @@ mod tests {
 
     #[test]
     fn agent_bin_path_respects_install_path() {
-	        let args = BootstrapAgentArgs {
-	            ssh_host: "root@example.com".into(),
-	            ssh_user: None,
-	            ssh_port: 22,
-	            ssh_identity_file: None,
-	            ssh_interactive: false,
-	            ssh_connect_timeout_secs: 10,
-	            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
-	            name: None,
-	            version: None,
-	            bin_dir: PathBuf::from("/usr/local/bin"),
-	            install_path: Some(PathBuf::from("/opt/fledx/bin/fledx-agent")),
-	            config_dir: PathBuf::from("/etc/fledx"),
-	            data_dir: PathBuf::from("/var/lib/fledx"),
-	            service_user: "fledx-agent".into(),
-	            no_docker_group: false,
-	            labels: Vec::new(),
-	            capacity_cpu_millis: None,
-	            capacity_memory_bytes: None,
-	            sudo_interactive: false,
-	            insecure_allow_unsigned: false,
-	            no_wait: true,
-	            wait_timeout_secs: 1,
-	        };
+        let args = BootstrapAgentArgs {
+            ssh_host: "root@example.com".into(),
+            ssh_user: None,
+            ssh_port: 22,
+            ssh_identity_file: None,
+            ssh_interactive: false,
+            ssh_connect_timeout_secs: 10,
+            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
+            name: None,
+            version: None,
+            bin_dir: PathBuf::from("/usr/local/bin"),
+            install_path: Some(PathBuf::from("/opt/fledx/bin/fledx-agent")),
+            config_dir: PathBuf::from("/etc/fledx"),
+            data_dir: PathBuf::from("/var/lib/fledx"),
+            service_user: "fledx-agent".into(),
+            no_docker_group: false,
+            labels: Vec::new(),
+            capacity_cpu_millis: None,
+            capacity_memory_bytes: None,
+            sudo_interactive: false,
+            insecure_allow_unsigned: false,
+            no_wait: true,
+            wait_timeout_secs: 1,
+        };
 
         let path = agent_bin_path(&args).expect("path");
         assert_eq!(path, PathBuf::from("/opt/fledx/bin/fledx-agent"));
@@ -590,30 +602,30 @@ mod tests {
 
     #[test]
     fn agent_bin_path_rejects_missing_filename() {
-	        let args = BootstrapAgentArgs {
-	            ssh_host: "root@example.com".into(),
-	            ssh_user: None,
-	            ssh_port: 22,
-	            ssh_identity_file: None,
-	            ssh_interactive: false,
-	            ssh_connect_timeout_secs: 10,
-	            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
-	            name: None,
-	            version: None,
-	            bin_dir: PathBuf::from("/usr/local/bin"),
-	            install_path: Some(PathBuf::from("/")),
-	            config_dir: PathBuf::from("/etc/fledx"),
-	            data_dir: PathBuf::from("/var/lib/fledx"),
-	            service_user: "fledx-agent".into(),
-	            no_docker_group: false,
-	            labels: Vec::new(),
-	            capacity_cpu_millis: None,
-	            capacity_memory_bytes: None,
-	            sudo_interactive: false,
-	            insecure_allow_unsigned: false,
-	            no_wait: true,
-	            wait_timeout_secs: 1,
-	        };
+        let args = BootstrapAgentArgs {
+            ssh_host: "root@example.com".into(),
+            ssh_user: None,
+            ssh_port: 22,
+            ssh_identity_file: None,
+            ssh_interactive: false,
+            ssh_connect_timeout_secs: 10,
+            ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
+            name: None,
+            version: None,
+            bin_dir: PathBuf::from("/usr/local/bin"),
+            install_path: Some(PathBuf::from("/")),
+            config_dir: PathBuf::from("/etc/fledx"),
+            data_dir: PathBuf::from("/var/lib/fledx"),
+            service_user: "fledx-agent".into(),
+            no_docker_group: false,
+            labels: Vec::new(),
+            capacity_cpu_millis: None,
+            capacity_memory_bytes: None,
+            sudo_interactive: false,
+            insecure_allow_unsigned: false,
+            no_wait: true,
+            wait_timeout_secs: 1,
+        };
 
         let err = agent_bin_path(&args).expect_err("should fail");
         assert!(err.to_string().contains("missing file name"));
@@ -645,9 +657,9 @@ mod tests {
             public_host: "127.0.0.1".to_string(),
         });
 
-        assert!(env.contains(
-            "FLEDX_CP_DATABASE_URL=\"sqlite:////var/lib/fledx dir/control-plane.db\""
-        ));
+        assert!(
+            env.contains("FLEDX_CP_DATABASE_URL=\"sqlite:////var/lib/fledx dir/control-plane.db\"")
+        );
     }
 
     #[test]
@@ -671,7 +683,8 @@ mod tests {
             registration_token: Some("from-globals".into()),
         };
 
-        let token = resolve_registration_token_for_bootstrap(&store, &None, &globals).expect("token");
+        let token =
+            resolve_registration_token_for_bootstrap(&store, &None, &globals).expect("token");
         assert_eq!(token, "from-globals");
     }
 
@@ -695,8 +708,9 @@ mod tests {
             registration_token: None,
         };
 
-        let token = resolve_registration_token_for_bootstrap(&store, &Some("prod".into()), &globals)
-            .expect("token");
+        let token =
+            resolve_registration_token_for_bootstrap(&store, &Some("prod".into()), &globals)
+                .expect("token");
         assert_eq!(token, "from-profile");
     }
 
@@ -721,7 +735,8 @@ mod tests {
             registration_token: None,
         };
 
-        let token = resolve_registration_token_for_bootstrap(&store, &None, &globals).expect("token");
+        let token =
+            resolve_registration_token_for_bootstrap(&store, &None, &globals).expect("token");
         assert_eq!(token, "from-default");
     }
 
@@ -735,9 +750,13 @@ mod tests {
             registration_token: None,
         };
 
-        let err = resolve_registration_token_for_bootstrap(&store, &Some("missing".into()), &globals)
-            .expect_err("should fail");
-        assert!(err.to_string().contains("profile 'missing' not found"), "{err}");
+        let err =
+            resolve_registration_token_for_bootstrap(&store, &Some("missing".into()), &globals)
+                .expect_err("should fail");
+        assert!(
+            err.to_string().contains("profile 'missing' not found"),
+            "{err}"
+        );
     }
 
     #[test]
@@ -754,7 +773,10 @@ mod tests {
 
         let err = resolve_registration_token_for_bootstrap(&store, &Some("prod".into()), &globals)
             .expect_err("should fail");
-        assert!(err.to_string().contains("registration token is required"), "{err}");
+        assert!(
+            err.to_string().contains("registration token is required"),
+            "{err}"
+        );
         assert!(err.to_string().contains("profile 'prod'"), "{err}");
     }
 }

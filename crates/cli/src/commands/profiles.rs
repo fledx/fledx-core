@@ -29,7 +29,9 @@ pub fn handle_profiles(
             let name = name
                 .or(selected_profile)
                 .or_else(|| store.default_profile.clone())
-                .ok_or_else(|| anyhow::anyhow!("no profile selected and default_profile is unset"))?;
+                .ok_or_else(|| {
+                    anyhow::anyhow!("no profile selected and default_profile is unset")
+                })?;
 
             let profile = store
                 .profiles
@@ -57,7 +59,10 @@ pub fn handle_profiles(
             operator_token,
             registration_token,
         }) => {
-            let entry = store.profiles.entry(name.clone()).or_insert_with(Profile::default);
+            let entry = store
+                .profiles
+                .entry(name.clone())
+                .or_insert_with(Profile::default);
             if control_plane_url.is_some() {
                 entry.control_plane_url = control_plane_url;
             }
@@ -79,7 +84,10 @@ pub fn handle_profiles(
         }
         ProfileCommands::SetDefault(ProfileSetDefaultArgs { name }) => {
             if !store.profiles.contains_key(&name) {
-                anyhow::bail!("profile '{}' not found (create it via `fledx profile set`)", name);
+                anyhow::bail!(
+                    "profile '{}' not found (create it via `fledx profile set`)",
+                    name
+                );
             }
             store.default_profile = Some(name.clone());
             store.save()?;
@@ -89,4 +97,3 @@ pub fn handle_profiles(
 
     Ok(())
 }
-

@@ -65,7 +65,11 @@ pub struct BootstrapCpArgs {
     pub version: Option<String>,
 
     /// Directory to install binaries into.
-    #[arg(long = "bin-dir", default_value = "/usr/local/bin", value_name = "PATH")]
+    #[arg(
+        long = "bin-dir",
+        default_value = "/usr/local/bin",
+        value_name = "PATH"
+    )]
     pub bin_dir: PathBuf,
 
     /// Directory to write config/env files into.
@@ -73,7 +77,11 @@ pub struct BootstrapCpArgs {
     pub config_dir: PathBuf,
 
     /// Directory to store persistent data into.
-    #[arg(long = "data-dir", default_value = "/var/lib/fledx", value_name = "PATH")]
+    #[arg(
+        long = "data-dir",
+        default_value = "/var/lib/fledx",
+        value_name = "PATH"
+    )]
     pub data_dir: PathBuf,
 
     /// Control-plane HTTP server port.
@@ -156,7 +164,11 @@ pub struct BootstrapAgentArgs {
     pub version: Option<String>,
 
     /// Directory to install binaries into.
-    #[arg(long = "bin-dir", default_value = "/usr/local/bin", value_name = "PATH")]
+    #[arg(
+        long = "bin-dir",
+        default_value = "/usr/local/bin",
+        value_name = "PATH"
+    )]
     pub bin_dir: PathBuf,
 
     /// Binary install path (overrides --bin-dir).
@@ -168,7 +180,11 @@ pub struct BootstrapAgentArgs {
     pub config_dir: PathBuf,
 
     /// Directory to store persistent data into.
-    #[arg(long = "data-dir", default_value = "/var/lib/fledx", value_name = "PATH")]
+    #[arg(
+        long = "data-dir",
+        default_value = "/var/lib/fledx",
+        value_name = "PATH"
+    )]
     pub data_dir: PathBuf,
 
     /// Dedicated system user to run the agent service as.

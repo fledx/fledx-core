@@ -353,7 +353,10 @@ pub fn install_cp_ssh(
     write_file_with_mode(&local_unit, unit, 0o644)?;
 
     ssh.upload_file(&local_bin, &PathBuf::from(format!("{remote_dir}/fledx-cp")))?;
-    ssh.upload_file(&local_env, &PathBuf::from(format!("{remote_dir}/fledx-cp.env")))?;
+    ssh.upload_file(
+        &local_env,
+        &PathBuf::from(format!("{remote_dir}/fledx-cp.env")),
+    )?;
     ssh.upload_file(
         &local_unit,
         &PathBuf::from(format!("{remote_dir}/fledx-cp.service")),
@@ -436,8 +439,7 @@ pub fn install_agent_ssh(
 ) -> anyhow::Result<()> {
     let sudo = SudoMode::root(settings.sudo_interactive);
     validate_linux_username(&settings.service_user)?;
-    let remote_dir =
-        ssh.run_output("umask 077; mktemp -d -t fledx-bootstrap-agent.XXXXXXXXXX")?;
+    let remote_dir = ssh.run_output("umask 077; mktemp -d -t fledx-bootstrap-agent.XXXXXXXXXX")?;
 
     let local_dir = tempfile::tempdir()?;
     let local_bin = local_dir.path().join("fledx-agent");
@@ -449,7 +451,10 @@ pub fn install_agent_ssh(
     let local_unit = local_dir.path().join("fledx-agent.service");
     write_file_with_mode(&local_unit, unit, 0o644)?;
 
-    ssh.upload_file(&local_bin, &PathBuf::from(format!("{remote_dir}/fledx-agent")))?;
+    ssh.upload_file(
+        &local_bin,
+        &PathBuf::from(format!("{remote_dir}/fledx-agent")),
+    )?;
     ssh.upload_file(
         &local_env,
         &PathBuf::from(format!("{remote_dir}/fledx-agent.env")),
@@ -459,7 +464,10 @@ pub fn install_agent_ssh(
         &PathBuf::from(format!("{remote_dir}/fledx-agent.service")),
     )?;
 
-    ssh.run(sudo, &render_agent_install_script(settings, &remote_dir, bin_path))?;
+    ssh.run(
+        sudo,
+        &render_agent_install_script(settings, &remote_dir, bin_path),
+    )?;
     Ok(())
 }
 
@@ -539,22 +547,19 @@ systemctl enable --now fledx-agent
         bin_dir = bin_dir_q,
         config_dir = config_dir_q,
         agent_dir = agent_dir_q,
-	        volumes_dir = volumes_dir_q,
-	        bin_path = bin_path_q,
-	        env_path = env_path_q,
-	        add_to_docker_socket_group = add_to_docker_socket_group,
-	    )
-	}
+        volumes_dir = volumes_dir_q,
+        bin_path = bin_path_q,
+        env_path = env_path_q,
+        add_to_docker_socket_group = add_to_docker_socket_group,
+    )
+}
 
 fn validate_linux_username(value: &str) -> anyhow::Result<()> {
     if value.is_empty() {
         anyhow::bail!("service user must not be empty");
     }
     if value.len() > 32 {
-        anyhow::bail!(
-            "service user '{}' is too long (max 32 characters)",
-            value
-        );
+        anyhow::bail!("service user '{}' is too long (max 32 characters)", value);
     }
 
     let mut chars = value.chars();
@@ -725,9 +730,7 @@ mod tests {
             },
         });
 
-        assert!(
-            env.contains("FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=\"/var/lib/fledx/volumes dir\"")
-        );
+        assert!(env.contains("FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=\"/var/lib/fledx/volumes dir\""));
         assert!(env.contains("FLEDX_AGENT_ALLOW_INSECURE_HTTP=\"true\""));
     }
 }

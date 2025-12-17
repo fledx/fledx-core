@@ -39,7 +39,9 @@ pub fn resolve_ipv4_host(value: &str) -> anyhow::Result<String> {
             IpAddr::V4(v4) => Some(v4),
             IpAddr::V6(_) => None,
         })
-        .ok_or_else(|| anyhow::anyhow!("hostname '{}' did not resolve to an IPv4 address", value))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("hostname '{}' did not resolve to an IPv4 address", value)
+        })?;
     Ok(ip.to_string())
 }
 
@@ -184,7 +186,10 @@ pub async fn wait_for_http_ok(
     url: &str,
     timeout: Duration,
 ) -> anyhow::Result<()> {
-    eprintln!("waiting for health check: {url} (timeout {}s)", timeout.as_secs());
+    eprintln!(
+        "waiting for health check: {url} (timeout {}s)",
+        timeout.as_secs()
+    );
     let start = Instant::now();
     let mut last_log = Instant::now();
     let mut attempt: u32 = 0;
@@ -328,4 +333,3 @@ mod tests {
         assert!(msg.contains("duplicate label key"), "{msg}");
     }
 }
-

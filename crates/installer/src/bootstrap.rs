@@ -43,7 +43,9 @@ fn sh_quote_path(path: &Path) -> String {
 }
 
 fn run_checked(mut cmd: Command) -> anyhow::Result<String> {
-    let output = cmd.output().with_context(|| format!("failed to run {:?}", cmd))?;
+    let output = cmd
+        .output()
+        .with_context(|| format!("failed to run {:?}", cmd))?;
     if !output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -77,7 +79,9 @@ struct CommandOutput {
 }
 
 fn run_capture(mut cmd: Command) -> anyhow::Result<CommandOutput> {
-    let output = cmd.output().with_context(|| format!("failed to run {:?}", cmd))?;
+    let output = cmd
+        .output()
+        .with_context(|| format!("failed to run {:?}", cmd))?;
     Ok(CommandOutput {
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),

@@ -1,16 +1,16 @@
 use crate::api::OperatorApi;
 
+#[cfg(feature = "bootstrap")]
+pub mod bootstrap;
 pub mod completions;
 pub mod configs;
 pub mod deploy;
 pub mod metrics;
 pub mod nodes;
-pub mod status;
-pub mod usage;
-#[cfg(feature = "bootstrap")]
-pub mod bootstrap;
 #[cfg(feature = "bootstrap")]
 pub mod profiles;
+pub mod status;
+pub mod usage;
 
 #[derive(Clone)]
 pub struct CommandContext {

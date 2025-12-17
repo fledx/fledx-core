@@ -57,22 +57,26 @@ pub async fn download_asset(
     name: &str,
     dest: &Path,
 ) -> anyhow::Result<()> {
-    let asset = release.assets.iter().find(|a| a.name == name).ok_or_else(|| {
-        let available = release
-            .assets
-            .iter()
-            .map(|a| a.name.as_str())
-            .take(12)
-            .collect::<Vec<_>>()
-            .join(", ");
-        anyhow::anyhow!(
-            "release asset not found: {} (repo {} tag {}; available: {})",
-            name,
-            repo,
-            release.tag_name,
-            available
-        )
-    })?;
+    let asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == name)
+        .ok_or_else(|| {
+            let available = release
+                .assets
+                .iter()
+                .map(|a| a.name.as_str())
+                .take(12)
+                .collect::<Vec<_>>()
+                .join(", ");
+            anyhow::anyhow!(
+                "release asset not found: {} (repo {} tag {}; available: {})",
+                name,
+                repo,
+                release.tag_name,
+                available
+            )
+        })?;
 
     let bytes = client
         .get(&asset.browser_download_url)
@@ -174,12 +178,13 @@ fn parse_hex_n<const N: usize>(value: &str) -> anyhow::Result<[u8; N]> {
         let lo = (chunk[1] as char)
             .to_digit(16)
             .ok_or_else(|| anyhow::anyhow!("invalid hex character '{}'", chunk[1] as char))?;
-    out[idx] = ((hi << 4) | lo) as u8;
+        out[idx] = ((hi << 4) | lo) as u8;
     }
     Ok(out)
 }
 
-fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, ReleaseSigningKeysInfo)> {
+fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, ReleaseSigningKeysInfo)>
+{
     let mut keys = std::collections::HashSet::<[u8; 32]>::new();
 
     let compiled = RELEASE_SIGNING_PUBKEYS_ED25519_COMPILED
@@ -192,9 +197,15 @@ fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, Rel
 
     let env_present = env_value.is_some();
     let (raw, source) = match compiled {
-        Some(compiled) => (Some(std::borrow::Cow::Borrowed(compiled)), ReleaseSigningKeysSource::Compiled),
+        Some(compiled) => (
+            Some(std::borrow::Cow::Borrowed(compiled)),
+            ReleaseSigningKeysSource::Compiled,
+        ),
         None => match env_value {
-            Some(env_value) => (Some(std::borrow::Cow::Owned(env_value)), ReleaseSigningKeysSource::Environment),
+            Some(env_value) => (
+                Some(std::borrow::Cow::Owned(env_value)),
+                ReleaseSigningKeysSource::Environment,
+            ),
             None => (None, ReleaseSigningKeysSource::None),
         },
     };
@@ -217,9 +228,7 @@ fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, Rel
 
     let mut verifying = Vec::with_capacity(keys.len());
     for key in keys {
-        verifying.push(
-            VerifyingKey::from_bytes(&key).context("invalid ed25519 public key bytes")?,
-        );
+        verifying.push(VerifyingKey::from_bytes(&key).context("invalid ed25519 public key bytes")?);
     }
     Ok((
         verifying,
@@ -235,7 +244,8 @@ fn verify_ed25519_detached_signature_with_any_key(
     message: &[u8],
     signature: &Signature,
 ) -> bool {
-    keys.iter().any(|key| key.verify(message, signature).is_ok())
+    keys.iter()
+        .any(|key| key.verify(message, signature).is_ok())
 }
 
 pub fn verify_signed_sha256(

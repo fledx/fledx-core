@@ -4,9 +4,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::Context;
 
-use super::{
-    looks_like_noninteractive_sudo_failure, run_capture, run_checked, sh_quote_path,
-};
+use super::{looks_like_noninteractive_sudo_failure, run_capture, run_checked, sh_quote_path};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinuxArch {
@@ -116,12 +114,16 @@ impl SshTarget {
     fn ssh_base(&self) -> Command {
         let mut cmd = Command::new("ssh");
         cmd.arg("-p").arg(self.port.to_string());
-        cmd.arg("-o")
-            .arg(format!("ConnectTimeout={}", self.options.connect_timeout_secs));
+        cmd.arg("-o").arg(format!(
+            "ConnectTimeout={}",
+            self.options.connect_timeout_secs
+        ));
         cmd.arg("-o").arg("ConnectionAttempts=1");
         cmd.arg("-o").arg(format!(
             "StrictHostKeyChecking={}",
-            self.options.host_key_checking.strict_host_key_checking_value()
+            self.options
+                .host_key_checking
+                .strict_host_key_checking_value()
         ));
         if self.options.host_key_checking == SshHostKeyChecking::Off {
             cmd.arg("-o").arg("UserKnownHostsFile=/dev/null");
@@ -169,7 +171,11 @@ impl SshTarget {
                 return Ok(());
             }
 
-            anyhow::bail!("command failed on {} (status {})", self.destination(), status);
+            anyhow::bail!(
+                "command failed on {} (status {})",
+                self.destination(),
+                status
+            );
         }
 
         let output = run_capture(cmd)?;
@@ -216,12 +222,18 @@ stderr:\n{}",
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::inherit());
 
-        let child = cmd.spawn().with_context(|| format!("failed to run {:?}", cmd))?;
+        let child = cmd
+            .spawn()
+            .with_context(|| format!("failed to run {:?}", cmd))?;
         let output = child
             .wait_with_output()
             .with_context(|| format!("failed to run {:?}", cmd))?;
         if !output.status.success() {
-            anyhow::bail!("command failed on {} (status {})", self.destination(), output.status);
+            anyhow::bail!(
+                "command failed on {} (status {})",
+                self.destination(),
+                output.status
+            );
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
@@ -315,8 +327,9 @@ impl InstallTarget {
             InstallTarget::Local => LinuxArch::detect_local(),
             InstallTarget::Ssh(ssh) => {
                 let uname = ssh.run_output("uname -m")?;
-                let arch = LinuxArch::from_uname(&uname)
-                    .with_context(|| format!("failed to parse remote arch from uname: {}", uname))?;
+                let arch = LinuxArch::from_uname(&uname).with_context(|| {
+                    format!("failed to parse remote arch from uname: {}", uname)
+                })?;
                 ssh.run(SudoMode::root(sudo_interactive), "true")
                     .context("remote sudo check failed")?;
                 Ok(arch)
@@ -338,7 +351,8 @@ mod tests {
 
     #[test]
     fn ssh_target_user_override_wins() {
-        let target = SshTarget::from_user_at_host("alice@example.com", Some("bob".into()), 22, None);
+        let target =
+            SshTarget::from_user_at_host("alice@example.com", Some("bob".into()), 22, None);
         assert_eq!(target.host, "example.com");
         assert_eq!(target.user.as_deref(), Some("bob"));
     }
@@ -347,7 +361,10 @@ mod tests {
     fn linux_arch_maps_common_uname_values() {
         assert_eq!(LinuxArch::from_uname("x86_64").unwrap().as_str(), "x86_64");
         assert_eq!(LinuxArch::from_uname("amd64").unwrap().as_str(), "x86_64");
-        assert_eq!(LinuxArch::from_uname("aarch64").unwrap().as_str(), "aarch64");
+        assert_eq!(
+            LinuxArch::from_uname("aarch64").unwrap().as_str(),
+            "aarch64"
+        );
         assert_eq!(LinuxArch::from_uname("arm64").unwrap().as_str(), "aarch64");
     }
 

@@ -1,18 +1,18 @@
 pub mod api;
 pub mod args;
-pub mod commands;
-pub mod parse;
-pub mod validate;
-mod version;
-pub mod view;
-pub mod watch;
 #[cfg(feature = "bootstrap")]
 #[path = "bootstrap/mod.rs"]
 mod bootstrap_flow;
+pub mod commands;
+pub mod parse;
 #[cfg(feature = "bootstrap")]
 mod profile_store;
 #[cfg(test)]
 mod test_support;
+pub mod validate;
+mod version;
+pub mod view;
+pub mod watch;
 
 pub use api::OperatorApi;
 pub use args::*;
@@ -22,24 +22,24 @@ pub use validate::*;
 
 pub type PortMapping = ::common::api::PortMapping;
 
+#[cfg(feature = "bootstrap")]
+use clap::parser::ValueSource;
 #[cfg(not(feature = "bootstrap"))]
 use clap::Parser;
 #[cfg(feature = "bootstrap")]
 use clap::{CommandFactory, FromArgMatches};
-#[cfg(feature = "bootstrap")]
-use clap::parser::ValueSource;
 
+#[cfg(feature = "bootstrap")]
+use crate::commands::bootstrap::handle_bootstrap;
 use crate::commands::completions::generate_completions;
 use crate::commands::configs::handle_configs;
 use crate::commands::deploy::handle_deploy_commands;
 use crate::commands::metrics::handle_metrics;
 use crate::commands::nodes::handle_nodes;
-use crate::commands::status::handle_status;
-use crate::commands::usage::handle_usage;
-#[cfg(feature = "bootstrap")]
-use crate::commands::bootstrap::handle_bootstrap;
 #[cfg(feature = "bootstrap")]
 use crate::commands::profiles::handle_profiles;
+use crate::commands::status::handle_status;
+use crate::commands::usage::handle_usage;
 #[cfg(feature = "bootstrap")]
 use crate::profile_store::ProfileStore;
 
@@ -52,7 +52,13 @@ pub async fn run() -> anyhow::Result<()> {
 
         let mut store = ProfileStore::load()?;
         let selected_profile = resolve_profile_name(&cli.profile, &store);
-        apply_profile_overrides(&matches, &cli.command, &selected_profile, &store, &mut cli.globals)?;
+        apply_profile_overrides(
+            &matches,
+            &cli.command,
+            &selected_profile,
+            &store,
+            &mut cli.globals,
+        )?;
 
         maybe_persist_default_profile(&mut store, &selected_profile)?;
 
@@ -105,7 +111,9 @@ pub async fn run_parsed(cli: Cli) -> anyhow::Result<()> {
 
 #[cfg(feature = "bootstrap")]
 fn resolve_profile_name(cli_profile: &Option<String>, store: &ProfileStore) -> Option<String> {
-    cli_profile.clone().or_else(|| store.default_profile.clone())
+    cli_profile
+        .clone()
+        .or_else(|| store.default_profile.clone())
 }
 
 #[cfg(feature = "bootstrap")]
@@ -154,7 +162,10 @@ fn apply_profile_overrides(
             if allow_missing {
                 return Ok(());
             }
-            anyhow::bail!("profile '{}' not found (create it via `fledx profile set`)", name);
+            anyhow::bail!(
+                "profile '{}' not found (create it via `fledx profile set`)",
+                name
+            );
         }
     };
 
@@ -337,7 +348,9 @@ mod profile_override_tests {
         std::env::remove_var("HOME");
 
         let mut store = ProfileStore::default();
-        store.profiles.insert("prod".to_string(), crate::profile_store::Profile::default());
+        store
+            .profiles
+            .insert("prod".to_string(), crate::profile_store::Profile::default());
 
         maybe_persist_default_profile(&mut store, &Some("prod".to_string())).expect("persist");
 

@@ -3,27 +3,27 @@ use uuid::Uuid;
 
 use crate::version;
 
+#[cfg(feature = "bootstrap")]
+pub mod bootstrap;
 pub mod common;
 pub mod deploy;
 pub mod metrics;
 pub mod nodes;
-pub mod status;
-pub mod usage;
-#[cfg(feature = "bootstrap")]
-pub mod bootstrap;
 #[cfg(feature = "bootstrap")]
 pub mod profiles;
+pub mod status;
+pub mod usage;
 
+#[cfg(feature = "bootstrap")]
+pub use bootstrap::*;
 pub use common::*;
 pub use deploy::*;
 pub use metrics::*;
 pub use nodes::*;
-pub use status::*;
-pub use usage::*;
-#[cfg(feature = "bootstrap")]
-pub use bootstrap::*;
 #[cfg(feature = "bootstrap")]
 pub use profiles::*;
+pub use status::*;
+pub use usage::*;
 
 #[derive(Debug, Parser)]
 #[command(
