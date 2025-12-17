@@ -67,6 +67,36 @@ jobs:
       - name: Export version
         run: echo "VERSION=${{ needs.create-release.outputs.version }}" >> $GITHUB_ENV
 
+      - name: Validate tag matches Cargo versions
+        run: |
+          if [ -z "$VERSION" ]; then
+            echo "VERSION is not set" >&2
+            exit 1
+          fi
+
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq is required on the runner" >&2
+            exit 1
+          fi
+
+          meta="$(cargo metadata --no-deps --format-version 1)"
+          mismatches="$(printf '%s' "$meta" | jq -r --arg v "$VERSION" '
+            . as $m
+            | ($m.workspace_members | unique) as $ws
+            | $m.packages[]
+            | select(.id as $id | $ws | index($id))
+            | select(.version != $v)
+            | "\(.name) \(.version)"
+          ')"
+
+          if [ -n "$mismatches" ]; then
+            echo "tag version does not match workspace crate versions" >&2
+            echo "tag version: $VERSION" >&2
+            echo "mismatched crates:" >&2
+            echo "$mismatches" >&2
+            exit 1
+          fi
+
       - name: Build release binaries
         run: |
           if [ -z "$FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS" ]; then
