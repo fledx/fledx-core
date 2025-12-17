@@ -2,8 +2,8 @@
 
 ## What is Distributed Edge Hosting?
 
-Distributed Edge Hosting (Fledx) is a platform that enables you to run applications on a decentralized infrastructure made
-of edge devices, home servers, and micro-cloud nodes. Instead of relying solely on centralized data centers, Fledx
+Distributed Edge Hosting (Fledx) is a platform that enables you to run applications on a decentralized infrastructure
+made of edge devices, home servers, and micro-cloud nodes. Instead of relying solely on centralized data centers, Fledx
 leverages existing compute capacity where it is needed most.
 
 ## Vision

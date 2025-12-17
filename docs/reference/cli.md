@@ -1,6 +1,7 @@
 # CLI Reference
 
-The `fledx` CLI is the primary command-line tool for managing Distributed Edge Hosting. This guide covers common workflows for beginners and detailed reference material for advanced users.
+The `fledx` CLI is the primary command-line tool for managing Distributed Edge Hosting. This guide covers common
+workflows for beginners and detailed reference material for advanced users.
 
 ## Quick Start
 
@@ -65,6 +66,165 @@ fledx deployments update --id $DEPLOY_ID --replicas 3
 ```bash
 fledx deployments delete --id $DEPLOY_ID
 ```
+
+## Bootstrap Commands
+
+The bootstrap commands automate installation and setup of control plane and agents.
+
+### Bootstrap Control Plane
+
+Install and configure the control plane on a local or remote host:
+
+```bash
+# Local installation
+fledx bootstrap cp --cp-hostname localhost
+
+# Remote installation via SSH
+fledx bootstrap cp \
+  --cp-hostname control-plane.example.com \
+  --ssh-host root@control-plane.example.com
+```
+
+**Options:**
+
+| Option                | Default        | Description                               |
+|-----------------------|----------------|-------------------------------------------|
+| `--cp-hostname`       | (required)     | Hostname/IP reachable by agents           |
+| `--ssh-host`          | -              | SSH target for remote install (user@host) |
+| `--ssh-identity-file` | -              | SSH private key path                      |
+| `--version`           | latest         | Version to install                        |
+| `--server-port`       | 8080           | HTTP API port                             |
+| `--tunnel-port`       | 7443           | Agent tunnel port                         |
+| `--bin-dir`           | /usr/local/bin | Binary installation directory             |
+| `--config-dir`        | /etc/fledx     | Configuration directory                   |
+| `--data-dir`          | /var/lib/fledx | Persistent data directory                 |
+
+The command automatically:
+
+- Downloads the correct binary for the target platform
+- Creates the `fledx` system user
+- Sets up systemd service
+- Generates secure tokens
+- Configures your local CLI profile
+
+### Bootstrap Agent
+
+Install and register a node agent via SSH:
+
+```bash
+# Basic agent bootstrap
+fledx bootstrap agent --ssh-host root@edge-node.example.com
+
+# With labels and capacity hints
+fledx bootstrap agent \
+  --ssh-host root@edge-node.example.com \
+  --name edge-eu-west \
+  --label region=eu-west \
+  --label role=worker \
+  --capacity-cpu-millis 4000 \
+  --capacity-memory-bytes 8589934592
+```
+
+**Options:**
+
+| Option                    | Default               | Description                         |
+|---------------------------|-----------------------|-------------------------------------|
+| `--ssh-host`              | (required)            | SSH target (user@host)              |
+| `--ssh-identity-file`     | -                     | SSH private key path                |
+| `--name`                  | SSH hostname          | Node name for registration          |
+| `--version`               | control-plane version | Version to install                  |
+| `--label`                 | -                     | Node labels (repeatable, KEY=VALUE) |
+| `--capacity-cpu-millis`   | -                     | CPU capacity hint                   |
+| `--capacity-memory-bytes` | -                     | Memory capacity hint                |
+
+## Profile Commands
+
+Manage CLI profiles for connecting to multiple control planes.
+
+### List Profiles
+
+```bash
+fledx profile list
+```
+
+Shows all configured profiles with their control plane URLs.
+
+### Show Profile
+
+```bash
+# Show current/default profile
+fledx profile show
+
+# Show specific profile
+fledx profile show --name production
+```
+
+### Create or Update Profile
+
+```bash
+fledx profile set \
+  --name production \
+  --control-plane-url https://cp.example.com \
+  --operator-token <TOKEN> \
+  --registration-token <TOKEN>
+```
+
+**Options:**
+
+| Option                 | Description                                   |
+|------------------------|-----------------------------------------------|
+| `--name`               | Profile name (required)                       |
+| `--control-plane-url`  | Control plane base URL                        |
+| `--operator-header`    | Header name for auth (default: authorization) |
+| `--operator-token`     | Bearer token for operator endpoints           |
+| `--registration-token` | Token for node registration                   |
+
+### Set Default Profile
+
+```bash
+fledx profile set-default --name production
+```
+
+### Using Profiles
+
+```bash
+# Use default profile
+fledx status
+
+# Use specific profile for one command
+fledx --profile staging status
+```
+
+## Status Command
+
+The `fledx status` command provides a combined overview of system health.
+
+```bash
+# Show nodes and deployments
+fledx status
+
+# Watch mode with real-time updates
+fledx status --watch
+
+# Filter by status
+fledx status --node-status ready --deploy-status running
+
+# Show only nodes or deployments
+fledx status --nodes-only
+fledx status --deploys-only
+```
+
+**Options:**
+
+| Option              | Description                                                                 |
+|---------------------|-----------------------------------------------------------------------------|
+| `--watch`           | Enable real-time updates (TUI mode)                                         |
+| `--node-status`     | Filter nodes by status (ready, unreachable, error)                          |
+| `--deploy-status`   | Filter deployments by status (pending, deploying, running, stopped, failed) |
+| `--nodes-only`      | Show only node status                                                       |
+| `--deploys-only`    | Show only deployment status                                                 |
+| `--wide`            | Show extended columns                                                       |
+| `--json` / `--yaml` | Output in structured format                                                 |
 
 ## Common Workflows
 
@@ -212,8 +372,8 @@ fledx nodes status
 # View node details including labels
 fledx nodes status --wide
 
-# Rotate node token if compromised
-fledx nodes token rotate --id $NODE_ID --keep-old=false
+# Note: To rotate a compromised node token, re-register the node
+# and update the agent configuration with new credentials
 
 # To remove a node:
 # 1. Stop the agent on the node
@@ -266,7 +426,8 @@ All commands support these global flags:
 
 ## List & status commands
 
-`fledx nodes list`, `fledx nodes status`, `fledx deployments list`, and `fledx deployments status` share the same pagination and output
+`fledx nodes list`, `fledx nodes status`, `fledx deployments list`, and `fledx deployments status` share the same
+pagination and output
 controls. All four accept `--limit`/`--offset` (default 50, must be 1‑100) plus a status filter (
 `--status ready|unreachable|error|registering` for nodes, `--status pending|deploying|running|stopped|failed` for
 deployments). Pass `--wide` to expose the richer columns shown by `render_nodes_table` and `render_deployments_table`,
@@ -275,7 +436,8 @@ and add `--json` or `--yaml` for machine-readable payloads.
 ### Table output (default)
 
 The default view emits a plain-text table. `fledx nodes status`/`list` renders `ID`, `NAME`, `STATUS`, and `LAST_SEEN` (
-plus `ARCH`, `OS`, `LABELS`, `CAPACITY` under `--wide`). `fledx deployments status`/`list` prints `ID`, `NAME`, `STATUS`,
+plus `ARCH`, `OS`, `LABELS`, `CAPACITY` under `--wide`). `fledx deployments status`/`list` prints `ID`, `NAME`,
+`STATUS`,
 `DESIRED`, `GENERATION`, and `ASSIGNED_NODE` (with `REPLICAS`, `ASSIGNMENTS`, `IMAGE`, `PLACEMENT`, `LAST_REPORTED` when
 `--wide` is set).
 
@@ -348,7 +510,8 @@ items:
 
 ## Watch mode & log follow
 
-`fledx deployments watch --id <deployment-id>` periodically polls the control plane until the deployment reaches a terminal
+`fledx deployments watch --id <deployment-id>` periodically polls the control plane until the deployment reaches a
+terminal
 state or you stop it with `Ctrl+C`. The CLI prints a newline only when the status changes (generation, status,
 assignment, or instance state), e.g.:
 
@@ -364,14 +527,16 @@ Recommended knobs:
   runtime never sleeps longer than this value.
 - `--max-runtime` (`u64`, optional) stops the watch after the given number of seconds so you do not forgot a
   long-running watch.
-- `--follow-logs` enables the paired log tail (`fledx deployments logs --follow`) and accepts `--follow-logs-interval` (default
+- `--follow-logs` enables the paired log tail (`fledx deployments logs --follow`) and accepts `--follow-logs-interval` (
+  default
   `2`) to throttle the log polling rate.
 
 Errors surfaced during the watch are printed as `watch error: …` and inherit the `[request_id=…]` suffix from the
 control plane so you can correlate with audit logs.
 
 When `--follow-logs` is used, the CLI concurrently runs
-`fledx deployments logs --resource-type deployment --resource-id <id> --follow`. The log tail respects the same `--limit` (
+`fledx deployments logs --resource-type deployment --resource-id <id> --follow`. The log tail respects the same
+`--limit` (
 1‑100, default 50) and `--follow-interval` flag, refuses to run with `--until`, and prints each line like
 `TIMESTAMP STATUS ACTION RESOURCE request_id=… detail=…`. Failures in the log stream show
 `deployment log follow failed: …` on stderr.
@@ -379,7 +544,8 @@ When `--follow-logs` is used, the CLI concurrently runs
 ## Request IDs & error context
 
 Every control-plane response that includes `x-request-id` is surfaced by the CLI. Operator API errors append
-`[request_id=<id>]`, `watch` errors echo the same suffix, and `fledx deployments logs` prints a `REQUEST_ID` column for tracking and debugging.
+`[request_id=<id>]`, `watch` errors echo the same suffix, and `fledx deployments logs` prints a `REQUEST_ID` column for
+tracking and debugging.
 
 The control plane normalizes request context: if a W3C `traceparent` header is present it becomes the canonical
 `x-request-id`; otherwise an incoming `x-request-id` is used or a fresh UUID is generated. The same value is echoed on
@@ -388,7 +554,8 @@ When the CLI issues requests it simply forwards whatever header you provide.
 
 ## Shell completions
 
-Run `fledx completions <bash|zsh|fish>` (e.g., `cargo run -p cli -- completions bash`) to emit a shell script for the CLI.
+Run `fledx completions <bash|zsh|fish>` (e.g., `cargo run -p cli -- completions bash`) to emit a shell script for the
+CLI.
 Install the script via your shell's standard location:
 
 - **Bash:** `mkdir -p ~/.local/share/fledx/completions` and

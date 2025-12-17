@@ -1,425 +1,275 @@
 # fledx-core
 
-**Distributed Edge Hosting** - A lightweight, distributed container orchestration platform for managing Docker
-containers across multiple edge nodes.
+**Distributed Edge Hosting** – A lightweight container orchestration platform for managing Docker containers across
+multiple edge nodes.
 
-## Overview
+## Quick Start
 
-fledx-core is a (not yet) production-ready edge computing platform that enables centralized management of containerized 
-workloads across geographically distributed edge devices. Built with Rust for performance and reliability, it provides 
-a complete solution for deploying, monitoring, and managing applications at the edge.
+Get your edge platform running in minutes with the built-in bootstrap commands.
 
-### Key Features
+### 1. Install the CLI
 
-- **Centralized Control Plane** - Single point of control for managing deployments across all edge nodes
-- **Distributed Node Agents** - Lightweight agents running on edge devices to execute container workloads
-- **Intelligent Scheduling** - Round-robin scheduling with placement constraints, affinity rules, and anti-affinity
-  support
-- **Multi-Replica Deployments** - Scale applications across multiple nodes with automatic placement
-- **Health Monitoring** - Built-in health checks (HTTP, TCP, exec) with automatic container restarts
-- **Resource Tracking** - Real-time monitoring of CPU, memory, network, and disk usage
-- **Tunnel-Based Connectivity** - Secure agent connections through NAT/firewalls without complex networking
-- **Public Ingress** - Envoy-based gateway for routing external traffic to containerized services
-- **Configuration Management** - Centralized config and secrets injection (environment variables and files)
-- **CLI Tool** - Powerful command-line interface with interactive TUI and watch mode
-- **Observability** - Structured logging, Prometheus metrics, and audit trails
-- **Production Ready** - Database migrations, chaos recovery tests, and compatibility enforcement
-
-## Architecture
-
-fledx-core consists of three main components:
-
-```
-┌─────────────────┐
-│  CLI (Operator) │
-└────────┬────────┘
-         │
-         │ REST API
-         ▼
-┌─────────────────────┐
-│   Control Plane     │◄──────┐
-│  - Scheduler        │       │
-│  - API Server       │       │ Tunnel/Heartbeat
-│  - SQLite DB        │       │
-│  - Tunnel Registry  │       │
-└─────────────────────┘       │
-         │                    │
-         │ Deployment Sync    │
-         ▼                    │
-┌─────────────────────┐       │
-│    Node Agent 1     │───────┘
-│  - Docker Runtime   │
-│  - Health Checker   │
-│  - Envoy Gateway    │
-└─────────────────────┘
-
-┌─────────────────────┐
-│    Node Agent 2     │───────┐
-│  - Docker Runtime   │       │
-│  - Health Checker   │       │ Tunnel/Heartbeat
-│  - Envoy Gateway    │       │
-└─────────────────────┘       │
-                              │
-         ...                  ▼
-                     ┌─────────────────────┐
-                     │   Control Plane     │
-                     └─────────────────────┘
-```
-
-### Components
-
-#### Control Plane
-
-The centralized orchestration server that:
-
-- Manages deployment lifecycle and scheduling decisions
-- Tracks node health and availability
-- Provides REST API for CLI and agents
-- Maintains persistent state in SQLite
-- Manages tunnel connections from agents
-- Exports Prometheus metrics
-
-#### Node Agent
-
-Lightweight agent running on each edge node that:
-
-- Connects to control plane via HTTP/HTTPS
-- Manages Docker containers using the local Docker daemon
-- Reports health and resource metrics
-- Establishes persistent tunnels for connectivity
-- Runs Envoy gateway for public ingress routing
-- Syncs configuration and secrets from control plane
-
-#### CLI
-
-Command-line interface for operators to:
-
-- Deploy and manage containerized applications
-- Register and monitor edge nodes
-- Manage configurations and secrets
-- Query metrics and usage statistics
-- Watch real-time deployment status with interactive TUI
-
-## Getting Started
-
-### Prerequisites
-
-- **Rust toolchain** (1.70+) - [Install Rust](https://rustup.rs/)
-- **Docker** - For running containers on edge nodes
-- **SQLite** - For control plane persistence (usually pre-installed)
-- **Just** (optional) - Task runner for development - [Install Just](https://github.com/casey/just)
-
-### Building from Source
+Download the latest release from [GitHub Releases](https://github.com/fledx/fledx-core/releases) or build from source:
 
 ```bash
-# Clone the repository
-git clone https://github.com/fledx/fledx-core.git
-cd fledx-core
-
-# Build all components
-cargo build --release
-
-# Or use just
-just build
+cargo install --path crates/cli
 ```
 
-The compiled binaries will be in `target/release/`:
+### 2. Bootstrap the Control Plane
 
-- `fledx-cp` - Control plane server
-- `fledx-agent` - Edge node agent
-- `fledx` - CLI tool
-
-### Quick Start
-
-#### 1. Start the Control Plane
+Install and configure the control plane on a server (local or remote via SSH):
 
 ```bash
-# Run with default settings (SQLite in current directory)
-./target/release/fledx-cp
+# Local installation
+fledx bootstrap cp --sudo-interactive --cp-hostname 192.168.178.123 # Hostname or IP must be reachable by agents
 
-# Or with custom configuration via environment variables
-export FLEDX_CP_SERVER_HOST=0.0.0.0
-export FLEDX_CP_SERVER_PORT=8080
-export FLEDX_CP_DATABASE_URL=sqlite://./fledx.db
-./target/release/fledx-cp
-
-# Single-node shortcut: run control plane and agent together
-export FLEDX_AGENT_CONTROL_PLANE_URL=http://127.0.0.1:8080
-export FLEDX_AGENT_ALLOW_INSECURE_HTTP=true
-export FLEDX_AGENT_NODE_ID=550e8400-e29b-41d4-a716-446655440000
-export FLEDX_AGENT_NODE_TOKEN=your-node-token
-./target/release/fledx-cp --standalone
-
-# In standalone mode the agent uses the same /metrics endpoint as the control
-# plane. All existing FLEDX_AGENT_* flags/env vars are respected.
+# Remote installation via SSH
+fledx bootstrap cp \
+  --cp-hostname your-server.example.com \
+  --ssh-host user@your-server.example.com
 ```
 
-#### 2. Register an Edge Node
+The bootstrap command handles everything automatically:
 
-First, generate a registration token via the control plane API or database. Then start the node agent:
+- Downloads the correct binary for your platform
+- Creates a dedicated system user
+- Sets up systemd services
+- Generates secure tokens
+- Configures the CLI profile for immediate use
+
+### 3. Add Edge Nodes
+
+Add nodes to your cluster with a single command:
 
 ```bash
-# Configure the agent
-export FLEDX_AGENT_CONTROL_PLANE_URL=http://localhost:8080
-export FLEDX_AGENT_NODE_ID=550e8400-e29b-41d4-a716-446655440000
-export FLEDX_AGENT_NODE_TOKEN=your-node-token
-
-# Start the agent
-./target/release/fledx-agent
+fledx bootstrap agent --ssh-host user@edge-node-1.local
+fledx bootstrap agent --ssh-host user@edge-node-2.local
 ```
 
-#### 3. Deploy a Container
+Each node is automatically:
+
+- Installed with the matching agent version
+- Registered with the control plane
+- Configured and started as a systemd service
+
+### 4. Deploy Your First Application
 
 ```bash
-# Configure CLI
-export FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080
-export FLEDX_CLI_OPERATOR_TOKEN=your-operator-token
-
-# Create a deployment
-./target/release/fledx deployments create \
+fledx deployments create \
   --name nginx-demo \
   --image nginx:latest \
   --replicas 2 \
   --port 80
 
-# Check deployment status
-./target/release/fledx deployments status nginx-demo
-
-# Watch deployment in real-time (interactive TUI)
-./target/release/fledx deployments status nginx-demo --watch
+# Watch deployment status in real-time
+fledx status --watch
 ```
 
-## Configuration
+That's it! Your application is now running across your edge nodes.
 
-### Control Plane Configuration
+## Key Features
 
-Configuration via environment variables with prefix `FLEDX_CP_`:
+- **One-Command Setup** – Bootstrap control plane and agents via SSH
+- **Intelligent Scheduling** – Placement constraints, affinity, and anti-affinity rules
+- **Health Monitoring** – HTTP, TCP, and exec health checks with auto-restart
+- **Tunnel Connectivity** – NAT/firewall-friendly agent connections
+- **Public Ingress** – Envoy-based gateway for external traffic routing
+- **Real-Time Status Watch** – Live terminal updates for monitoring deployments
+- **Prometheus Metrics** – Built-in observability and monitoring
 
-```bash
-# Server settings
-FLEDX_CP_SERVER_HOST=0.0.0.0
-FLEDX_CP_SERVER_PORT=8080
+## Architecture
 
-# Database
-FLEDX_CP_DATABASE_URL=sqlite://./fledx.db
-
-# Tunnel settings
-FLEDX_CP_TUNNEL_ADVERTISED_HOST=127.0.0.1
-FLEDX_CP_TUNNEL_ADVERTISED_PORT=7443
-FLEDX_CP_TUNNEL_USE_TLS=false
-FLEDX_CP_TUNNEL_HEARTBEAT_INTERVAL_SECS=30
-FLEDX_CP_TUNNEL_HEARTBEAT_TIMEOUT_SECS=90
-
-# Authentication
-FLEDX_CP_REGISTRATION_TOKEN=your-registration-token
-FLEDX_CP_OPERATOR_TOKENS=token1,token2  # Comma-separated list
-FLEDX_CP_OPERATOR_HEADER_NAME=authorization
-FLEDX_CP_TOKENS_PEPPER=your-token-pepper
-
-# Limits
-FLEDX_CP_LIMITS_REGISTRATION_BODY_BYTES=16384
-FLEDX_CP_LIMITS_HEARTBEAT_BODY_BYTES=65536
-FLEDX_CP_LIMITS_CONFIG_PAYLOAD_BYTES=131072
-
-# Retention (in seconds)
-FLEDX_CP_RETENTION_INSTANCE_STATUS_SECS=86400      # 24 hours
-FLEDX_CP_RETENTION_INSTANCE_METRICS_SECS=600       # 10 minutes
-FLEDX_CP_RETENTION_USAGE_WINDOW_SECS=604800        # 7 days
-FLEDX_CP_RETENTION_USAGE_CLEANUP_INTERVAL_SECS=300 # 5 minutes
-
-# Reachability
-FLEDX_CP_REACHABILITY_HEARTBEAT_STALE_SECS=90
-FLEDX_CP_REACHABILITY_SWEEP_INTERVAL_SECS=15
-FLEDX_CP_REACHABILITY_RESCHEDULE_ON_UNREACHABLE=true
-
-# Ports
-FLEDX_CP_PORTS_AUTO_ASSIGN=false
-FLEDX_CP_PORTS_RANGE_START=30000
-FLEDX_CP_PORTS_RANGE_END=40000
-
-# Volumes
-FLEDX_CP_VOLUMES_ALLOWED_HOST_PREFIXES=/data,/mnt/storage
-
-# Features
-FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY=true
+```
+┌─────────────────┐
+│  CLI (fledx)    │
+└────────┬────────┘
+         │ REST API
+         ▼
+┌─────────────────────┐
+│   Control Plane     │◄──── Tunnel/Heartbeat ────┐
+│  (fledx-cp)         │                           │
+└─────────────────────┘                           │
+         │                                        │
+         │ Deployment Sync                        │
+         ▼                                        │
+┌─────────────────────┐                  ┌────────┴────────┐
+│   Node Agent 1      │                  │   Node Agent N  │
+│   (fledx-agent)     │                  │   (fledx-agent) │
+│   + Docker          │       ...        │   + Docker      │
+└─────────────────────┘                  └─────────────────┘
 ```
 
-### Node Agent Configuration
+## Bootstrap Options
 
-Configuration via environment variables with prefix `FLEDX_AGENT_`:
+### Control Plane Bootstrap
 
 ```bash
-# Control plane connection (required)
-FLEDX_AGENT_CONTROL_PLANE_URL=https://control.example.com
-FLEDX_AGENT_NODE_ID=550e8400-e29b-41d4-a716-446655440000
-FLEDX_AGENT_NODE_TOKEN=your-node-token
-
-# Secrets
-FLEDX_AGENT_SECRETS_DIR=/var/run/secrets
-FLEDX_AGENT_SECRETS_PREFIX=FLEDX_SECRET_
-
-# Heartbeat
-FLEDX_AGENT_HEARTBEAT_INTERVAL_SECS=30
-FLEDX_AGENT_HEARTBEAT_TIMEOUT_SECS=5
-FLEDX_AGENT_HEARTBEAT_MAX_RETRIES=3
-
-# Resource monitoring
-FLEDX_AGENT_RESOURCE_SAMPLE_INTERVAL_SECS=30
-FLEDX_AGENT_RESOURCE_SAMPLE_WINDOW=120
-
-# Reconciliation
-FLEDX_AGENT_RECONCILE_INTERVAL_SECS=10
-
-# Restart policy
-FLEDX_AGENT_RESTART_BACKOFF_MS=1000
-FLEDX_AGENT_RESTART_BACKOFF_MAX_MS=30000
-FLEDX_AGENT_RESTART_FAILURE_LIMIT=5
-
-# TLS settings
-FLEDX_AGENT_ALLOW_INSECURE_HTTP=false
-FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY=false
-FLEDX_AGENT_CA_CERT_PATH=/path/to/ca.crt
-
-# Metrics
-FLEDX_AGENT_METRICS_HOST=127.0.0.1
-FLEDX_AGENT_METRICS_PORT=9091
-
-# Node metadata
-FLEDX_AGENT_ARCH=x86_64
-FLEDX_AGENT_OS=linux
-FLEDX_AGENT_LABELS=region=eu,zone=west  # Comma-separated key=value pairs
-
-# Capacity
-FLEDX_AGENT_CAPACITY_CPU_MILLIS=4000
-FLEDX_AGENT_CAPACITY_MEMORY_BYTES=8589934592  # 8GB
-
-# Volumes
-FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=/var/lib/fledx/volumes
-FLEDX_AGENT_VOLUME_DATA_DIR=/var/lib/fledx
-
-# Tunnel settings (nested)
-FLEDX_AGENT_TUNNEL_ENDPOINT_HOST=127.0.0.1
-FLEDX_AGENT_TUNNEL_ENDPOINT_PORT=7443
-FLEDX_AGENT_TUNNEL_USE_TLS=false
-
-# Gateway (Envoy) settings (nested)
-FLEDX_AGENT_GATEWAY_ENABLED=true
-# Required when enabled=true:
-FLEDX_AGENT_GATEWAY_ENVOY_IMAGE=envoyproxy/envoy:v1.33-latest
-FLEDX_AGENT_GATEWAY_ADMIN_PORT=9901
-FLEDX_AGENT_GATEWAY_LISTENER_PORT=10000
-FLEDX_AGENT_GATEWAY_XDS_PORT=18000
-
-# Cleanup
-FLEDX_AGENT_CLEANUP_ON_SHUTDOWN=false
+fledx bootstrap cp --cp-hostname <HOST> [OPTIONS]
 ```
 
-### CLI Configuration
+| Option                | Default        | Description                               |
+|-----------------------|----------------|-------------------------------------------|
+| `--cp-hostname`       | (required)     | Hostname/IP reachable by agents           |
+| `--ssh-host`          | -              | SSH target for remote install (user@host) |
+| `--ssh-identity-file` | -              | SSH private key path                      |
+| `--version`           | latest         | Version to install                        |
+| `--server-port`       | 8080           | HTTP API port                             |
+| `--tunnel-port`       | 7443           | Agent tunnel port                         |
+| `--bin-dir`           | /usr/local/bin | Binary installation directory             |
+| `--config-dir`        | /etc/fledx     | Configuration directory                   |
+| `--data-dir`          | /var/lib/fledx | Persistent data directory                 |
+
+### Agent Bootstrap
 
 ```bash
-# Control plane URL
-export FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080
-
-# Operator authentication token
-export FLEDX_CLI_OPERATOR_TOKEN=your-operator-token
+fledx bootstrap agent --ssh-host <HOST> [OPTIONS]
 ```
 
-## Usage Examples
+| Option                    | Default               | Description                         |
+|---------------------------|-----------------------|-------------------------------------|
+| `--ssh-host`              | (required)            | SSH target (user@host)              |
+| `--ssh-identity-file`     | -                     | SSH private key path                |
+| `--name`                  | ssh hostname          | Node name for registration          |
+| `--version`               | control-plane version | Version to install                  |
+| `--label`                 | -                     | Node labels (repeatable, KEY=VALUE) |
+| `--capacity-cpu-millis`   | -                     | CPU capacity hint                   |
+| `--capacity-memory-bytes` | -                     | Memory capacity hint                |
 
-### Deployment Management
+## CLI Commands
+
+### Status Overview
 
 ```bash
-# Create a deployment
-fledx deployments create \
-  --name myapp \
-  --image myapp:v1.0 \
-  --replicas 3 \
-  --port 8080 \
-  --env KEY=value
+# Combined status for nodes and deployments
+fledx status
 
-# Update deployment
-fledx deployments update myapp --image myapp:v1.1
+# Watch status in real-time
+fledx status --watch
 
-# Scale deployment
-fledx deployments update myapp --replicas 5
+# Filter by status
+fledx status --node-status ready --deploy-status running
 
-# Delete deployment
-fledx deployments delete myapp
+# Show only nodes or deployments
+fledx status --nodes-only
+fledx status --deploys-only
+```
+
+### Deployments
+
+```bash
+# Create a new deployment
+fledx deployments create --name myapp --image myapp:v1.0 --replicas 3 --port 8080
 
 # List all deployments
 fledx deployments list
+fledx deployments list --status running --wide
 
-# Get deployment status
-fledx deployments status myapp
+# Show deployment status summaries
+fledx deployments status
+fledx deployments status --status running
+
+# Update a deployment (requires UUID)
+fledx deployments update --id <UUID> --image myapp:v1.1
+fledx deployments update --id <UUID> --replicas 5
+
+# Watch a specific deployment
+fledx deployments watch --id <UUID>
+fledx deployments watch --id <UUID> --follow-logs
+
+# Stop a deployment
+fledx deployments stop --id <UUID>
+
+# Delete a deployment
+fledx deployments delete --id <UUID>
+
+# View deployment logs
+fledx deployments logs
+fledx deployments logs --resource-id <UUID> --follow
 ```
 
-### Node Management
+### Nodes
 
 ```bash
+# Register a new node manually
+fledx nodes register --name edge-node-1 --arch amd64 --os linux
+fledx nodes register --name edge-node-1 --label region=eu --label zone=west
+
 # List all nodes
 fledx nodes list
+fledx nodes list --status ready --wide
 
-# Get node details
-fledx nodes get edge-node-1
-
-# Remove a node
-fledx nodes delete edge-node-1
+# Show node status summaries
+fledx nodes status
+fledx nodes status --status unreachable
 ```
 
-### Configuration Management
+### Configurations
 
 ```bash
-# Create configuration
-fledx configs create myconfig --from-file ./config.yaml
+# Create a new config
+fledx configs create --name myconfig --var KEY=VALUE
+fledx configs create --name myconfig --from-env-file ./config.env
+fledx configs create --name myconfig --secret-entry API_KEY=my-secret
 
-# List configurations
+# List all configs
 fledx configs list
 
-# Delete configuration
-fledx configs delete myconfig
+# Show a specific config
+fledx configs show --id <UUID>
+
+# Update a config
+fledx configs update --id <UUID> --var NEW_KEY=NEW_VALUE
+
+# Delete a config
+fledx configs delete --id <UUID>
+
+# Attach/detach configs to deployments or nodes
+fledx configs attach deployment --config-id <UUID> --deployment-id <UUID>
+fledx configs attach node --config-id <UUID> --node-id <UUID>
+fledx configs detach deployment --config-id <UUID> --deployment-id <UUID>
+fledx configs detach node --config-id <UUID> --node-id <UUID>
 ```
 
-### Monitoring and Metrics
+### Monitoring
 
 ```bash
-# Query resource metrics
-fledx metrics query --node edge-node-1
+# Show aggregated HTTP metrics
+fledx metrics show
+fledx metrics show --limit 10 --json
 
-# Get usage statistics
-fledx usage get --deployment myapp
+# List resource usage
+fledx usage list --deployment <UUID>
+fledx usage list --node <UUID> --range 30m
 
-# Watch deployment status in real-time
-fledx deployments status myapp --watch
+# Real-time status monitoring
+fledx status --watch
+```
+
+### Profiles
+
+Profiles store CLI configuration locally (`~/.config/fledx/profiles.toml`).
+
+```bash
+# List configured profiles
+fledx profile list
+
+# Show current profile
+fledx profile show
+fledx profile show --name production
+
+# Create or update a profile
+fledx profile set --name production \
+  --control-plane-url https://cp.example.com \
+  --operator-token <TOKEN>
+
+# Set the default profile
+fledx profile set-default --name production
+
+# Use a specific profile for a command
+fledx --profile production status
 ```
 
 ## Development
-
-### Project Structure
-
-```
-fledx-core/
-├── crates/
-│   ├── fledx-cp/    # Control plane server
-│   │   ├── src/
-│   │   │   ├── http/     # REST API routes
-│   │   │   ├── persistence/  # Database layer
-│   │   │   └── services/ # Business logic
-│   │   ├── migrations/   # Database migrations
-│   │   └── tests/        # Integration tests
-│   ├── fledx-agent/       # Edge node agent
-│   │   ├── src/
-│   │   │   ├── runtime/  # Docker runtime abstraction
-│   │   │   └── services/ # Background tasks
-│   │   └── tests/        # Agent tests
-│   ├── fledx/              # CLI tool
-│   │   ├── src/
-│   │   │   ├── commands/ # Command implementations
-│   │   │   └── view/     # TUI rendering
-│   │   └── tests/        # CLI tests
-│   └── common/           # Shared types and DTOs
-├── Cargo.toml            # Workspace manifest
-└── justfile              # Build automation
-```
 
 ### Development Commands
 
@@ -455,14 +305,14 @@ cargo build
 cargo test
 
 # Run specific crate
-cargo run -p fledx-cp
-cargo run -p fledx-agent
-cargo run -p fledx -- deployments list
+cargo run -p control-plane
+cargo run -p node-agent
+cargo run -p cli -- deployments list
 ```
 
 ### Database Migrations
 
-Migrations are managed by SQLx and located in `crates/fledx-cp/migrations/`.
+Migrations are managed by SQLx and located in `crates/control-plane/migrations/`.
 
 ```bash
 # Run migrations (automatic on control plane startup)
@@ -479,10 +329,10 @@ fledx-cp --migrations-dry-run
 cargo test
 
 # Run chaos recovery tests (tests agent recovery from failures)
-FLEDX_RUN_CHAOS=1 cargo test -p fledx-agent
+FLEDX_RUN_CHAOS=1 cargo test -p node-agent
 
 # Run integration tests
-cargo test -p fledx-cp --test '*'
+cargo test -p control-plane --test '*'
 ```
 
 ## Observability
@@ -520,11 +370,77 @@ curl http://localhost:8080/health
 curl http://localhost:9901/health  # Envoy admin endpoint
 ```
 
+## Advanced Configuration
+
+For manual installations or fine-tuning, components can be configured via environment variables. The bootstrap commands
+handle all of this automatically.
+
+<details>
+<summary>Control Plane Environment Variables</summary>
+
+```bash
+# Server
+FLEDX_CP_SERVER_HOST=0.0.0.0
+FLEDX_CP_SERVER_PORT=8080
+FLEDX_CP_DATABASE_URL=sqlite:///var/lib/fledx/fledx.db
+
+# Tunnel
+FLEDX_CP_TUNNEL_ADVERTISED_HOST=your-server.example.com
+FLEDX_CP_TUNNEL_ADVERTISED_PORT=7443
+FLEDX_CP_TUNNEL_USE_TLS=false
+
+# Authentication
+FLEDX_CP_OPERATOR_TOKENS=token1,token2
+FLEDX_CP_TOKENS_PEPPER=your-pepper
+
+# Reachability
+FLEDX_CP_REACHABILITY_HEARTBEAT_STALE_SECS=90
+FLEDX_CP_REACHABILITY_RESCHEDULE_ON_UNREACHABLE=true
+```
+
+</details>
+
+<details>
+<summary>Node Agent Environment Variables</summary>
+
+```bash
+# Control plane connection (required)
+FLEDX_AGENT_CONTROL_PLANE_URL=https://control.example.com
+FLEDX_AGENT_NODE_ID=<uuid>
+FLEDX_AGENT_NODE_TOKEN=<token>
+
+# Node metadata
+FLEDX_AGENT_LABELS=region=eu,zone=west
+FLEDX_AGENT_CAPACITY_CPU_MILLIS=4000
+FLEDX_AGENT_CAPACITY_MEMORY_BYTES=8589934592
+
+# Tunnel
+FLEDX_AGENT_TUNNEL_ENDPOINT_HOST=your-server.example.com
+FLEDX_AGENT_TUNNEL_ENDPOINT_PORT=7443
+
+# Gateway (Envoy)
+FLEDX_AGENT_GATEWAY_ENABLED=true
+FLEDX_AGENT_GATEWAY_ENVOY_IMAGE=envoyproxy/envoy:v1.33-latest
+```
+
+</details>
+
+<details>
+<summary>CLI Environment Variables</summary>
+
+```bash
+FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080
+FLEDX_CLI_OPERATOR_TOKEN=your-operator-token
+```
+
+Note: The CLI can also be configured via profiles (`~/.config/fledx/profiles.toml`), which are automatically managed by
+the bootstrap commands.
+
+</details>
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit issues and pull requests.
-
-### Development Setup
 
 1. Fork the repository
 2. Create a feature branch

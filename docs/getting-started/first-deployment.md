@@ -110,8 +110,11 @@ fledx deployments status --wide
 ### Change Environment Variables
 
 ```bash
+# Get deployment ID first
+DEPLOY_ID=$(fledx deployments list --json | jq -r '.items[] | select(.name=="hello-web") | .deployment_id')
+
 fledx deployments update \
-  --name hello-web \
+  --id $DEPLOY_ID \
   --env TEXT="Updated message!"
 ```
 
@@ -119,7 +122,7 @@ fledx deployments update \
 
 ```bash
 fledx deployments update \
-  --name hello-web \
+  --id $DEPLOY_ID \
   --replicas 3
 ```
 
@@ -127,7 +130,7 @@ fledx deployments update \
 
 ```bash
 fledx deployments update \
-  --name hello-web \
+  --id $DEPLOY_ID \
   --image hashicorp/http-echo:latest
 ```
 

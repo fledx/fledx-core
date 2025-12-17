@@ -49,8 +49,8 @@ fledx nodes status
 # Detailed view
 fledx nodes status --wide
 
-# Watch mode
-fledx nodes status --watch
+# Watch mode (use the global status command)
+fledx status --watch --nodes-only
 ```
 
 **Node states:**
@@ -735,17 +735,18 @@ fledx nodes status
 #### Node Tokens
 
 ```bash
-# Revoke old node
-fledx node delete --node-id <old-node-id>
-
-# Register new node with new token
+# To rotate node credentials:
+# 1. Register a new node identity
 fledx nodes register --name <node-name>
 
-# Update node agent config with new credentials
+# 2. Update node agent config with new credentials
 sudo vi /etc/fledx/fledx-agent.env
+# Update FLEDX_AGENT_NODE_ID and FLEDX_AGENT_NODE_TOKEN
 
-# Restart agent
+# 3. Restart agent
 sudo systemctl restart fledx-agent
+
+# Note: The old node record will become "unreachable" after heartbeat timeout
 ```
 
 ### Cleanup Tasks
@@ -757,7 +758,7 @@ sudo systemctl restart fledx-agent
 fledx deployments list --status stopped
 
 # Delete
-fledx deployments delete --deployment-id <id>
+fledx deployments delete --id <id>
 ```
 
 #### Prune Docker Images
@@ -834,8 +835,8 @@ fledx nodes status | grep <node-name>
 # Check deployment logs
 fledx deployments logs --resource-type deployment --resource-id <id>
 
-# Check detailed status
-fledx deployments status --id <id> --wide
+# Check detailed status (list all deployments)
+fledx deployments status --wide
 
 # Check agent logs
 sudo journalctl -u fledx-agent -n 100 | grep <deployment-id>
@@ -859,7 +860,7 @@ fledx deployments update --id <id> --port <different-port>:80/tcp
 
 # Resource issues
 docker stats  # Check available resources
-fledx deployments update --id <id> --memory-bytes <higher-value>
+fledx deployments update --id <id> --require-memory-bytes <higher-value>
 
 # Delete and recreate if needed
 fledx deployments delete --id <id>
@@ -1003,9 +1004,9 @@ openssl s_client -connect control-plane.example.com:443 -showcerts
 sudo vi /etc/fledx/fledx-agent.env
 # Set: FLEDX_AGENT_CONTROL_PLANE_URL=https://correct-hostname.example.com
 
-# Regenerate node token if invalid
-fledx nodes token rotate --node-id <node-id>
-# Update /etc/fledx/fledx-agent.env with new token
+# If node token is invalid, re-register the node
+fledx nodes register --name <node-name>
+# Update /etc/fledx/fledx-agent.env with new node_id and node_token
 
 # For labs: temporarily disable TLS verification
 sudo vi /etc/fledx/fledx-agent.env

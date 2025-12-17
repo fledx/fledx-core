@@ -9,32 +9,32 @@ messages so the gateway can reach agents that sit behind NAT/firewalls.
 - Listener: `https://<advertised_host>:<advertised_port>/agent-tunnel`
 - Auth header: bearer token in `x-fledx-tunnel-token` (configurable)
 - Defaults (control-plane / agent):
-  - `advertised_host` / `endpoint_host`: `127.0.0.1`
-  - `advertised_port` / `endpoint_port`: `7443`
-  - `connect_timeout_secs`: `10`
-  - `heartbeat_interval_secs`: `30`
-  - `heartbeat_timeout_secs`: `90`
-  - `token_header`: `x-fledx-tunnel-token`
+    - `advertised_host` / `endpoint_host`: `127.0.0.1`
+    - `advertised_port` / `endpoint_port`: `7443`
+    - `connect_timeout_secs`: `10`
+    - `heartbeat_interval_secs`: `30`
+    - `heartbeat_timeout_secs`: `90`
+    - `token_header`: `x-fledx-tunnel-token`
 
 Configuration keys (env overrides follow the normal prefixes):
 
-| Control-plane key | Env | Meaning |
-| --- | --- | --- |
-| `tunnel.advertised_host` | `FLEDX_CP_TUNNEL_ADVERTISED_HOST` | Hostname/IP agents should dial |
-| `tunnel.advertised_port` | `FLEDX_CP_TUNNEL_ADVERTISED_PORT` | Port agents should dial |
-| `tunnel.connect_timeout_secs` | `FLEDX_CP_TUNNEL_CONNECT_TIMEOUT_SECS` | Dial timeout for CONNECT |
-| `tunnel.heartbeat_interval_secs` | `FLEDX_CP_TUNNEL_HEARTBEAT_INTERVAL_SECS` | Cadence for agent pings |
-| `tunnel.heartbeat_timeout_secs` | `FLEDX_CP_TUNNEL_HEARTBEAT_TIMEOUT_SECS` | Idle window before close |
-| `tunnel.token_header` | `FLEDX_CP_TUNNEL_TOKEN_HEADER` | Header name carrying the node token |
+| Control-plane key                | Env                                       | Meaning                             |
+|----------------------------------|-------------------------------------------|-------------------------------------|
+| `tunnel.advertised_host`         | `FLEDX_CP_TUNNEL_ADVERTISED_HOST`         | Hostname/IP agents should dial      |
+| `tunnel.advertised_port`         | `FLEDX_CP_TUNNEL_ADVERTISED_PORT`         | Port agents should dial             |
+| `tunnel.connect_timeout_secs`    | `FLEDX_CP_TUNNEL_CONNECT_TIMEOUT_SECS`    | Dial timeout for CONNECT            |
+| `tunnel.heartbeat_interval_secs` | `FLEDX_CP_TUNNEL_HEARTBEAT_INTERVAL_SECS` | Cadence for agent pings             |
+| `tunnel.heartbeat_timeout_secs`  | `FLEDX_CP_TUNNEL_HEARTBEAT_TIMEOUT_SECS`  | Idle window before close            |
+| `tunnel.token_header`            | `FLEDX_CP_TUNNEL_TOKEN_HEADER`            | Header name carrying the node token |
 
-| Node-agent key | Env | Meaning |
-| --- | --- | --- |
-| `tunnel.endpoint_host` | `FLEDX_AGENT_TUNNEL_ENDPOINT_HOST` | Gateway host to dial |
-| `tunnel.endpoint_port` | `FLEDX_AGENT_TUNNEL_ENDPOINT_PORT` | Gateway port to dial |
-| `tunnel.connect_timeout_secs` | `FLEDX_AGENT_TUNNEL_CONNECT_TIMEOUT_SECS` | Dial timeout |
-| `tunnel.heartbeat_interval_secs` | `FLEDX_AGENT_TUNNEL_HEARTBEAT_INTERVAL_SECS` | Agent heartbeat cadence |
-| `tunnel.heartbeat_timeout_secs` | `FLEDX_AGENT_TUNNEL_HEARTBEAT_TIMEOUT_SECS` | Idle window before close |
-| `tunnel.token_header` | `FLEDX_AGENT_TUNNEL_TOKEN_HEADER` | Header carrying the node token |
+| Node-agent key                   | Env                                          | Meaning                        |
+|----------------------------------|----------------------------------------------|--------------------------------|
+| `tunnel.endpoint_host`           | `FLEDX_AGENT_TUNNEL_ENDPOINT_HOST`           | Gateway host to dial           |
+| `tunnel.endpoint_port`           | `FLEDX_AGENT_TUNNEL_ENDPOINT_PORT`           | Gateway port to dial           |
+| `tunnel.connect_timeout_secs`    | `FLEDX_AGENT_TUNNEL_CONNECT_TIMEOUT_SECS`    | Dial timeout                   |
+| `tunnel.heartbeat_interval_secs` | `FLEDX_AGENT_TUNNEL_HEARTBEAT_INTERVAL_SECS` | Agent heartbeat cadence        |
+| `tunnel.heartbeat_timeout_secs`  | `FLEDX_AGENT_TUNNEL_HEARTBEAT_TIMEOUT_SECS`  | Idle window before close       |
+| `tunnel.token_header`            | `FLEDX_AGENT_TUNNEL_TOKEN_HEADER`            | Header carrying the node token |
 
 The control-plane advertises the tunnel endpoint to agents in registration and
 desired-state responses; agents treat those values as authoritative and fall
@@ -48,11 +48,11 @@ settings until the control-plane sends a new endpoint.
 
 1. Agent opens HTTP/2 `CONNECT` to `/agent-tunnel` on the advertised host/port.
 2. Required headers:
-   - `:authority` = `<host>:<port>`
-   - `:path` = `/agent-tunnel`
-   - `x-fledx-node-id` = node UUID
-   - `<token_header>` = `Bearer <node_token>` (defaults to `x-fledx-tunnel-token`)
-   - `x-agent-version` / `x-agent-build` for telemetry (same as REST APIs)
+    - `:authority` = `<host>:<port>`
+    - `:path` = `/agent-tunnel`
+    - `x-fledx-node-id` = node UUID
+    - `<token_header>` = `Bearer <node_token>` (defaults to `x-fledx-tunnel-token`)
+    - `x-agent-version` / `x-agent-build` for telemetry (same as REST APIs)
 3. Gateway validates the token and returns `200` to keep the stream open. Auth
    failures return `401` with a short JSON error body; malformed headers return
    `400`.
@@ -78,8 +78,8 @@ settings until the control-plane sends a new endpoint.
   {"type":"heartbeat","sent_at":"2025-01-01T00:00:00Z"}
   ```
 - `heartbeat_ack` (gateway → agent):
-   The agent should include the timestamp it sent in `sent_at`; the gateway
-   replies with a `heartbeat_ack` frame that mirrors the receive time.
+  The agent should include the timestamp it sent in `sent_at`; the gateway
+  replies with a `heartbeat_ack` frame that mirrors the receive time.
   ```json
   {"type":"heartbeat_ack","received_at":"2025-01-01T00:00:00Z"}
   ```

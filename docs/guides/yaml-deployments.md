@@ -206,8 +206,8 @@ Health checks monitor application health and determine when containers are ready
 
 Fledx supports two types of health probes:
 
-- **Readiness** - Determines when the container is ready to accept traffic
-- **Liveness** - Determines if the container is still healthy
+- **Readiness** – Determines when the container is ready to accept traffic
+- **Liveness** – Determines if the container is still healthy
 
 #### Check Types
 
@@ -661,13 +661,13 @@ Increase `failure_threshold` or `interval_seconds` if checks are too aggressive.
 
 ## Best Practices
 
-1. **Use specific image tags** - Avoid `latest` in production
-2. **Version control YAML files** - Track changes in Git
-3. **Set health checks** - Always define readiness and liveness probes
-4. **Document environment variables** - Add comments explaining each var
-5. **Use read-only volumes** - When possible, mount config files as `read_only: true`
-6. **Test locally first** - Validate YAML syntax before deploying to production
-7. **Store secrets separately** - Use config management for sensitive data (see [Configuration Guide](configuration.md))
+1. **Use specific image tags** – Avoid `latest` in production
+2. **Version control YAML files** – Track changes in Git
+3. **Set health checks** – Always define readiness and liveness probes
+4. **Document environment variables** – Add comments explaining each var
+5. **Use read-only volumes** – When possible, mount config files as `read_only: true`
+6. **Test locally first** – Validate YAML syntax before deploying to production
+7. **Store secrets separately** – Use config management for sensitive data (see [Configuration Guide](configuration.md))
 
 ## Next Steps
 

@@ -2,11 +2,13 @@
 
 This guide covers setting up secure transport, token handling, and network exposure for the control plane and agents.
 
-> **WARNING:** This guide contains security-critical configurations. Improper settings can expose your infrastructure to unauthorized access. Always use TLS in production and keep tokens secure.
+> **WARNING:** This guide contains security-critical configurations. Improper settings can expose your infrastructure to
+> unauthorized access. Always use TLS in production and keep tokens secure.
 
 ## Authentication
 
-> **WARNING:** Operator and registration tokens provide full administrative access. Store them securely and rotate regularly.
+> **WARNING:** Operator and registration tokens provide full administrative access. Store them securely and rotate
+> regularly.
 
 - Operator tokens: bearer-style secrets used by CLI, UI, and API. Header name
   defaults to `authorization`; override with `FLEDX_CP_OPERATOR_HEADER_NAME`.
@@ -22,7 +24,8 @@ This guide covers setting up secure transport, token handling, and network expos
 
 ## Transport Security
 
-> **WARNING:** Never use `FLEDX_AGENT_ALLOW_INSECURE_HTTP=true` or `FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY=true` in production. These settings disable critical security protections and expose your system to man-in-the-middle attacks.
+> **WARNING:** Never use `FLEDX_AGENT_ALLOW_INSECURE_HTTP=true` or `FLEDX_AGENT_TLS_INSECURE_SKIP_VERIFY=true` in
+> production. These settings disable critical security protections and expose your system to man-in-the-middle attacks.
 
 - Terminate TLS at your reverse proxy (e.g., nginx, Caddy, Traefik) in front of
   the control plane. Upstream to the control plane uses HTTP by default.
@@ -42,7 +45,8 @@ This guide covers setting up secure transport, token handling, and network expos
 
 ## Secrets Handling
 
-> **WARNING:** Secrets in environment files must have `600` permissions. World-readable files expose credentials. Never commit secrets to version control or log them in debug mode.
+> **WARNING:** Secrets in environment files must have `600` permissions. World-readable files expose credentials. Never
+> commit secrets to version control or log them in debug mode.
 
 - Store tokens in environment files with `600` permissions owned by the service
   account. Avoid shell history leaks (use `ENV=... ExecStart` env files).

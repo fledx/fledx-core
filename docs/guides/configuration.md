@@ -15,8 +15,8 @@ Throughout this guide, you'll see placeholders in angle brackets. Here's how to 
 
 Configuration in Distributed Edge Hosting can be managed in two ways:
 
-1. **Direct environment variables** - Defined in deployment specs (see [Deployment Guide](deployment.md))
-2. **Config resources** - Reusable configuration objects that can be attached to multiple deployments or nodes
+1. **Direct environment variables** – Defined in deployment specs (see [Deployment Guide](deployment.md))
+2. **Config resources** – Reusable configuration objects that can be attached to multiple deployments or nodes
 
 Config resources are useful when you need to:
 
@@ -46,8 +46,8 @@ Config resources are useful when you need to:
 
 Configs can be attached at two levels:
 
-1. **Node-level** - Applied to all deployments on a node
-2. **Deployment-level** - Applied to a specific deployment
+1. **Node-level** – Applied to all deployments on a node
+2. **Deployment-level** – Applied to a specific deployment
 
 If both exist, deployment-level configs override node-level configs for duplicate keys.
 
@@ -334,7 +334,7 @@ Key metrics:
 Check deployment status:
 
 ```bash
-fledx deployments status --id <deployment-id> --wide
+fledx deployments status --wide
 ```
 
 Look for restart counts and instance state.
@@ -429,7 +429,7 @@ Test config changes on a single deployment before rolling out:
 fledx configs attach deployment --config-id <id> --deployment-id <test-id>
 
 # Verify it works
-fledx deployments status --id <test-id>
+fledx deployments status --wide
 
 # Roll out to production
 fledx configs attach deployment --config-id <id> --deployment-id <prod-id>
@@ -445,7 +445,7 @@ fledx configs attach deployment --config-id <id> --deployment-id <prod-id>
 
 1. Verify config is attached:
    ```bash
-   fledx configs list-attachments --deployment-id <id>
+   fledx configs show --id <config-id>
    ```
 
 2. Check config precedence - deployment env vars override configs
@@ -502,7 +502,7 @@ sudo systemctl restart fledx-agent
 fledx deployments logs --resource-type deployment --resource-id <id>
 
 # Check instance state
-fledx deployments status --id <id> --wide
+fledx deployments status --wide
 ```
 
 ## Example Workflows

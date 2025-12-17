@@ -1,6 +1,7 @@
 # API Reference
 
-The REST API provides programmatic access to all Distributed Edge Hosting functionality. This guide covers authentication, common workflows, and practical examples for integrating Fledx into your automation pipelines.
+The REST API provides programmatic access to all Distributed Edge Hosting functionality. This guide covers
+authentication, common workflows, and practical examples for integrating Fledx into your automation pipelines.
 
 ## OpenAPI Specification
 
@@ -25,7 +26,8 @@ The API follows semantic versioning. Breaking changes will increment the major v
 
 ### Operator Tokens
 
-All operator endpoints require bearer token authentication via the `authorization` header (header name is configurable via `FLEDX_CP_OPERATOR_HEADER_NAME`).
+All operator endpoints require bearer token authentication via the `authorization` header (header name is configurable
+via `FLEDX_CP_OPERATOR_HEADER_NAME`).
 
 **Request format:**
 
@@ -96,7 +98,9 @@ curl -H "authorization: Bearer $FLEDX_CLI_OPERATOR_TOKEN" \
       "last_seen": "2025-12-07T21:16:08Z",
       "arch": "amd64",
       "os": "linux",
-      "labels": {"site": "hq"},
+      "labels": {
+        "site": "hq"
+      },
       "capacity": {
         "cpu_millis": 4000,
         "memory_bytes": 8589934592

@@ -13,13 +13,118 @@ This guide covers production installations with a single control plane and one o
 - Linux hosts with systemd (recommended) and outbound HTTPS.
 - Docker Engine on every node agent host.
 - Ports: control plane default 8080 (HTTP) or 8443 (HTTPS behind proxy).
-- Downloaded release artifacts for your platform (fledx-cp, fledx-agent,
-  fledx CLI). Verify checksums/signatures from your distribution channel.
+- SSH access to target hosts (for bootstrap method).
 
-## Get the Binaries
+## Installation Methods
 
-1) Download the release bundle for your OS/arch from the official downloads
-   page and place it on each host.
+Choose the method that fits your needs:
+
+| Method                      | Best For                                       | Complexity |
+|-----------------------------|------------------------------------------------|------------|
+| **Bootstrap (Recommended)** | Most users, quick setup                        | Low        |
+| **Manual**                  | Custom configurations, air-gapped environments | Medium     |
+
+---
+
+## Method 1: Bootstrap Installation (Recommended)
+
+The bootstrap commands automate the entire installation process via SSH.
+
+### Install the CLI
+
+Download the CLI binary for your workstation:
+
+```bash
+# Download and install
+curl -fsSL https://releases.example.com/fledx-cli-linux-amd64.tar.gz | tar -xz
+sudo install -m 0755 fledx /usr/local/bin/
+```
+
+### Bootstrap the Control Plane
+
+```bash
+# Remote installation via SSH
+fledx bootstrap cp \
+  --cp-hostname control-plane.example.com \
+  --ssh-host root@control-plane.example.com \
+  --server-port 8080 \
+  --tunnel-port 7443
+```
+
+This command:
+
+- Downloads the correct binary for the target architecture
+- Creates the `fledx` system user and directories
+- Generates secure tokens (registration, operator, pepper)
+- Creates systemd service and environment file
+- Starts the control plane
+- Configures your local CLI profile
+
+### Bootstrap Node Agents
+
+```bash
+# Add nodes via SSH
+fledx bootstrap agent --ssh-host root@edge-node-1.example.com
+fledx bootstrap agent --ssh-host root@edge-node-2.example.com \
+  --name edge-eu-west \
+  --label region=eu-west \
+  --label role=edge
+```
+
+Each command:
+
+- Downloads the matching agent version
+- Registers the node with the control plane
+- Creates systemd service with correct credentials
+- Starts the agent
+
+### Verify Installation
+
+```bash
+# Check system status
+fledx status
+
+# Detailed node view
+fledx nodes status --wide
+```
+
+### Bootstrap Options Reference
+
+**Control Plane (`fledx bootstrap cp`):**
+
+| Option                | Default        | Description                     |
+|-----------------------|----------------|---------------------------------|
+| `--cp-hostname`       | (required)     | Hostname/IP reachable by agents |
+| `--ssh-host`          | -              | SSH target (user@host)          |
+| `--ssh-identity-file` | -              | SSH private key                 |
+| `--version`           | latest         | Version to install              |
+| `--server-port`       | 8080           | HTTP API port                   |
+| `--tunnel-port`       | 7443           | Agent tunnel port               |
+| `--bin-dir`           | /usr/local/bin | Binary directory                |
+| `--config-dir`        | /etc/fledx     | Config directory                |
+| `--data-dir`          | /var/lib/fledx | Data directory                  |
+
+**Agent (`fledx bootstrap agent`):**
+
+| Option                    | Default    | Description            |
+|---------------------------|------------|------------------------|
+| `--ssh-host`              | (required) | SSH target (user@host) |
+| `--ssh-identity-file`     | -          | SSH private key        |
+| `--name`                  | hostname   | Node name              |
+| `--version`               | CP version | Version to install     |
+| `--label`                 | -          | Labels (repeatable)    |
+| `--capacity-cpu-millis`   | -          | CPU capacity           |
+| `--capacity-memory-bytes` | -          | Memory capacity        |
+
+---
+
+## Method 2: Manual Installation
+
+For custom configurations, air-gapped environments, or when SSH access is not available.
+
+### Get the Binaries
+
+1) Download the release bundle for your OS/arch from the official downloads page.
 2) Extract and move binaries into `/usr/local/bin`:
 
 ```bash

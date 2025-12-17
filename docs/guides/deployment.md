@@ -3,7 +3,8 @@
 This guide covers advanced deployment workflows, best practices, and patterns for managing containerized applications on
 Distributed Edge Hosting.
 
-**Note:** For YAML-based deployments with declarative configuration files, see the [YAML Deployments Guide](yaml-deployments.md).
+**Note:** For YAML-based deployments with declarative configuration files, see
+the [YAML Deployments Guide](yaml-deployments.md).
 
 ## Placeholders in Examples
 
@@ -184,7 +185,7 @@ Deploy only to specific nodes by label:
 fledx deployments create \
   --name edge-only-app \
   --image my-app:latest \
-  --node-affinity region=edge
+  --affinity-label region=edge
 ```
 
 Node must have the matching label (set during registration):
@@ -202,8 +203,8 @@ Specify CPU and memory requirements:
 fledx deployments create \
   --name resource-app \
   --image my-app:latest \
-  --cpu-millis 2000 \
-  --memory-bytes 2147483648
+  --require-cpu-millis 2000 \
+  --require-memory-bytes 2147483648
 ```
 
 ## Volume Mounts
@@ -438,7 +439,7 @@ DEPLOY_ID=$(fledx deployments status --json | jq -r '.items[] | select(.name=="m
 fledx deployments logs --resource-type deployment --resource-id $DEPLOY_ID
 
 # Increase resources
-fledx deployments update --id $DEPLOY_ID --memory-bytes 4294967296
+fledx deployments update --id $DEPLOY_ID --require-memory-bytes 4294967296
 ```
 
 ### Can't Access Service

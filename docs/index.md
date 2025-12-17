@@ -129,7 +129,10 @@ distribution.
 ## Next Steps
 
 - **New users:** Start with the [Overview](overview.md) and [Getting Started Guide](getting-started/index.md)
-- **System operators:** Review [Installation](guides/installation.md), [Security](guides/security.md), and [Architecture Examples](guides/architecture-examples.md)
-- **Application operators:** Check the [Deployment Guide](guides/deployment.md), [CLI Reference](reference/cli.md), and [API Reference](reference/api.md)
-- **Migrating users:** Review the [Migration Guide](guides/migration.md) and [Architecture Examples](guides/architecture-examples.md)
+- **System operators:** Review [Installation](guides/installation.md), [Security](guides/security.md),
+  and [Architecture Examples](guides/architecture-examples.md)
+- **Application operators:** Check the [Deployment Guide](guides/deployment.md), [CLI Reference](reference/cli.md),
+  and [API Reference](reference/api.md)
+- **Migrating users:** Review the [Migration Guide](guides/migration.md)
+  and [Architecture Examples](guides/architecture-examples.md)
 - **Troubleshooting:** Start with the [Troubleshooting Guide](guides/troubleshooting.md) and [FAQ](faq.md)

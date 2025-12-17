@@ -17,12 +17,12 @@ resource-intensive. This guide covers:
 
 ### Conceptual Mapping
 
-| Kubernetes       | Fledx Equivalent         | Notes                                  |
+| Kubernetes       | Fledx Equivalent       | Notes                                  |
 |------------------|------------------------|----------------------------------------|
 | Deployment       | Deployment             | Similar concept, simpler configuration |
-| Pod              | Container instance     | Fledx manages containers directly        |
+| Pod              | Container instance     | Fledx manages containers directly      |
 | Service          | Port mapping           | Expose via host ports, use external LB |
-| ConfigMap        | Config                 | Managed via `fledx configs`              |
+| ConfigMap        | Config                 | Managed via `fledx configs`            |
 | Secret           | Secret-backed env vars | Node-level secrets                     |
 | Node             | Node                   | Similar concept                        |
 | Label/Selector   | Node labels + affinity | Placement control                      |
@@ -53,20 +53,20 @@ spec:
         app: nginx
     spec:
       containers:
-      - name: nginx
-        image: nginx:1.25-alpine
-        ports:
-        - containerPort: 80
-        env:
-        - name: NGINX_PORT
-          value: "80"
-        volumeMounts:
-        - name: html
-          mountPath: /usr/share/nginx/html
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+          env:
+            - name: NGINX_PORT
+              value: "80"
+          volumeMounts:
+            - name: html
+              mountPath: /usr/share/nginx/html
       volumes:
-      - name: html
-        persistentVolumeClaim:
-          claimName: nginx-pvc
+        - name: html
+          persistentVolumeClaim:
+            claimName: nginx-pvc
 ---
 apiVersion: v1
 kind: Service
@@ -76,9 +76,9 @@ spec:
   selector:
     app: nginx
   ports:
-  - protocol: TCP
-    port: 80
-    targetPort: 80
+    - protocol: TCP
+      port: 80
+      targetPort: 80
   type: LoadBalancer
 ```
 
@@ -263,19 +263,19 @@ fledx deployments create \
 
 The following Kubernetes features have no direct Fledx equivalent:
 
-- **Namespaces** - Use separate control plane instances if needed
-- **Network Policies** - Use OS-level firewall rules
-- **RBAC** - Operator tokens are all-or-nothing (future enhancement)
-- **DaemonSets** - Deploy individually to each node
-- **StatefulSets** - Use labels and volume mounts for stateful workloads
-- **Jobs/CronJobs** - Use external cron + Fledx CLI
-- **Auto-scaling** - Manual scaling via `fledx deployments update --replicas`
+- **Namespaces** – Use separate control plane instances if needed
+- **Network Policies** – Use OS-level firewall rules
+- **RBAC** – Operator tokens are all-or-nothing (future enhancement)
+- **DaemonSets** – Deploy individually to each node
+- **StatefulSets** – Use labels and volume mounts for stateful workloads
+- **Jobs/CronJobs** – Use external cron + Fledx CLI
+- **Auto-scaling** – Manual scaling via `fledx deployments update --replicas`
 
 ## Migration from Docker Swarm
 
 ### Conceptual Mapping
 
-| Docker Swarm | Fledx Equivalent         |
+| Docker Swarm | Fledx Equivalent       |
 |--------------|------------------------|
 | Service      | Deployment             |
 | Stack        | Multiple deployments   |
@@ -429,7 +429,7 @@ kompose convert -f docker-compose.yml
 
 ### Conceptual Mapping
 
-| Nomad      | Fledx Equivalent     |
+| Nomad      | Fledx Equivalent   |
 |------------|--------------------|
 | Job        | Deployment         |
 | Task Group | Container instance |

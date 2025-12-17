@@ -188,9 +188,9 @@ fledx deployments logs --resource-type deployment --resource-id <id> --limit 200
 
 **Common causes:**
 
-1. **Application crash** - Fix the application bug
-2. **Health check failure** - Adjust health check settings
-3. **Resource limits too low** - Increase memory/CPU limits
+1. **Application crash** – Fix the application bug
+2. **Health check failure** – Adjust health check settings
+3. **Resource limits too low** – Increase memory/CPU limits
 
 ```bash
 # Increase resources
@@ -398,9 +398,9 @@ fledx deployments status --wide
 
 Could be:
 
-1. **Load balancing issue** - If using external LB, check LB health
-2. **Container restarting** - Fix application stability
-3. **Network flapping** - Check node network stability
+1. **Load balancing issue** – If using external LB, check LB health
+2. **Container restarting** – Fix application stability
+3. **Network flapping** – Check node network stability
 
 ```bash
 # Check restart count

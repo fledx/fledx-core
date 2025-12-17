@@ -1,122 +1,163 @@
 # Getting Started
 
-This guide walks you through running a two-host demo in approximately 20 minutes (control plane on Host A, node agent on
-Host B).
-
-## What You Will Do
-
-- Start the control plane on Host A.
-- Register one node.
-- Start the node agent on Host B.
-- Deploy nginx with custom HTML to that node and open it locally.
+Get your edge platform running in minutes with the built-in bootstrap commands.
 
 ## Prerequisites
 
-- Linux/macOS with Docker and `curl`.
-- A shell with basic POSIX tools (`tar`, `sed`, `openssl` recommended).
-- Downloaded release bundles containing the binaries `fledx-cp`, `fledx-agent`, `fledx`.
+- Linux hosts with Docker installed on agent nodes
+- SSH access to your servers (for remote installation)
+- Downloaded CLI binary (`fledx`) for your platform
 
-> Download: grab the latest platform bundle from the product download page and
-> place it in the current directory as `fledx.tar.gz`. Verify the checksum/signature
-> if provided by your distribution channel.
+## Quick Start
 
-## 1) Unpack and place binaries on PATH
+### 1. Install the CLI
 
-Do this on both hosts (or unpack on Host A and copy the binaries to Host B).
+Download the latest release from the product download page or build from source:
 
 ```bash
-mkdir -p quickstart/bin quickstart/data
-tar -xf fledx.tar.gz -C quickstart/bin
-export PATH="$PWD/quickstart/bin:$PATH"
+# From release
+tar -xf fledx-cli.tar.gz
+sudo install -m 0755 fledx /usr/local/bin/
+
+# Or build from source
+cargo install --path crates/cli
 ```
 
-## 2) Start the control plane (Host A)
+### 2. Bootstrap the Control Plane
 
-Choose demo-only secrets (replace for anything beyond this quickstart).
+Install and configure the control plane on a server:
 
 ```bash
-export FLEDX_REG_TOKEN=quickstart-reg-123
-export FLEDX_OPERATOR_TOKEN=quickstart-operator-123
-export FLEDX_TOKEN_PEPPER=pepper-123
+# Local installation (on the current machine)
+fledx bootstrap cp --cp-hostname localhost
 
-FLEDX_CP_SERVER_HOST=0.0.0.0 \
-FLEDX_CP_SERVER_PORT=8080 \
-FLEDX_CP_DATABASE_URL=sqlite://$PWD/quickstart/data/fledx-cp.db \
-FLEDX_CP_REGISTRATION_TOKEN=$FLEDX_REG_TOKEN \
-FLEDX_CP_OPERATOR_TOKENS=$FLEDX_OPERATOR_TOKEN \
-FLEDX_CP_TOKENS_PEPPER=$FLEDX_TOKEN_PEPPER \
-RUST_LOG=info \
-fledx-cp
+# Remote installation via SSH
+fledx bootstrap cp \
+  --cp-hostname your-server.example.com \
+  --ssh-host user@your-server.example.com
 ```
 
-Keep this terminal open; it shows logs. Health check:
+The bootstrap command handles everything automatically:
+
+- Downloads the correct binary for the target platform
+- Creates a dedicated `fledx` system user
+- Sets up systemd services
+- Generates secure tokens
+- Configures the CLI profile for immediate use
+
+After bootstrap completes, your CLI is automatically configured to connect to the new control plane.
+
+### 3. Add Edge Nodes
+
+Add nodes to your cluster with a single command:
 
 ```bash
-curl -fsSL http://<control-plane-host>:8080/health
+fledx bootstrap agent --ssh-host user@edge-node-1.local
+fledx bootstrap agent --ssh-host user@edge-node-2.local
 ```
 
-## 3) Register a node (Host A)
+Each node is automatically:
 
-In a new terminal (with PATH pointing to `quickstart/bin`):
+- Installed with the matching agent version
+- Registered with the control plane
+- Configured and started as a systemd service
+
+### 4. Verify the Setup
+
+Check that everything is running:
 
 ```bash
-FLEDX_CLI_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
-FLEDX_CLI_REGISTRATION_TOKEN=$FLEDX_REG_TOKEN \
-fledx nodes register --name edge-1
+# View system status
+fledx status
+
+# Or watch in real-time
+fledx status --watch
 ```
 
-Note the printed `node_id` and `node_token`; you need them for the agent.
+You should see your control plane healthy and nodes in `ready` state.
 
-## 4) Run the node agent (Host B)
-
-```bash
-FLEDX_AGENT_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
-FLEDX_AGENT_NODE_ID=<node_id from step 3> \
-FLEDX_AGENT_NODE_TOKEN=<node_token from step 3> \
-FLEDX_AGENT_ALLOW_INSECURE_HTTP=true \
-FLEDX_AGENT_PUBLIC_HOST=<agent-hostname-or-ip> \
-fledx-agent
-```
-
-Leave this running to keep the node connected.
-
-## 5) Deploy nginx with custom HTML (Host A)
+### 5. Deploy Your First Application
 
 ```bash
-FLEDX_CLI_CONTROL_PLANE_URL=http://<control-plane-host>:8080 \
-FLEDX_CLI_OPERATOR_TOKEN=$FLEDX_OPERATOR_TOKEN \
 fledx deployments create \
-  --name edge-nginx \
-  --image nginx:alpine \
-  --command sh -c \"echo '<h1>Hello from the edge node</h1>' > /usr/share/nginx/html/index.html && nginx -g 'daemon off;'\" \
-  --port 8081:80/tcp \
-  --env NGINX_ENTRYPOINT_QUIET_LOGS=1
+  --name hello-web \
+  --image hashicorp/http-echo:0.2.3 \
+  --port 8080:5678/tcp \
+  --env TEXT="Hello from the edge!"
+
+# Watch deployment progress
+fledx deployments watch --id <deployment-id>
 ```
 
-Check status:
+Access your application:
 
 ```bash
-fledx deployments status --status running
+curl http://<node-ip>:8080
+# Output: Hello from the edge!
 ```
 
-## 6) Try the interfaces
+## Bootstrap Options
 
-- UI: open `http://<control-plane-host>:8080/ui` and paste the operator token
-  (`$FLEDX_OPERATOR_TOKEN`).
-- API: `curl -H "authorization: $FLEDX_CLI_OPERATOR_TOKEN" http://<control-plane-host>:8080/api/v1/deployments`.
-- CLI: `fledx nodes list --wide`.
-- App: `curl http://<agent-hostname-or-ip>:8081` should return the custom HTML.
+### Control Plane Bootstrap
 
-## 7) Cleanup
+```bash
+fledx bootstrap cp --cp-hostname <HOST> [OPTIONS]
+```
 
-- Stop the agent and fledx-cp processes (Ctrl+C).
-- Remove the `quickstart` directory if you want to reset state.
+| Option                | Default        | Description                               |
+|-----------------------|----------------|-------------------------------------------|
+| `--cp-hostname`       | (required)     | Hostname/IP reachable by agents           |
+| `--ssh-host`          | -              | SSH target for remote install (user@host) |
+| `--ssh-identity-file` | -              | SSH private key path                      |
+| `--version`           | latest         | Version to install                        |
+| `--server-port`       | 8080           | HTTP API port                             |
+| `--tunnel-port`       | 7443           | Agent tunnel port                         |
+| `--bin-dir`           | /usr/local/bin | Binary installation directory             |
+| `--config-dir`        | /etc/fledx     | Configuration directory                   |
+| `--data-dir`          | /var/lib/fledx | Persistent data directory                 |
 
-## Next Steps
+### Agent Bootstrap
 
-- Production install: [Installation Guide](../guides/installation.md)
-- Security: [Security Guide](../guides/security.md)
-- Day-2 ops and upgrades: [Monitoring](../guides/monitoring.md), [Upgrades](../guides/upgrades.md)
-- CLI reference: [CLI Reference](../reference/cli.md)
-- UI guide: [UI Reference](../reference/ui.md)
-- API spec: [API Reference](../reference/api.md)
+```bash
+fledx bootstrap agent --ssh-host <HOST> [OPTIONS]
+```
+
+| Option                    | Default               | Description                         |
+|---------------------------|-----------------------|-------------------------------------|
+| `--ssh-host`              | (required)            | SSH target (user@host)              |
+| `--ssh-identity-file`     | -                     | SSH private key path                |
+| `--name`                  | SSH hostname          | Node name for registration          |
+| `--version`               | control-plane version | Version to install                  |
+| `--label`                 | -                     | Node labels (repeatable, KEY=VALUE) |
+| `--capacity-cpu-millis`   | -                     | CPU capacity hint                   |
+| `--capacity-memory-bytes` | -                     | Memory capacity hint                |
+
+## Managing Profiles
+
+The bootstrap commands automatically create CLI profiles. You can manage multiple control planes:
+
+```bash
+# List profiles
+fledx profile list
+
+# Show current profile
+fledx profile show
+
+# Switch default profile
+fledx profile set-default --name production
+
+# Use a specific profile for one command
+fledx --profile staging status
+```
+
+## What's Next
+
+- **Deploy Applications:** [First Deployment Tutorial](first-deployment.md)
+- **Production Setup:** [Installation Guide](../guides/installation.md) for advanced configurations
+- **Security:** [Security Guide](../guides/security.md) for TLS and token management
+- **CLI Reference:** [CLI Reference](../reference/cli.md) for all commands
+
+## Manual Setup (Alternative)
+
+If you prefer manual installation or need custom configurations, see the [Installation Guide](../guides/installation.md)
+for step-by-step instructions using environment variables and systemd units directly.

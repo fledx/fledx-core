@@ -6,8 +6,8 @@ This guide covers safe upgrade procedures for Distributed Edge Hosting component
 
 Distributed Edge Hosting upgrades involve updating two main components:
 
-1. **Control Plane** - The central orchestration service
-2. **Node Agents** - The agents running on each edge node
+1. **Control Plane** – The central orchestration service
+2. **Node Agents** – The agents running on each edge node
 
 Upgrades should be performed in this order to maintain compatibility.
 
@@ -49,18 +49,19 @@ Agents outside the version window will trigger warnings but remain operational.
 
 Before starting an upgrade, ensure:
 
-- [ ] **Backup Database** - Backup the control plane SQLite database
-- [ ] **Check Capacity** - Verify nodes have resources for workload redistribution
-- [ ] **Review Release Notes** - Check for breaking changes
-- [ ] **Test in Staging** - Test upgrade on non-production environment first
-- [ ] **Schedule Downtime** - Plan for brief service interruption
-- [ ] **Prepare Rollback** - Have previous binaries ready
+- [ ] **Backup Database** – Backup the control plane SQLite database
+- [ ] **Check Capacity** – Verify nodes have resources for workload redistribution
+- [ ] **Review Release Notes** – Check for breaking changes
+- [ ] **Test in Staging** – Test upgrade on non-production environment first
+- [ ] **Schedule Downtime** – Plan for brief service interruption
+- [ ] **Prepare Rollback** – Have previous binaries ready
 
 ## Upgrade Procedure
 
 ### Step 1: Backup Control Plane Database
 
-> **WARNING:** Always backup the control plane database before upgrading. Database corruption or failed migrations cannot be reversed without a backup. Service will be unavailable during the backup process.
+> **WARNING:** Always backup the control plane database before upgrading. Database corruption or failed migrations
+> cannot be reversed without a backup. Service will be unavailable during the backup process.
 
 **Critical:** Always backup before upgrading the control plane.
 
@@ -86,7 +87,8 @@ sudo lvcreate -L 1G -s -n cp-snapshot /dev/vg0/fledx-data
 
 #### Download New Binary
 
-> **WARNING:** Always verify checksums before installing binaries. Compromised binaries can provide attackers with full system access.
+> **WARNING:** Always verify checksums before installing binaries. Compromised binaries can provide attackers with full
+> system access.
 
 ```bash
 # Download new release (replace URL with actual release)
@@ -316,6 +318,7 @@ Agent version 1.4.0 outside allowed range [1.5.0, 1.7.0]
 **Solution:**
 
 Either:
+
 - Upgrade the agent to a compatible version
 - Adjust control plane compatibility window:
   ```bash
@@ -428,6 +431,7 @@ sudo journalctl -u fledx-agent -f
 ### 4. Document Upgrade Process
 
 Keep a runbook with:
+
 - Exact commands used
 - Timing of each step
 - Any issues encountered
@@ -436,6 +440,7 @@ Keep a runbook with:
 ### 5. Communicate with Users
 
 For production systems:
+
 - Announce maintenance window in advance
 - Provide status updates during upgrade
 - Confirm completion and system health
@@ -444,13 +449,14 @@ For production systems:
 
 Always review release notes before upgrading. Key items to check:
 
-- **Breaking Changes** - API/CLI/configuration changes
-- **Migration Steps** - Required manual actions
-- **New Features** - Capabilities to test
-- **Bug Fixes** - Issues resolved
-- **Security Updates** - Critical patches
+- **Breaking Changes** – API/CLI/configuration changes
+- **Migration Steps** – Required manual actions
+- **New Features** – Capabilities to test
+- **Bug Fixes** – Issues resolved
+- **Security Updates** – Critical patches
 
 Release notes are available in:
+
 - Project `CHANGELOG.md`
 
 ## Automated Upgrade Tools

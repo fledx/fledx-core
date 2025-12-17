@@ -96,13 +96,13 @@ in `localStorage` so you do not have to type it again during the next browser se
   ```bash
   FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080 \
     FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
-    cargo run -p cli -- deploy-create --name web --image nginx:alpine
+    cargo run -p cli -- deployments create --name web --image nginx:alpine
   ```
 
   ```bash
   FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:8080 \
     FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
-    cargo run -p cli -- deploy stop --deployment-id <id>
+    cargo run -p cli -- deployments stop --id <id>
   ```
 
 - **API alternatives.** Refer to [API Reference](api.md) for the full schema of `/api/v1/deployments`,
