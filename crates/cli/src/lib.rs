@@ -54,10 +54,7 @@ pub async fn run() -> anyhow::Result<()> {
         let selected_profile = resolve_profile_name(&cli.profile, &store);
         apply_profile_overrides(&matches, &cli.command, &selected_profile, &store, &mut cli.globals)?;
 
-        if store.default_profile.is_none() && selected_profile.is_some() {
-            store.default_profile = selected_profile.clone();
-            store.save()?;
-        }
+        maybe_persist_default_profile(&mut store, &selected_profile)?;
 
         cli.profile = selected_profile;
         return run_parsed(cli).await;
@@ -109,6 +106,30 @@ pub async fn run_parsed(cli: Cli) -> anyhow::Result<()> {
 #[cfg(feature = "bootstrap")]
 fn resolve_profile_name(cli_profile: &Option<String>, store: &ProfileStore) -> Option<String> {
     cli_profile.clone().or_else(|| store.default_profile.clone())
+}
+
+#[cfg(feature = "bootstrap")]
+fn maybe_persist_default_profile(
+    store: &mut ProfileStore,
+    selected_profile: &Option<String>,
+) -> anyhow::Result<()> {
+    if store.default_profile.is_some() {
+        return Ok(());
+    }
+
+    let Some(name) = selected_profile.as_deref() else {
+        return Ok(());
+    };
+
+    if !store.profiles.contains_key(name) {
+        // The profile may be created later (e.g. bootstrap cp), but we should not
+        // persist a default_profile that points at a non-existent entry.
+        return Ok(());
+    }
+
+    store.default_profile = Some(name.to_string());
+    store.save()?;
+    Ok(())
 }
 
 #[cfg(feature = "bootstrap")]
@@ -292,5 +313,35 @@ mod profile_override_tests {
         std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
         std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
         std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+    }
+
+    #[test]
+    fn default_profile_is_not_persisted_for_missing_profile() {
+        let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+        std::env::remove_var("HOME");
+
+        let mut store = ProfileStore::default();
+        maybe_persist_default_profile(&mut store, &Some("missing".to_string())).expect("persist");
+
+        assert!(store.default_profile.is_none());
+        assert!(!ProfileStore::path().expect("path").exists());
+    }
+
+    #[test]
+    fn default_profile_is_persisted_for_existing_profile() {
+        let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+        std::env::remove_var("HOME");
+
+        let mut store = ProfileStore::default();
+        store.profiles.insert("prod".to_string(), crate::profile_store::Profile::default());
+
+        maybe_persist_default_profile(&mut store, &Some("prod".to_string())).expect("persist");
+
+        assert_eq!(store.default_profile.as_deref(), Some("prod"));
+        assert!(ProfileStore::path().expect("path").exists());
     }
 }
