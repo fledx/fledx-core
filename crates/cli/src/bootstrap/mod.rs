@@ -170,18 +170,50 @@ pub async fn bootstrap_cp(
     Ok(())
 }
 
-pub async fn bootstrap_agent(
-    client: &reqwest::Client,
-    _profiles: &mut ProfileStore,
-    _selected_profile: Option<String>,
+fn resolve_registration_token_for_bootstrap(
+    profiles: &ProfileStore,
+    selected_profile: &Option<String>,
     globals: &crate::GlobalArgs,
-    args: BootstrapAgentArgs,
-) -> anyhow::Result<()> {
-    let Some(registration_token) = globals.registration_token.clone() else {
+) -> anyhow::Result<String> {
+    if let Some(token) = globals.registration_token.clone() {
+        return Ok(token);
+    }
+
+    let profile_name = match selected_profile.as_deref() {
+        Some(name) => Some(name),
+        None => profiles.default_profile.as_deref(),
+    };
+
+    let Some(profile_name) = profile_name else {
         anyhow::bail!(
             "registration token is required for bootstrap; pass --registration-token, set FLEDX_CLI_REGISTRATION_TOKEN, or configure a profile"
         );
     };
+
+    let profile = profiles.profiles.get(profile_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "profile '{}' not found (create it via `fledx profile set`)",
+            profile_name
+        )
+    })?;
+
+    profile.registration_token.clone().ok_or_else(|| {
+        anyhow::anyhow!(
+            "registration token is required for bootstrap; pass --registration-token, set FLEDX_CLI_REGISTRATION_TOKEN, or set registration_token in profile '{}'",
+            profile_name
+        )
+    })
+}
+
+pub async fn bootstrap_agent(
+    client: &reqwest::Client,
+    profiles: &mut ProfileStore,
+    selected_profile: Option<String>,
+    globals: &crate::GlobalArgs,
+    args: BootstrapAgentArgs,
+) -> anyhow::Result<()> {
+    let registration_token =
+        resolve_registration_token_for_bootstrap(profiles, &selected_profile, globals)?;
 
     let ssh = installer::bootstrap::SshTarget::from_user_at_host(
         &args.ssh_host,
@@ -581,5 +613,113 @@ mod tests {
         assert!(env.contains(
             "FLEDX_CP_DATABASE_URL=\"sqlite:////var/lib/fledx dir/control-plane.db\""
         ));
+    }
+
+    #[test]
+    fn bootstrap_agent_prefers_global_registration_token() {
+        let mut store = ProfileStore::default();
+        store.default_profile = Some("default".into());
+        store.profiles.insert(
+            "default".into(),
+            Profile {
+                control_plane_url: Some("http://profile.example:8080".into()),
+                operator_header: None,
+                operator_token: None,
+                registration_token: Some("from-profile".into()),
+            },
+        );
+
+        let globals = crate::GlobalArgs {
+            control_plane_url: "http://127.0.0.1:8080".into(),
+            operator_token: None,
+            operator_header: "authorization".into(),
+            registration_token: Some("from-globals".into()),
+        };
+
+        let token = resolve_registration_token_for_bootstrap(&store, &None, &globals).expect("token");
+        assert_eq!(token, "from-globals");
+    }
+
+    #[test]
+    fn bootstrap_agent_uses_selected_profile_registration_token_when_missing_global() {
+        let mut store = ProfileStore::default();
+        store.profiles.insert(
+            "prod".into(),
+            Profile {
+                control_plane_url: Some("http://profile.example:8080".into()),
+                operator_header: None,
+                operator_token: None,
+                registration_token: Some("from-profile".into()),
+            },
+        );
+
+        let globals = crate::GlobalArgs {
+            control_plane_url: "http://127.0.0.1:8080".into(),
+            operator_token: None,
+            operator_header: "authorization".into(),
+            registration_token: None,
+        };
+
+        let token = resolve_registration_token_for_bootstrap(&store, &Some("prod".into()), &globals)
+            .expect("token");
+        assert_eq!(token, "from-profile");
+    }
+
+    #[test]
+    fn bootstrap_agent_falls_back_to_default_profile_registration_token() {
+        let mut store = ProfileStore::default();
+        store.default_profile = Some("default".into());
+        store.profiles.insert(
+            "default".into(),
+            Profile {
+                control_plane_url: Some("http://profile.example:8080".into()),
+                operator_header: None,
+                operator_token: None,
+                registration_token: Some("from-default".into()),
+            },
+        );
+
+        let globals = crate::GlobalArgs {
+            control_plane_url: "http://127.0.0.1:8080".into(),
+            operator_token: None,
+            operator_header: "authorization".into(),
+            registration_token: None,
+        };
+
+        let token = resolve_registration_token_for_bootstrap(&store, &None, &globals).expect("token");
+        assert_eq!(token, "from-default");
+    }
+
+    #[test]
+    fn bootstrap_agent_errors_when_profile_is_missing() {
+        let store = ProfileStore::default();
+        let globals = crate::GlobalArgs {
+            control_plane_url: "http://127.0.0.1:8080".into(),
+            operator_token: None,
+            operator_header: "authorization".into(),
+            registration_token: None,
+        };
+
+        let err = resolve_registration_token_for_bootstrap(&store, &Some("missing".into()), &globals)
+            .expect_err("should fail");
+        assert!(err.to_string().contains("profile 'missing' not found"), "{err}");
+    }
+
+    #[test]
+    fn bootstrap_agent_errors_when_profile_has_no_registration_token() {
+        let mut store = ProfileStore::default();
+        store.profiles.insert("prod".into(), Profile::default());
+
+        let globals = crate::GlobalArgs {
+            control_plane_url: "http://127.0.0.1:8080".into(),
+            operator_token: None,
+            operator_header: "authorization".into(),
+            registration_token: None,
+        };
+
+        let err = resolve_registration_token_for_bootstrap(&store, &Some("prod".into()), &globals)
+            .expect_err("should fail");
+        assert!(err.to_string().contains("registration token is required"), "{err}");
+        assert!(err.to_string().contains("profile 'prod'"), "{err}");
     }
 }
