@@ -567,6 +567,8 @@ install -m 0600 \"$REMOTE_DIR/fledx-cp.env\" \"$ENV_PATH\"
 install -m 0644 \"$REMOTE_DIR/fledx-cp.service\" /etc/systemd/system/fledx-cp.service
 systemctl daemon-reload
 systemctl enable --now fledx-cp
+# Ensure an already-running unit picks up the new env/unit/binary.
+systemctl restart fledx-cp
 ",
         remote_dir = remote_dir_q,
         service_user = service_user_q,
@@ -708,6 +710,8 @@ install -m 0600 \"$REMOTE_DIR/fledx-agent.env\" \"$ENV_PATH\"
 install -m 0644 \"$REMOTE_DIR/fledx-agent.service\" /etc/systemd/system/fledx-agent.service
 systemctl daemon-reload
 systemctl enable --now fledx-agent
+# Ensure an already-running unit picks up the new env/unit/binary.
+systemctl restart fledx-agent
 ",
         remote_dir = remote_dir_q,
         service_user = service_user_q,
@@ -957,5 +961,37 @@ mod tests {
             parse_systemctl_is_active_output("active\nsome banner"),
             "active"
         );
+    }
+
+    #[test]
+    fn render_cp_install_script_restarts_service() {
+        let settings = ControlPlaneInstallSettings {
+            bin_dir: PathBuf::from("/usr/local/bin"),
+            config_dir: PathBuf::from("/etc/fledx"),
+            data_dir: PathBuf::from("/var/lib/fledx"),
+            service_user: "fledx-cp".to_string(),
+            sudo_interactive: false,
+        };
+        let script = render_cp_install_script(&settings, "/tmp/fledx-bootstrap-cp.ABCDEF");
+        assert!(script.contains("systemctl enable --now fledx-cp"));
+        assert!(script.contains("systemctl restart fledx-cp"));
+    }
+
+    #[test]
+    fn render_agent_install_script_restarts_service() {
+        let settings = AgentInstallSettings {
+            config_dir: PathBuf::from("/etc/fledx"),
+            data_dir: PathBuf::from("/var/lib/fledx"),
+            service_user: "fledx-agent".to_string(),
+            sudo_interactive: false,
+            add_to_docker_socket_group: false,
+        };
+        let script = render_agent_install_script(
+            &settings,
+            "/tmp/fledx-bootstrap-agent.ABCDEF",
+            Path::new("/usr/local/bin/fledx-agent"),
+        );
+        assert!(script.contains("systemctl enable --now fledx-agent"));
+        assert!(script.contains("systemctl restart fledx-agent"));
     }
 }
