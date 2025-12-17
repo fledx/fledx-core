@@ -457,17 +457,13 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
     if !args.no_wait {
         let timeout = Duration::from_secs(args.wait_timeout_secs);
         installer::bootstrap::wait_for_systemd_active_ssh(&ssh, "fledx-agent", timeout).await?;
-        installer::bootstrap::wait_for_node_tunnel_connected(
-            client,
-            &globals.control_plane_url,
-            node_id,
-            timeout,
-        )
-        .await?;
     }
 
     println!("agent installed (core) version {}", version);
     println!("node registered: {}", node_id);
+    println!("verify node status via:");
+    println!("  fledx nodes status --wide");
+    println!("  fledx nodes list --wide");
     Ok(())
 }
 
