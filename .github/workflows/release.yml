@@ -74,6 +74,7 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
           CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+          FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS: ${{ secrets.FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS }}
 
       - name: Package binaries
         run: |
@@ -83,6 +84,26 @@ jobs:
             tar czf "$archive" "$bin"
             sha256sum "$archive" > "$archive.sha256"
           done
+
+      - name: Sign checksums
+        env:
+          FLEDX_RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.FLEDX_RELEASE_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$FLEDX_RELEASE_SIGNING_PRIVATE_KEY" ]; then
+            echo "missing secret FLEDX_RELEASE_SIGNING_PRIVATE_KEY" >&2
+            exit 1
+          fi
+
+          cd target/${{ matrix.target }}/release
+          umask 077
+          printf '%s' "$FLEDX_RELEASE_SIGNING_PRIVATE_KEY" > signing-key.pem
+
+          for checksum in *.sha256; do
+            openssl pkeyutl -sign -inkey signing-key.pem -rawin \
+              -in "$checksum" -out "$checksum.sig"
+          done
+
+          rm signing-key.pem
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v2
@@ -94,7 +115,10 @@ jobs:
           files: |
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
+            target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256.sig
             target/${{ matrix.target }}/release/fledx-cp-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
             target/${{ matrix.target }}/release/fledx-cp-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
+            target/${{ matrix.target }}/release/fledx-cp-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256.sig
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
+            target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256.sig

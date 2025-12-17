@@ -35,6 +35,7 @@ pub async fn bootstrap_cp(
     let dir = tempfile::tempdir()?;
     let archive_path = dir.path().join(&archive_name);
     let sha_path = dir.path().join(format!("{archive_name}.sha256"));
+    let sha_sig_path = dir.path().join(format!("{archive_name}.sha256.sig"));
 
     installer::bootstrap::download_asset(client, CORE_REPO, &release, &archive_name, &archive_path)
         .await?;
@@ -46,13 +47,32 @@ pub async fn bootstrap_cp(
         &sha_path,
     )
     .await?;
-    installer::bootstrap::verify_sha256(
-        CORE_REPO,
-        &release.tag_name,
-        &archive_name,
-        &archive_path,
-        &sha_path,
-    )?;
+    if args.insecure_allow_unsigned {
+        installer::bootstrap::verify_sha256(
+            CORE_REPO,
+            &release.tag_name,
+            &archive_name,
+            &archive_path,
+            &sha_path,
+        )?;
+    } else {
+        installer::bootstrap::download_asset(
+            client,
+            CORE_REPO,
+            &release,
+            &format!("{archive_name}.sha256.sig"),
+            &sha_sig_path,
+        )
+        .await?;
+        installer::bootstrap::verify_signed_sha256(
+            CORE_REPO,
+            &release.tag_name,
+            &archive_name,
+            &archive_path,
+            &sha_path,
+            &sha_sig_path,
+        )?;
+    }
 
     let extracted = installer::bootstrap::extract_single_file(&archive_path, "fledx-cp", dir.path())
         .with_context(|| {
@@ -211,6 +231,7 @@ pub async fn bootstrap_agent(
     let dir = tempfile::tempdir()?;
     let archive_path = dir.path().join(&archive_name);
     let sha_path = dir.path().join(format!("{archive_name}.sha256"));
+    let sha_sig_path = dir.path().join(format!("{archive_name}.sha256.sig"));
 
     installer::bootstrap::download_asset(client, CORE_REPO, &release, &archive_name, &archive_path)
         .await?;
@@ -222,13 +243,32 @@ pub async fn bootstrap_agent(
         &sha_path,
     )
     .await?;
-    installer::bootstrap::verify_sha256(
-        CORE_REPO,
-        &release.tag_name,
-        &archive_name,
-        &archive_path,
-        &sha_path,
-    )?;
+    if args.insecure_allow_unsigned {
+        installer::bootstrap::verify_sha256(
+            CORE_REPO,
+            &release.tag_name,
+            &archive_name,
+            &archive_path,
+            &sha_path,
+        )?;
+    } else {
+        installer::bootstrap::download_asset(
+            client,
+            CORE_REPO,
+            &release,
+            &format!("{archive_name}.sha256.sig"),
+            &sha_sig_path,
+        )
+        .await?;
+        installer::bootstrap::verify_signed_sha256(
+            CORE_REPO,
+            &release.tag_name,
+            &archive_name,
+            &archive_path,
+            &sha_path,
+            &sha_sig_path,
+        )?;
+    }
 
     let extracted =
         installer::bootstrap::extract_single_file(&archive_path, "fledx-agent", dir.path())
@@ -437,6 +477,7 @@ mod tests {
             capacity_cpu_millis: None,
             capacity_memory_bytes: None,
             sudo_interactive: false,
+            insecure_allow_unsigned: false,
             no_wait: true,
             wait_timeout_secs: 1,
         };
@@ -463,6 +504,7 @@ mod tests {
             capacity_cpu_millis: None,
             capacity_memory_bytes: None,
             sudo_interactive: false,
+            insecure_allow_unsigned: false,
             no_wait: true,
             wait_timeout_secs: 1,
         };
@@ -489,6 +531,7 @@ mod tests {
             capacity_cpu_millis: None,
             capacity_memory_bytes: None,
             sudo_interactive: false,
+            insecure_allow_unsigned: false,
             no_wait: true,
             wait_timeout_secs: 1,
         };

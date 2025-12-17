@@ -72,6 +72,13 @@ pub struct BootstrapCpArgs {
     #[arg(long = "sudo-interactive", default_value_t = false)]
     pub sudo_interactive: bool,
 
+    /// Allow installing unsigned release assets (SHA256 only).
+    ///
+    /// WARNING: This weakens the supply-chain trust model and should only be
+    /// used for local/dev builds or legacy releases without signatures.
+    #[arg(long = "insecure-allow-unsigned", default_value_t = false)]
+    pub insecure_allow_unsigned: bool,
+
     /// Do not wait for services to become ready after starting them.
     #[arg(long = "no-wait", default_value_t = false)]
     pub no_wait: bool,
@@ -146,6 +153,13 @@ pub struct BootstrapAgentArgs {
     #[arg(long = "sudo-interactive", default_value_t = false)]
     pub sudo_interactive: bool,
 
+    /// Allow installing unsigned release assets (SHA256 only).
+    ///
+    /// WARNING: This weakens the supply-chain trust model and should only be
+    /// used for local/dev builds or legacy releases without signatures.
+    #[arg(long = "insecure-allow-unsigned", default_value_t = false)]
+    pub insecure_allow_unsigned: bool,
+
     /// Do not wait for services to become ready after starting them.
     #[arg(long = "no-wait", default_value_t = false)]
     pub no_wait: bool,
@@ -154,4 +168,3 @@ pub struct BootstrapAgentArgs {
     #[arg(long = "wait-timeout-secs", default_value_t = 120)]
     pub wait_timeout_secs: u64,
 }
-

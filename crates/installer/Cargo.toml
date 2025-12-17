@@ -24,6 +24,7 @@ tempfile.workspace = true
 common = { path = "../common" }
 tar = "0.4"
 flate2 = "1"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 
 [dev-dependencies]
 tempfile.workspace = true
