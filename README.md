@@ -9,7 +9,21 @@ Get your edge platform running in minutes with the built-in bootstrap commands.
 
 ### 1. Install the CLI
 
-Download the latest release from [GitHub Releases](https://github.com/fledx/fledx-core/releases) or build from source:
+Download the latest release from [GitHub Releases](https://github.com/fledx/fledx-core/releases),
+use the installer script, or build from source.
+
+Installer script (Linux x86_64/aarch64):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/install-fledx-cli.sh | sh
+```
+
+Install a specific version or directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/install-fledx-cli.sh | \
+sh -s -- --version v0.4.0 -b /usr/local/bin
+```
 
 ```bash
 cargo install --path crates/cli
