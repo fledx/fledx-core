@@ -1,5 +1,10 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
+use std::time::Instant;
+use std::{io, io::IsTerminal};
 
 use anyhow::Context;
 
@@ -7,6 +12,57 @@ use crate::args::{BootstrapAgentArgs, BootstrapCpArgs};
 use crate::profile_store::ProfileStore;
 
 const CORE_REPO: &str = "fledx/fledx-core";
+
+struct PeriodicStatus {
+    done: Arc<AtomicBool>,
+    handle: Option<thread::JoinHandle<()>>,
+}
+
+impl PeriodicStatus {
+    fn start(label: String, interval: Duration, enabled: bool) -> Self {
+        if !enabled {
+            return Self {
+                done: Arc::new(AtomicBool::new(true)),
+                handle: None,
+            };
+        }
+
+        let done = Arc::new(AtomicBool::new(false));
+        let done_thread = done.clone();
+        let handle = thread::spawn(move || {
+            let start = Instant::now();
+            let mut tick: u32 = 0;
+
+            loop {
+                thread::sleep(interval);
+                if done_thread.load(Ordering::Relaxed) {
+                    break;
+                }
+
+                tick = tick.saturating_add(1);
+                let dots = ".".repeat((tick as usize).min(10));
+                eprintln!(
+                    "{label} still running{dots} ({}s elapsed)",
+                    start.elapsed().as_secs()
+                );
+            }
+        });
+
+        Self {
+            done,
+            handle: Some(handle),
+        }
+    }
+}
+
+impl Drop for PeriodicStatus {
+    fn drop(&mut self) {
+        self.done.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
 
 pub async fn bootstrap_cp(
     client: &reqwest::Client,
@@ -169,12 +225,22 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         sudo_interactive: args.sudo_interactive,
     };
 
-    eprintln!("bootstrap cp: installing systemd unit and config");
     match &target {
         installer::bootstrap::InstallTarget::Local => {
+            eprintln!("bootstrap cp: installing systemd unit and config");
             installer::bootstrap::install_cp_local(&extracted, &env, &unit, &settings)?
         }
         installer::bootstrap::InstallTarget::Ssh(ssh) => {
+            eprintln!(
+                "bootstrap cp: installing systemd unit and config on {} (ssh may print connection info)",
+                ssh.destination()
+            );
+            let _progress = PeriodicStatus::start(
+                format!("bootstrap cp: installing on {}", ssh.destination()),
+                Duration::from_secs(10),
+                // Do not print periodic status while we might be prompting for a sudo password.
+                !args.sudo_interactive && ssh.options.batch_mode && io::stderr().is_terminal(),
+            );
             installer::bootstrap::install_cp_ssh(ssh, &extracted, &env, &unit, &settings)?
         }
     }
@@ -444,6 +510,12 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
     eprintln!(
         "bootstrap agent: installing on {} (ssh may print connection info)",
         ssh.destination()
+    );
+    let _progress = PeriodicStatus::start(
+        format!("bootstrap agent: installing on {}", ssh.destination()),
+        Duration::from_secs(10),
+        // Do not print periodic status while we might be prompting for a sudo password.
+        !args.sudo_interactive && ssh.options.batch_mode && io::stderr().is_terminal(),
     );
     installer::bootstrap::install_agent_ssh(
         &ssh,
