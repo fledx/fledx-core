@@ -418,6 +418,12 @@ pub struct AgentInstallSettings {
     pub data_dir: PathBuf,
     pub service_user: String,
     pub sudo_interactive: bool,
+    /// Whether to add the agent service user to the group that owns
+    /// `/var/run/docker.sock` on the target host.
+    ///
+    /// On most systems, access to the Docker daemon via the socket is
+    /// effectively root-equivalent.
+    pub add_to_docker_socket_group: bool,
 }
 
 pub fn install_agent_ssh(
@@ -457,11 +463,21 @@ pub fn install_agent_ssh(
     Ok(())
 }
 
-fn render_agent_install_script(settings: &AgentInstallSettings, remote_dir: &str, bin_path: &Path) -> String {
+fn render_agent_install_script(
+    settings: &AgentInstallSettings,
+    remote_dir: &str,
+    bin_path: &Path,
+) -> String {
     let env_path = settings.config_dir.join("fledx-agent.env");
     let bin_dir = bin_path.parent().unwrap_or_else(|| Path::new("/"));
     let agent_dir = settings.data_dir.join("agent");
     let volumes_dir = settings.data_dir.join("volumes");
+
+    let add_to_docker_socket_group = if settings.add_to_docker_socket_group {
+        "1"
+    } else {
+        "0"
+    };
 
     let remote_dir_q = sh_quote(remote_dir);
     let service_user_q = sh_quote(&settings.service_user);
@@ -479,34 +495,38 @@ set -eu
 REMOTE_DIR={remote_dir}
 SERVICE_USER={service_user}
 BIN_DIR={bin_dir}
-CONFIG_DIR={config_dir}
-AGENT_DIR={agent_dir}
-VOLUMES_DIR={volumes_dir}
-BIN_PATH={bin_path}
-ENV_PATH={env_path}
+	CONFIG_DIR={config_dir}
+	AGENT_DIR={agent_dir}
+	VOLUMES_DIR={volumes_dir}
+	BIN_PATH={bin_path}
+	ENV_PATH={env_path}
+	ADD_DOCKER_SOCKET_GROUP={add_to_docker_socket_group}
 
-cleanup() {{
-  rm -rf -- \"$REMOTE_DIR\"
-}}
-trap cleanup EXIT
+	cleanup() {{
+	  rm -rf -- \"$REMOTE_DIR\"
+	}}
+	trap cleanup EXIT
 
-if [ ! -S /var/run/docker.sock ]; then
-  echo \"docker socket not found at /var/run/docker.sock\" >&2
-  exit 1
-fi
+	if [ ! -S /var/run/docker.sock ]; then
+	  echo \"docker socket not found at /var/run/docker.sock\" >&2
+	  exit 1
+	fi
 
-docker_group=$(stat -c '%G' /var/run/docker.sock)
-if [ -z \"$docker_group\" ]; then
-  echo \"failed to determine docker socket group\" >&2
-  exit 1
-fi
+	useradd -r -s /bin/false \"$SERVICE_USER\" 2>/dev/null || true
 
-useradd -r -s /bin/false \"$SERVICE_USER\" 2>/dev/null || true
-usermod -a -G \"$docker_group\" \"$SERVICE_USER\"
+	if [ \"$ADD_DOCKER_SOCKET_GROUP\" = \"1\" ]; then
+	  docker_group=$(stat -c '%G' /var/run/docker.sock)
+	  if [ -z \"$docker_group\" ]; then
+	    echo \"failed to determine docker socket group\" >&2
+	    exit 1
+	  fi
 
-install -d -o root -g root \"$BIN_DIR\"
-install -d -o root -g root \"$CONFIG_DIR\"
-install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$AGENT_DIR\"
+	  usermod -a -G \"$docker_group\" \"$SERVICE_USER\"
+	fi
+
+	install -d -o root -g root \"$BIN_DIR\"
+	install -d -o root -g root \"$CONFIG_DIR\"
+	install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$AGENT_DIR\"
 install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$VOLUMES_DIR\"
 install -m 0755 \"$REMOTE_DIR/fledx-agent\" \"$BIN_PATH\"
 install -m 0600 \"$REMOTE_DIR/fledx-agent.env\" \"$ENV_PATH\"
@@ -519,11 +539,12 @@ systemctl enable --now fledx-agent
         bin_dir = bin_dir_q,
         config_dir = config_dir_q,
         agent_dir = agent_dir_q,
-        volumes_dir = volumes_dir_q,
-        bin_path = bin_path_q,
-        env_path = env_path_q,
-    )
-}
+	        volumes_dir = volumes_dir_q,
+	        bin_path = bin_path_q,
+	        env_path = env_path_q,
+	        add_to_docker_socket_group = add_to_docker_socket_group,
+	    )
+	}
 
 fn validate_linux_username(value: &str) -> anyhow::Result<()> {
     if value.is_empty() {
@@ -710,4 +731,3 @@ mod tests {
         assert!(env.contains("FLEDX_AGENT_ALLOW_INSECURE_HTTP=\"true\""));
     }
 }
-

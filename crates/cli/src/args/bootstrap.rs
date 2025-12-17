@@ -137,6 +137,16 @@ pub struct BootstrapAgentArgs {
     #[arg(long = "service-user", default_value = "fledx-agent")]
     pub service_user: String,
 
+    /// Do not add the service user to the Docker socket group.
+    ///
+    /// By default, bootstrap will add the agent service user to the group that
+    /// owns `/var/run/docker.sock` on the target host. On most systems this is
+    /// effectively root-equivalent access.
+    ///
+    /// Use this flag if you manage Docker socket permissions yourself.
+    #[arg(long = "no-docker-group", default_value_t = false)]
+    pub no_docker_group: bool,
+
     /// Node label in KEY=VALUE form (repeatable).
     #[arg(long = "label", visible_alias = "labels", value_name = "KEY=VALUE")]
     pub labels: Vec<String>,

@@ -353,6 +353,7 @@ pub async fn bootstrap_agent(
         data_dir: args.data_dir.clone(),
         service_user: args.service_user.clone(),
         sudo_interactive: args.sudo_interactive,
+        add_to_docker_socket_group: !args.no_docker_group,
     };
 
     installer::bootstrap::install_agent_ssh(
@@ -505,26 +506,27 @@ mod tests {
 
     #[test]
     fn agent_bin_path_defaults_to_bin_dir() {
-        let args = BootstrapAgentArgs {
-            ssh_host: "root@example.com".into(),
-            ssh_user: None,
-            ssh_port: 22,
-            ssh_identity_file: None,
-            name: None,
-            version: None,
-            bin_dir: PathBuf::from("/usr/local/bin"),
-            install_path: None,
-            config_dir: PathBuf::from("/etc/fledx"),
-            data_dir: PathBuf::from("/var/lib/fledx"),
-            service_user: "fledx-agent".into(),
-            labels: Vec::new(),
-            capacity_cpu_millis: None,
-            capacity_memory_bytes: None,
-            sudo_interactive: false,
-            insecure_allow_unsigned: false,
-            no_wait: true,
-            wait_timeout_secs: 1,
-        };
+	        let args = BootstrapAgentArgs {
+	            ssh_host: "root@example.com".into(),
+	            ssh_user: None,
+	            ssh_port: 22,
+	            ssh_identity_file: None,
+	            name: None,
+	            version: None,
+	            bin_dir: PathBuf::from("/usr/local/bin"),
+	            install_path: None,
+	            config_dir: PathBuf::from("/etc/fledx"),
+	            data_dir: PathBuf::from("/var/lib/fledx"),
+	            service_user: "fledx-agent".into(),
+	            no_docker_group: false,
+	            labels: Vec::new(),
+	            capacity_cpu_millis: None,
+	            capacity_memory_bytes: None,
+	            sudo_interactive: false,
+	            insecure_allow_unsigned: false,
+	            no_wait: true,
+	            wait_timeout_secs: 1,
+	        };
 
         let path = agent_bin_path(&args).expect("path");
         assert_eq!(path, PathBuf::from("/usr/local/bin/fledx-agent"));
@@ -532,26 +534,27 @@ mod tests {
 
     #[test]
     fn agent_bin_path_respects_install_path() {
-        let args = BootstrapAgentArgs {
-            ssh_host: "root@example.com".into(),
-            ssh_user: None,
-            ssh_port: 22,
-            ssh_identity_file: None,
-            name: None,
-            version: None,
-            bin_dir: PathBuf::from("/usr/local/bin"),
-            install_path: Some(PathBuf::from("/opt/fledx/bin/fledx-agent")),
-            config_dir: PathBuf::from("/etc/fledx"),
-            data_dir: PathBuf::from("/var/lib/fledx"),
-            service_user: "fledx-agent".into(),
-            labels: Vec::new(),
-            capacity_cpu_millis: None,
-            capacity_memory_bytes: None,
-            sudo_interactive: false,
-            insecure_allow_unsigned: false,
-            no_wait: true,
-            wait_timeout_secs: 1,
-        };
+	        let args = BootstrapAgentArgs {
+	            ssh_host: "root@example.com".into(),
+	            ssh_user: None,
+	            ssh_port: 22,
+	            ssh_identity_file: None,
+	            name: None,
+	            version: None,
+	            bin_dir: PathBuf::from("/usr/local/bin"),
+	            install_path: Some(PathBuf::from("/opt/fledx/bin/fledx-agent")),
+	            config_dir: PathBuf::from("/etc/fledx"),
+	            data_dir: PathBuf::from("/var/lib/fledx"),
+	            service_user: "fledx-agent".into(),
+	            no_docker_group: false,
+	            labels: Vec::new(),
+	            capacity_cpu_millis: None,
+	            capacity_memory_bytes: None,
+	            sudo_interactive: false,
+	            insecure_allow_unsigned: false,
+	            no_wait: true,
+	            wait_timeout_secs: 1,
+	        };
 
         let path = agent_bin_path(&args).expect("path");
         assert_eq!(path, PathBuf::from("/opt/fledx/bin/fledx-agent"));
@@ -559,26 +562,27 @@ mod tests {
 
     #[test]
     fn agent_bin_path_rejects_missing_filename() {
-        let args = BootstrapAgentArgs {
-            ssh_host: "root@example.com".into(),
-            ssh_user: None,
-            ssh_port: 22,
-            ssh_identity_file: None,
-            name: None,
-            version: None,
-            bin_dir: PathBuf::from("/usr/local/bin"),
-            install_path: Some(PathBuf::from("/")),
-            config_dir: PathBuf::from("/etc/fledx"),
-            data_dir: PathBuf::from("/var/lib/fledx"),
-            service_user: "fledx-agent".into(),
-            labels: Vec::new(),
-            capacity_cpu_millis: None,
-            capacity_memory_bytes: None,
-            sudo_interactive: false,
-            insecure_allow_unsigned: false,
-            no_wait: true,
-            wait_timeout_secs: 1,
-        };
+	        let args = BootstrapAgentArgs {
+	            ssh_host: "root@example.com".into(),
+	            ssh_user: None,
+	            ssh_port: 22,
+	            ssh_identity_file: None,
+	            name: None,
+	            version: None,
+	            bin_dir: PathBuf::from("/usr/local/bin"),
+	            install_path: Some(PathBuf::from("/")),
+	            config_dir: PathBuf::from("/etc/fledx"),
+	            data_dir: PathBuf::from("/var/lib/fledx"),
+	            service_user: "fledx-agent".into(),
+	            no_docker_group: false,
+	            labels: Vec::new(),
+	            capacity_cpu_millis: None,
+	            capacity_memory_bytes: None,
+	            sudo_interactive: false,
+	            insecure_allow_unsigned: false,
+	            no_wait: true,
+	            wait_timeout_secs: 1,
+	        };
 
         let err = agent_bin_path(&args).expect_err("should fail");
         assert!(err.to_string().contains("missing file name"));
