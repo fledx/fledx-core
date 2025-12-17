@@ -9,7 +9,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Bootstrap and profile workflows for operator/DevOps installations:
+    - `fledx bootstrap cp --cp-hostname <HOST> [--ssh-host ...]`: installs and configures
+      the control plane (local or via SSH), writes a systemd unit + env file, and
+      waits for readiness by default (`--no-wait`, `--wait-timeout-secs`).
+    - `fledx bootstrap agent --ssh-host <HOST> [--name ...]`: installs an agent via SSH,
+      auto-registers it with the control plane, and sets up a systemd unit + env file
+      (waits for readiness by default).
+    - Version selection:
+        - `bootstrap cp`: defaults to the latest release (or use `--version latest` /
+          `--version <TAG>`).
+        - `bootstrap agent`: defaults to the control-plane version (queried via `GET /health`),
+          or use `--version latest` / `--version <TAG>`.
+    - SSH / sudo behavior:
+        - SSH target via `--ssh-host`, optional `--ssh-user`, `--ssh-port`,
+          `--ssh-identity-file`.
+        - Sudo defaults to non-interactive (`sudo -n`); use `--sudo-interactive` to allow
+          password prompts.
+    - Local CLI profiles for repeatable operations:
+        - `fledx profile set|show|list|set-default` manages local profiles (control-plane URL,
+          operator header/token, registration token).
+        - Global `--profile <NAME>` selects a profile for all commands.
+        - Override precedence: CLI flags > environment variables > profile > defaults.
+    - Local config file / secrets handling:
+        - Expected path: `$XDG_CONFIG_HOME/fledx/config.toml` or `~/.config/fledx/config.toml`.
+        - On Unix, overly-permissive config files are rejected (must be effectively `0600`)
+          to avoid accidental token leakage.
+
+> WARNING (Supply chain / security boundary):
+> `--insecure-allow-unsigned` allows installs without signature verification (SHA256 only).
+> This significantly weakens the trust model and should only be used for dev or legacy
+> releases. In production, signature verification is the hard boundary intended to
+> detect tampering of release assets.
+
 ### Changed
+
+- Global CLI configuration can now be sourced from local profiles when using
+  `--profile` (precedence: CLI flags > environment variables > profile > defaults).
+- On Unix, the local profile config file must have private permissions; config
+  files readable by group/other are rejected to reduce accidental token leaks.
 
 ## [0.3.0] - 2025-12-15
 
