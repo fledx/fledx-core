@@ -85,6 +85,21 @@ pub fn extract_single_file(
             .and_then(|s| s.to_str())
             .unwrap_or_default();
         if file_name == bin_name {
+            let normalized = path.strip_prefix(".").unwrap_or(&path);
+            if normalized != Path::new(bin_name) {
+                continue;
+            }
+
+            let entry_type = entry.header().entry_type();
+            if entry_type != tar::EntryType::Regular {
+                anyhow::bail!(
+                    "archive {} contained non-regular entry '{}' for expected binary '{}'",
+                    archive_path.display(),
+                    path.display(),
+                    bin_name
+                );
+            }
+
             let dest = out_dir.join(bin_name);
             entry.unpack(&dest)?;
             #[cfg(unix)]
@@ -106,6 +121,8 @@ pub fn extract_single_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
 
     #[test]
     fn parse_sha256_file_reads_first_token() {
@@ -163,5 +180,93 @@ mod tests {
         assert!(msg.contains("deadbeef"), "{msg}");
         assert!(msg.contains(&actual), "{msg}");
     }
-}
 
+    fn write_tar_gz_entry(
+        archive_path: &Path,
+        entry_path: &str,
+        entry_type: tar::EntryType,
+        link_name: Option<&str>,
+        payload: &[u8],
+    ) {
+        let file = fs::File::create(archive_path).expect("create tar.gz");
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut builder = tar::Builder::new(encoder);
+
+        let mut header = tar::Header::new_gnu();
+        header.set_entry_type(entry_type);
+        header.set_mode(0o755);
+        header.set_size(payload.len() as u64);
+        if let Some(link_name) = link_name {
+            header.set_link_name(link_name).expect("set link name");
+        }
+        header.set_cksum();
+        builder
+            .append_data(&mut header, entry_path, payload)
+            .expect("append entry");
+
+        builder.finish().expect("finish tar");
+        let encoder = builder.into_inner().expect("into inner");
+        encoder.finish().expect("finish gzip");
+    }
+
+    #[test]
+    fn extract_single_file_rejects_symlink_entries() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("asset.tar.gz");
+        write_tar_gz_entry(
+            &archive,
+            "fledx-cp",
+            tar::EntryType::Symlink,
+            Some("/etc/passwd"),
+            &[],
+        );
+
+        let out = dir.path().join("out");
+        fs::create_dir_all(&out).expect("out dir");
+
+        let err = extract_single_file(&archive, "fledx-cp", &out).expect_err("should fail");
+        assert!(err.to_string().contains("non-regular"), "{err}");
+    }
+
+    #[test]
+    fn extract_single_file_requires_top_level_entry() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("asset.tar.gz");
+        write_tar_gz_entry(
+            &archive,
+            "bin/fledx-cp",
+            tar::EntryType::Regular,
+            None,
+            b"hello",
+        );
+
+        let out = dir.path().join("out");
+        fs::create_dir_all(&out).expect("out dir");
+
+        let err = extract_single_file(&archive, "fledx-cp", &out).expect_err("should fail");
+        assert!(
+            err.to_string().contains("did not contain expected binary"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn extract_single_file_accepts_dot_prefixed_entry() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("asset.tar.gz");
+        write_tar_gz_entry(
+            &archive,
+            "./fledx-cp",
+            tar::EntryType::Regular,
+            None,
+            b"hello",
+        );
+
+        let out = dir.path().join("out");
+        fs::create_dir_all(&out).expect("out dir");
+
+        let extracted = extract_single_file(&archive, "fledx-cp", &out).expect("extract");
+        let payload = fs::read(&extracted).expect("read extracted");
+        assert_eq!(payload, b"hello");
+    }
+}
