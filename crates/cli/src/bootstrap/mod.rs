@@ -348,12 +348,14 @@ pub async fn bootstrap_agent(
         client,
         &globals.control_plane_url,
         &registration_token,
-        &node_name,
-        arch.as_str(),
-        "linux",
-        labels,
-        capacity,
-        &version,
+        installer::bootstrap::RegisterNodeInputs {
+            name: &node_name,
+            arch: arch.as_str(),
+            os: "linux",
+            labels,
+            capacity,
+            agent_version: &version,
+        },
     )
     .await?;
 

@@ -229,13 +229,17 @@ pub async fn register_node(
     client: &reqwest::Client,
     base: &str,
     registration_token: &str,
-    name: &str,
-    arch: &str,
-    os: &str,
-    labels: Option<HashMap<String, String>>,
-    capacity: Option<common::api::CapacityHints>,
-    agent_version: &str,
+    input: RegisterNodeInputs<'_>,
 ) -> anyhow::Result<(uuid::Uuid, String, common::api::TunnelEndpoint)> {
+    let RegisterNodeInputs {
+        name,
+        arch,
+        os,
+        labels,
+        capacity,
+        agent_version,
+    } = input;
+
     let base = base.trim_end_matches('/');
     let url = format!("{base}/api/v1/nodes/register");
     let payload = serde_json::json!({
@@ -262,6 +266,15 @@ pub async fn register_node(
         .tunnel
         .ok_or_else(|| anyhow::anyhow!("control-plane did not return a tunnel endpoint"))?;
     Ok((body.node_id, body.node_token, tunnel))
+}
+
+pub struct RegisterNodeInputs<'a> {
+    pub name: &'a str,
+    pub arch: &'a str,
+    pub os: &'a str,
+    pub labels: Option<HashMap<String, String>>,
+    pub capacity: Option<common::api::CapacityHints>,
+    pub agent_version: &'a str,
 }
 
 pub fn parse_labels(values: &[String]) -> anyhow::Result<Option<HashMap<String, String>>> {
