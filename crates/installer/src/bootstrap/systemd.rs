@@ -352,6 +352,16 @@ pub fn install_cp_ssh(
     let local_unit = local_dir.path().join("fledx-cp.service");
     write_file_with_mode(&local_unit, unit, 0o644)?;
 
+    // IMPORTANT: Do not execute multi-line scripts via `ssh host sh -c <script>`.
+    // Some SSH configurations inject banners/motd text, and multi-line payloads
+    // can be split by the remote shell in surprising ways (leading to parts of
+    // the install running without sudo).
+    //
+    // Upload the script as a file and execute it via `sh <path>` under sudo.
+    let local_script = local_dir.path().join("install-cp.sh");
+    let script = render_cp_install_script(settings, &remote_dir);
+    write_file_with_mode(&local_script, &script, 0o700)?;
+
     ssh.upload_file(&local_bin, &PathBuf::from(format!("{remote_dir}/fledx-cp")))?;
     ssh.upload_file(
         &local_env,
@@ -362,7 +372,9 @@ pub fn install_cp_ssh(
         &PathBuf::from(format!("{remote_dir}/fledx-cp.service")),
     )?;
 
-    ssh.run(sudo, &render_cp_install_script(settings, &remote_dir))?;
+    let remote_script = PathBuf::from(format!("{remote_dir}/install-cp.sh"));
+    ssh.upload_file(&local_script, &remote_script)?;
+    ssh.run(sudo, &format!("sh {}", sh_quote_path(&remote_script)))?;
     Ok(())
 }
 
@@ -451,6 +463,10 @@ pub fn install_agent_ssh(
     let local_unit = local_dir.path().join("fledx-agent.service");
     write_file_with_mode(&local_unit, unit, 0o644)?;
 
+    let local_script = local_dir.path().join("install-agent.sh");
+    let script = render_agent_install_script(settings, &remote_dir, bin_path);
+    write_file_with_mode(&local_script, &script, 0o700)?;
+
     ssh.upload_file(
         &local_bin,
         &PathBuf::from(format!("{remote_dir}/fledx-agent")),
@@ -464,10 +480,9 @@ pub fn install_agent_ssh(
         &PathBuf::from(format!("{remote_dir}/fledx-agent.service")),
     )?;
 
-    ssh.run(
-        sudo,
-        &render_agent_install_script(settings, &remote_dir, bin_path),
-    )?;
+    let remote_script = PathBuf::from(format!("{remote_dir}/install-agent.sh"));
+    ssh.upload_file(&local_script, &remote_script)?;
+    ssh.run(sudo, &format!("sh {}", sh_quote_path(&remote_script)))?;
     Ok(())
 }
 
