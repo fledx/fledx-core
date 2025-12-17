@@ -214,7 +214,7 @@ fn systemd_debug_bundle_local(service: &str) -> String {
         systemd_journal_local(&unit).unwrap_or_else(|e| e.to_string())
     );
 
-    out
+    redact_debug_bundle(&out)
 }
 
 fn systemd_status_local(service: &str) -> anyhow::Result<String> {
@@ -287,12 +287,78 @@ true
 ",
         service = service_q
     );
-    ssh.run_output(&script).with_context(|| {
+    let raw = ssh.run_output(&script).with_context(|| {
         format!(
             "failed to collect systemd debug bundle on {}",
             ssh.destination()
         )
-    })
+    })?;
+    Ok(redact_debug_bundle(&raw))
+}
+
+fn redact_debug_bundle(bundle: &str) -> String {
+    // The debug bundle can include journal entries. In failure modes, systemd
+    // may log the contents of problematic `EnvironmentFile=` lines (including
+    // tokens). Best-effort redact known secret-bearing values.
+    //
+    // Keep this simple and dependency-free: operate line-by-line and scrub
+    // common patterns.
+    const ENV_VARS: [&str; 4] = [
+        "FLEDX_CP_REGISTRATION_TOKEN",
+        "FLEDX_CP_OPERATOR_TOKENS",
+        "FLEDX_CP_TOKENS_PEPPER",
+        "FLEDX_AGENT_NODE_TOKEN",
+    ];
+
+    let mut out = String::with_capacity(bundle.len());
+    for line in bundle.lines() {
+        let mut redacted = line.to_string();
+
+        for name in ENV_VARS {
+            let needle = format!("{name}=");
+            if let Some(idx) = redacted.find(&needle) {
+                let value_start = idx + needle.len();
+                let rest = redacted[value_start..].trim_start();
+                let replacement = if rest.starts_with('"') {
+                    "\"<redacted>\""
+                } else {
+                    "<redacted>"
+                };
+
+                redacted.truncate(value_start);
+                redacted.push_str(replacement);
+            }
+        }
+
+        redacted = redact_bearer_tokens(&redacted);
+
+        out.push_str(&redacted);
+        out.push('\n');
+    }
+    out
+}
+
+fn redact_bearer_tokens(line: &str) -> String {
+    fn redact_with_prefix(mut line: &str, prefix: &str) -> String {
+        let mut out = String::with_capacity(line.len());
+        while let Some(idx) = line.find(prefix) {
+            out.push_str(&line[..idx]);
+            out.push_str(prefix);
+            out.push_str("<redacted>");
+
+            let after = &line[idx + prefix.len()..];
+            let token_end = after
+                .find(|ch: char| ch.is_whitespace() || ch == '"' || ch == '\'' || ch == ',')
+                .unwrap_or(after.len());
+            line = &after[token_end..];
+        }
+        out.push_str(line);
+        out
+    }
+
+    // Common header patterns we may see in logs.
+    let line = redact_with_prefix(line, "Bearer ");
+    redact_with_prefix(&line, "bearer ")
 }
 
 pub fn render_agent_env(input: &AgentEnvInputs) -> String {
@@ -970,6 +1036,33 @@ mod tests {
     #[test]
     fn systemd_quote_env_value_escapes_quotes_and_backslashes() {
         assert_eq!(systemd_quote_env_value("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
+
+    #[test]
+    fn redact_debug_bundle_redacts_known_env_vars() {
+        let raw = "\
+ok
+FLEDX_AGENT_NODE_TOKEN=\"deadbeef\"
+FLEDX_CP_REGISTRATION_TOKEN=deadbeef
+";
+
+        let redacted = redact_debug_bundle(raw);
+        assert!(redacted.contains("FLEDX_AGENT_NODE_TOKEN=\"<redacted>\""));
+        assert!(redacted.contains("FLEDX_CP_REGISTRATION_TOKEN=<redacted>"));
+        assert!(!redacted.contains("deadbeef"));
+    }
+
+    #[test]
+    fn redact_debug_bundle_redacts_bearer_tokens() {
+        let raw = "\
+authorization: Bearer abcdef
+authorization: bearer qwerty
+";
+        let redacted = redact_debug_bundle(raw);
+        assert!(redacted.contains("authorization: Bearer <redacted>"));
+        assert!(redacted.contains("authorization: bearer <redacted>"));
+        assert!(!redacted.contains("abcdef"));
+        assert!(!redacted.contains("qwerty"));
     }
 
     #[test]

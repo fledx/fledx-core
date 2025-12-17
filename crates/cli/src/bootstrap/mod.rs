@@ -75,6 +75,29 @@ pub async fn bootstrap_cp(
         "bootstrap cp: target control-plane host {}",
         args.cp_hostname
     );
+
+    if args.insecure_allow_unsigned {
+        eprintln!(
+            "WARNING: --insecure-allow-unsigned is set; skipping release signature verification \
+(SHA256 only)."
+        );
+    }
+    if args.ssh_host.is_some() {
+        match args.ssh_host_key_checking {
+            crate::args::SshHostKeyChecking::Strict => {}
+            crate::args::SshHostKeyChecking::AcceptNew => {
+                eprintln!(
+                    "WARNING: SSH host key checking is accept-new (TOFU). This is vulnerable to \
+MITM on first connect; prefer --ssh-host-key-checking strict in production."
+                );
+            }
+            crate::args::SshHostKeyChecking::Off => {
+                eprintln!(
+                    "WARNING: SSH host key checking is disabled (--ssh-host-key-checking off)."
+                );
+            }
+        }
+    }
     let target = match &args.ssh_host {
         Some(host) => {
             let mut ssh = installer::bootstrap::SshTarget::from_user_at_host(
@@ -322,6 +345,41 @@ pub async fn bootstrap_agent(
         "bootstrap agent: control-plane url {}",
         globals.control_plane_url
     );
+    if globals
+        .control_plane_url
+        .trim_start()
+        .starts_with("http://")
+    {
+        eprintln!(
+            "WARNING: control-plane URL uses HTTP (not HTTPS). The agent will be configured with \
+FLEDX_AGENT_ALLOW_INSECURE_HTTP=true."
+        );
+    }
+    if args.insecure_allow_unsigned {
+        eprintln!(
+            "WARNING: --insecure-allow-unsigned is set; skipping release signature verification \
+(SHA256 only)."
+        );
+    }
+    match args.ssh_host_key_checking {
+        crate::args::SshHostKeyChecking::Strict => {}
+        crate::args::SshHostKeyChecking::AcceptNew => {
+            eprintln!(
+                "WARNING: SSH host key checking is accept-new (TOFU). This is vulnerable to \
+MITM on first connect; prefer --ssh-host-key-checking strict in production."
+            );
+        }
+        crate::args::SshHostKeyChecking::Off => {
+            eprintln!("WARNING: SSH host key checking is disabled (--ssh-host-key-checking off).");
+        }
+    }
+    if !args.no_docker_group {
+        eprintln!(
+            "WARNING: bootstrap will add the agent service user to the group that owns \
+/var/run/docker.sock. On most systems this is effectively root-equivalent access. \
+Use --no-docker-group to skip this step."
+        );
+    }
     let registration_token =
         resolve_registration_token_for_bootstrap(profiles, &selected_profile, globals)?;
 
