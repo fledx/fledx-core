@@ -12,6 +12,43 @@ use tokio::time::{sleep, Instant};
 use super::{looks_like_noninteractive_sudo_failure, run_capture, sh_quote, sh_quote_path};
 use super::{InstallTarget, SshTarget, SudoMode};
 
+fn normalize_unit_name(unit: &str) -> String {
+    let trimmed = unit.trim();
+    if trimmed.is_empty() {
+        return trimmed.to_string();
+    }
+    if trimmed.contains('.') {
+        return trimmed.to_string();
+    }
+    format!("{trimmed}.service")
+}
+
+fn parse_systemctl_is_active_output(output: &str) -> String {
+    // `systemctl is-active` returns one token like:
+    // active, inactive, failed, activating, deactivating, reloading, unknown.
+    //
+    // Some SSH targets prepend banners/MOTD text to stdout, so we scan tokens
+    // and pick the last recognized state.
+    const STATES: [&str; 7] = [
+        "active",
+        "inactive",
+        "failed",
+        "activating",
+        "deactivating",
+        "reloading",
+        "unknown",
+    ];
+
+    for token in output.split_whitespace().rev() {
+        let token = token.trim().to_ascii_lowercase();
+        if STATES.iter().any(|s| *s == token) {
+            return token;
+        }
+    }
+
+    output.trim().to_string()
+}
+
 pub async fn wait_for_systemd_active(
     target: &InstallTarget,
     service: &str,
@@ -87,37 +124,41 @@ pub async fn wait_for_systemd_active_ssh(
 }
 
 fn systemd_state_local(service: &str) -> anyhow::Result<String> {
+    let unit = normalize_unit_name(service);
     let mut cmd = Command::new("systemctl");
-    cmd.arg("is-active").arg(service);
+    cmd.arg("is-active").arg(unit);
     let output = run_capture(cmd)?;
     Ok(output.stdout.trim().to_string())
 }
 
 fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
-    ssh.run_output(&format!("systemctl is-active -- {}", sh_quote(service)))
+    let unit = normalize_unit_name(service);
+    let raw = ssh.run_output(&format!("systemctl is-active -- {}", sh_quote(&unit)))?;
+    Ok(parse_systemctl_is_active_output(&raw))
 }
 
 fn systemd_debug_bundle_local(service: &str) -> String {
+    let unit = normalize_unit_name(service);
     let mut out = String::new();
     let _ = writeln!(&mut out, "systemctl is-active:");
     let _ = writeln!(
         &mut out,
         "{}",
-        systemd_state_local(service).unwrap_or_else(|e| e.to_string())
+        systemd_state_local(&unit).unwrap_or_else(|e| e.to_string())
     );
 
     let _ = writeln!(&mut out, "\nsystemctl status:");
     let _ = writeln!(
         &mut out,
         "{}",
-        systemd_status_local(service).unwrap_or_else(|e| e.to_string())
+        systemd_status_local(&unit).unwrap_or_else(|e| e.to_string())
     );
 
     let _ = writeln!(&mut out, "\njournalctl (best-effort):");
     let _ = writeln!(
         &mut out,
         "{}",
-        systemd_journal_local(service).unwrap_or_else(|e| e.to_string())
+        systemd_journal_local(&unit).unwrap_or_else(|e| e.to_string())
     );
 
     out
@@ -160,7 +201,8 @@ fn systemd_journal_local(service: &str) -> anyhow::Result<String> {
 fn systemd_debug_bundle_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
     // Best-effort bundle that never fails the SSH command. We try both
     // non-sudo and sudo(-n) journalctl access.
-    let service_q = sh_quote(service);
+    let unit = normalize_unit_name(service);
+    let service_q = sh_quote(&unit);
     let script = format!(
         "\
 echo 'systemctl is-active:'
@@ -893,5 +935,27 @@ mod tests {
 
         assert!(env.contains("FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=\"/var/lib/fledx/volumes dir\""));
         assert!(env.contains("FLEDX_AGENT_ALLOW_INSECURE_HTTP=\"true\""));
+    }
+
+    #[test]
+    fn normalize_unit_name_appends_service_suffix() {
+        assert_eq!(normalize_unit_name("fledx-agent"), "fledx-agent.service");
+        assert_eq!(
+            normalize_unit_name("fledx-agent.service"),
+            "fledx-agent.service"
+        );
+    }
+
+    #[test]
+    fn parse_systemctl_is_active_output_prefers_last_known_token() {
+        assert_eq!(parse_systemctl_is_active_output("active\n"), "active");
+        assert_eq!(
+            parse_systemctl_is_active_output("Welcome!\nactive\n"),
+            "active"
+        );
+        assert_eq!(
+            parse_systemctl_is_active_output("active\nsome banner"),
+            "active"
+        );
     }
 }
