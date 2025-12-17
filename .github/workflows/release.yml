@@ -20,7 +20,9 @@ jobs:
     steps:
       - name: Get version from tag
         id: get_version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         id: create_release
@@ -65,7 +67,9 @@ jobs:
           shared-key: ${{ runner.os }}-${{ matrix.target }}
 
       - name: Export version
-        run: echo "VERSION=${{ needs.create-release.outputs.version }}" >> $GITHUB_ENV
+        run: |
+          version="${{ needs.create-release.outputs.version }}"
+          echo "VERSION=${version#v}" >> "$GITHUB_ENV"
 
       - name: Validate tag matches Cargo versions
         run: |
