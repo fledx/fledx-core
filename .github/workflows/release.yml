@@ -93,9 +93,14 @@ jobs:
       - name: Sign checksums
         env:
           FLEDX_RELEASE_SIGNING_PRIVATE_KEY: ${{ secrets.FLEDX_RELEASE_SIGNING_PRIVATE_KEY }}
+          FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS: ${{ secrets.FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS }}
         run: |
           if [ -z "$FLEDX_RELEASE_SIGNING_PRIVATE_KEY" ]; then
             echo "missing secret FLEDX_RELEASE_SIGNING_PRIVATE_KEY" >&2
+            exit 1
+          fi
+          if [ -z "$FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS" ]; then
+            echo "missing secret FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS" >&2
             exit 1
           fi
 
@@ -109,6 +114,30 @@ jobs:
             if [ -n "$key_header" ]; then
               echo "Got: $key_header" >&2
             fi
+            exit 1
+          fi
+
+          pubkey_hex="$(openssl pkey -in signing-key.pem -pubout -outform DER 2>/dev/null | tail -c 32 | xxd -p -c 32 | tr -d '\n' | tr 'A-F' 'a-f')"
+          found=0
+          IFS=',' read -ra keys <<< "$FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS"
+          for key in "${keys[@]}"; do
+            key="$(printf '%s' "$key" | tr -d '[:space:]' | tr 'A-F' 'a-f')"
+            key="${key#0x}"
+            if [ -z "$key" ]; then
+              continue
+            fi
+            if ! printf '%s' "$key" | grep -Eq '^[0-9a-f]{64}$'; then
+              echo "invalid entry in FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS: $key" >&2
+              exit 1
+            fi
+            if [ "$key" = "$pubkey_hex" ]; then
+              found=1
+              break
+            fi
+          done
+          if [ "$found" -ne 1 ]; then
+            echo "FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS does not include the public key derived from FLEDX_RELEASE_SIGNING_PRIVATE_KEY." >&2
+            echo "Derived public key (hex): $pubkey_hex" >&2
             exit 1
           fi
 

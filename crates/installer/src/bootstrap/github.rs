@@ -121,6 +121,36 @@ const RELEASE_SIGNING_PUBKEYS_ED25519_ENV: &str = "FLEDX_RELEASE_SIGNING_ED25519
 const RELEASE_SIGNING_PUBKEYS_ED25519_COMPILED: Option<&str> =
     option_env!("FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS");
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReleaseSigningKeysSource {
+    Compiled,
+    Environment,
+    None,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ReleaseSigningKeysInfo {
+    source: ReleaseSigningKeysSource,
+    env_present: bool,
+}
+
+fn describe_release_signing_keys_source(info: ReleaseSigningKeysInfo) -> String {
+    let base = match info.source {
+        ReleaseSigningKeysSource::Compiled => "build-time embedded keys",
+        ReleaseSigningKeysSource::Environment => "runtime environment variable",
+        ReleaseSigningKeysSource::None => "not configured",
+    };
+
+    if info.source == ReleaseSigningKeysSource::Compiled && info.env_present {
+        format!(
+            "{} (runtime {} is set but ignored)",
+            base, RELEASE_SIGNING_PUBKEYS_ED25519_ENV
+        )
+    } else {
+        base.to_string()
+    }
+}
+
 fn parse_hex_n<const N: usize>(value: &str) -> anyhow::Result<[u8; N]> {
     let trimmed = value.trim();
     let without_prefix = trimmed
@@ -144,19 +174,29 @@ fn parse_hex_n<const N: usize>(value: &str) -> anyhow::Result<[u8; N]> {
         let lo = (chunk[1] as char)
             .to_digit(16)
             .ok_or_else(|| anyhow::anyhow!("invalid hex character '{}'", chunk[1] as char))?;
-        out[idx] = ((hi << 4) | lo) as u8;
+    out[idx] = ((hi << 4) | lo) as u8;
     }
     Ok(out)
 }
 
-fn load_release_signing_keys_ed25519() -> anyhow::Result<Vec<VerifyingKey>> {
+fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, ReleaseSigningKeysInfo)> {
     let mut keys = std::collections::HashSet::<[u8; 32]>::new();
 
-    let raw = match RELEASE_SIGNING_PUBKEYS_ED25519_COMPILED {
-        Some(compiled) => Some(std::borrow::Cow::Borrowed(compiled)),
-        None => std::env::var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV)
-            .ok()
-            .map(std::borrow::Cow::Owned),
+    let compiled = RELEASE_SIGNING_PUBKEYS_ED25519_COMPILED
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let env_value = std::env::var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let env_present = env_value.is_some();
+    let (raw, source) = match compiled {
+        Some(compiled) => (Some(std::borrow::Cow::Borrowed(compiled)), ReleaseSigningKeysSource::Compiled),
+        None => match env_value {
+            Some(env_value) => (Some(std::borrow::Cow::Owned(env_value)), ReleaseSigningKeysSource::Environment),
+            None => (None, ReleaseSigningKeysSource::None),
+        },
     };
 
     if let Some(raw) = raw {
@@ -181,7 +221,13 @@ fn load_release_signing_keys_ed25519() -> anyhow::Result<Vec<VerifyingKey>> {
             VerifyingKey::from_bytes(&key).context("invalid ed25519 public key bytes")?,
         );
     }
-    Ok(verifying)
+    Ok((
+        verifying,
+        ReleaseSigningKeysInfo {
+            source,
+            env_present,
+        },
+    ))
 }
 
 fn verify_ed25519_detached_signature_with_any_key(
@@ -200,15 +246,17 @@ pub fn verify_signed_sha256(
     sha_file: &Path,
     sha_sig_file: &Path,
 ) -> anyhow::Result<()> {
-    let keys = load_release_signing_keys_ed25519()?;
+    let (keys, key_info) = load_release_signing_keys_ed25519()?;
     if keys.is_empty() {
         anyhow::bail!(
             "release signature verification is enabled but no trusted ed25519 \
 release signing keys are configured.\n\
 Set {} to a comma-separated list of 32-byte hex public keys (64 hex chars), \
 or pass --insecure-allow-unsigned to skip signature verification.\n\
+\nkey source: {}\n\
 \nrepo: {}\ntag: {}\nasset: {}",
             RELEASE_SIGNING_PUBKEYS_ED25519_ENV,
+            describe_release_signing_keys_source(key_info),
             repo,
             tag,
             asset
@@ -255,6 +303,7 @@ bytes (e.g. `openssl pkeyutl -sign -rawin`).",
             "signature verification failed for {}@{} asset {}.\n\
 Hint: ensure the release contains a valid {} signature file and that {} \
 contains the correct public key.\n\
+\nkey source: {}\n\
 \nsha256 file: {}\nsignature file: {}",
             repo,
             tag,
@@ -264,6 +313,7 @@ contains the correct public key.\n\
                 .and_then(|name| name.to_str())
                 .unwrap_or("*.sig"),
             RELEASE_SIGNING_PUBKEYS_ED25519_ENV,
+            describe_release_signing_keys_source(key_info),
             sha_file.display(),
             sha_sig_file.display()
         );
