@@ -15,6 +15,10 @@ pub async fn bootstrap_cp(
     globals: &crate::GlobalArgs,
     args: BootstrapCpArgs,
 ) -> anyhow::Result<()> {
+    eprintln!(
+        "bootstrap cp: target control-plane host {}",
+        args.cp_hostname
+    );
     let target = match &args.ssh_host {
         Some(host) => {
             let mut ssh = installer::bootstrap::SshTarget::from_user_at_host(
@@ -43,6 +47,7 @@ pub async fn bootstrap_cp(
     };
 
     let arch = target.detect_arch(args.sudo_interactive)?;
+    eprintln!("bootstrap cp: detected arch {}", arch.as_str());
 
     let release =
         installer::bootstrap::fetch_release(client, CORE_REPO, args.version.as_deref()).await?;
@@ -164,6 +169,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         sudo_interactive: args.sudo_interactive,
     };
 
+    eprintln!("bootstrap cp: installing systemd unit and config");
     match &target {
         installer::bootstrap::InstallTarget::Local => {
             installer::bootstrap::install_cp_local(&extracted, &env, &unit, &settings)?
@@ -246,6 +252,10 @@ pub async fn bootstrap_agent(
     globals: &crate::GlobalArgs,
     args: BootstrapAgentArgs,
 ) -> anyhow::Result<()> {
+    eprintln!(
+        "bootstrap agent: control-plane url {}",
+        globals.control_plane_url
+    );
     let registration_token =
         resolve_registration_token_for_bootstrap(profiles, &selected_profile, globals)?;
 
@@ -275,8 +285,13 @@ pub async fn bootstrap_agent(
         .await?;
     }
 
+    eprintln!(
+        "bootstrap agent: detecting remote arch on {}",
+        ssh.destination()
+    );
     let arch =
         installer::bootstrap::InstallTarget::Ssh(ssh.clone()).detect_arch(args.sudo_interactive)?;
+    eprintln!("bootstrap agent: detected arch {}", arch.as_str());
 
     let requested_from_control_plane = args.version.is_none();
     let requested_version = match args.version.as_deref() {
@@ -426,6 +441,10 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         add_to_docker_socket_group: !args.no_docker_group,
     };
 
+    eprintln!(
+        "bootstrap agent: installing on {} (ssh may print connection info)",
+        ssh.destination()
+    );
     installer::bootstrap::install_agent_ssh(
         &ssh,
         &extracted,

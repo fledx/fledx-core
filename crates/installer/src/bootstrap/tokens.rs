@@ -240,7 +240,10 @@ pub async fn wait_for_http_ok(
         attempt = attempt.saturating_add(1);
         let res = tokio_timeout(Duration::from_secs(3), client.get(url).send()).await;
         match res {
-            Ok(Ok(res)) if res.status().is_success() => return Ok(()),
+            Ok(Ok(res)) if res.status().is_success() => {
+                eprintln!("health check ok (attempt {attempt}): {url}");
+                return Ok(());
+            }
             Ok(Ok(res)) => {
                 if last_log.elapsed() >= Duration::from_secs(5) {
                     eprintln!(
