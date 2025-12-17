@@ -176,7 +176,7 @@ pub fn render_agent_unit(input: &AgentUnitInputs) -> String {
         bin_path,
     } = input;
 
-    let env_path_escaped = systemd_quote_unit_path(env_path);
+    let env_path_escaped = systemd_escape_environment_file_path(env_path);
     let bin_path_escaped = systemd_quote_unit_path(bin_path);
 
     format!(
@@ -667,6 +667,34 @@ pub fn systemd_quote_unit_path(path: &Path) -> String {
     systemd_quote_unit_value(&path.as_os_str().to_string_lossy())
 }
 
+/// Escape a path for use in `EnvironmentFile=` inside systemd unit files.
+///
+/// `EnvironmentFile=` does **not** accept quoting with double quotes.
+/// If the value is written as `"path"`, systemd treats the leading `"` as part
+/// of the path and will ignore it as non-absolute.
+///
+/// We still escape `%` to avoid systemd specifier expansion, and we escape
+/// whitespace using `\\xNN` so paths containing spaces remain a single token.
+pub fn systemd_escape_environment_file_path(path: &Path) -> String {
+    systemd_escape_environment_file_value(&path.as_os_str().to_string_lossy())
+}
+
+pub fn systemd_escape_environment_file_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 8);
+    for ch in value.chars() {
+        match ch {
+            '%' => out.push_str("%%"),
+            ' ' => out.push_str("\\x20"),
+            '\t' => out.push_str("\\x09"),
+            '\n' => out.push_str("\\x0a"),
+            '\r' => out.push_str("\\x0d"),
+            '\\' => out.push_str("\\\\"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 pub fn systemd_quote_env_value(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
     out.push('"');
@@ -694,6 +722,14 @@ mod tests {
     }
 
     #[test]
+    fn systemd_escape_environment_file_value_does_not_quote_and_escapes() {
+        assert_eq!(
+            systemd_escape_environment_file_value("/etc/fledx dir/fledx%agent.env"),
+            "/etc/fledx\\x20dir/fledx%%agent.env"
+        );
+    }
+
+    #[test]
     fn systemd_quote_env_value_escapes_quotes_and_backslashes() {
         assert_eq!(systemd_quote_env_value("a\"b\\c"), "\"a\\\"b\\\\c\"");
     }
@@ -706,7 +742,7 @@ mod tests {
             bin_path: PathBuf::from("/usr/local/bin dir/fledx-agent"),
         });
 
-        assert!(unit.contains("EnvironmentFile=\"/etc/fledx dir/fledx%%agent.env\""));
+        assert!(unit.contains("EnvironmentFile=/etc/fledx\\x20dir/fledx%%agent.env"));
         assert!(unit.contains("ExecStart=\"/usr/local/bin dir/fledx-agent\""));
     }
 

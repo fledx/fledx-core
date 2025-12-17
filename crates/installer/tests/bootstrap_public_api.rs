@@ -44,6 +44,6 @@ fn bootstrap_systemd_unit_rendering_is_public_and_escapes_percent() {
         bin_path: PathBuf::from("/usr/local/bin dir/fledx-agent"),
     });
 
-    assert!(unit.contains("EnvironmentFile=\"/etc/fledx dir/fledx%%agent.env\""));
+    assert!(unit.contains("EnvironmentFile=/etc/fledx\\x20dir/fledx%%agent.env"));
     assert!(unit.contains("ExecStart=\"/usr/local/bin dir/fledx-agent\""));
 }

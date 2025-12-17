@@ -529,7 +529,7 @@ fn render_cp_unit(input: &CpUnitInputs) -> String {
         bin_path,
     } = input;
 
-    let env_path = installer::bootstrap::systemd_quote_unit_path(env_path);
+    let env_path = installer::bootstrap::systemd_escape_environment_file_path(env_path);
     let bin_path = installer::bootstrap::systemd_quote_unit_path(bin_path);
 
     format!(
@@ -665,7 +665,7 @@ mod tests {
             bin_path: PathBuf::from("/usr/local/bin dir/fledx-cp"),
         });
 
-        assert!(unit.contains("EnvironmentFile=\"/etc/fledx dir/fledx-cp.env\""));
+        assert!(unit.contains("EnvironmentFile=/etc/fledx\\x20dir/fledx-cp.env"));
         assert!(unit.contains("ExecStart=\"/usr/local/bin dir/fledx-cp\""));
     }
 
