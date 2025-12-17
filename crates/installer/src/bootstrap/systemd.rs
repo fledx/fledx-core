@@ -154,7 +154,7 @@ fn systemd_debug_bundle_local(service: &str) -> String {
         systemd_status_local(&unit).unwrap_or_else(|e| e.to_string())
     );
 
-    let _ = writeln!(&mut out, "\njournalctl (best-effort):");
+    let _ = writeln!(&mut out, "\njournalctl (best-effort, last 10 lines):");
     let _ = writeln!(
         &mut out,
         "{}",
@@ -187,7 +187,7 @@ fn systemd_journal_local(service: &str) -> anyhow::Result<String> {
     cmd.arg("-u")
         .arg(service)
         .arg("-n")
-        .arg("200")
+        .arg("10")
         .arg("--no-pager");
     let output = run_capture(cmd)?;
     Ok(format!(
@@ -199,8 +199,10 @@ fn systemd_journal_local(service: &str) -> anyhow::Result<String> {
 }
 
 fn systemd_debug_bundle_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
-    // Best-effort bundle that never fails the SSH command. We try both
-    // non-sudo and sudo(-n) journalctl access.
+    // Best-effort bundle that never fails the SSH command.
+    //
+    // For `journalctl` we only try `sudo -n` (non-interactive) access, because
+    // prompting for a password here would be surprising and can hang.
     let unit = normalize_unit_name(service);
     let service_q = sh_quote(&unit);
     let script = format!(
@@ -211,11 +213,12 @@ echo
 echo 'systemctl status:'
 systemctl status --no-pager -l -n 100 -- {service} 2>&1 || true
 echo
-echo 'journalctl (sudo -n):'
-sudo -n journalctl -u {service} -n 200 --no-pager 2>&1 || true
-echo
-echo 'journalctl (no sudo):'
-journalctl -u {service} -n 200 --no-pager 2>&1 || true
+echo 'journalctl (sudo -n, optional, last 10 lines):'
+if sudo -n true 2>/dev/null; then
+  sudo -n journalctl -u {service} -n 10 --no-pager 2>&1 || true
+else
+  echo 'skipped (sudo -n not permitted)'
+fi
 true
 ",
         service = service_q
