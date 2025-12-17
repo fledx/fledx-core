@@ -390,6 +390,17 @@ fn render_cp_env(input: &CpEnvInputs) -> String {
         public_host,
     } = input;
 
+    let server_port = installer::bootstrap::systemd_quote_env_value(&server_port.to_string());
+    let tunnel_host = installer::bootstrap::systemd_quote_env_value(tunnel_host);
+    let tunnel_port = installer::bootstrap::systemd_quote_env_value(&tunnel_port.to_string());
+    let db_url = installer::bootstrap::systemd_quote_env_value(db_url);
+    let registration_token = installer::bootstrap::systemd_quote_env_value(registration_token);
+    let operator_token = installer::bootstrap::systemd_quote_env_value(operator_token);
+    let operator_header = installer::bootstrap::systemd_quote_env_value(operator_header);
+    let tokens_pepper = installer::bootstrap::systemd_quote_env_value(tokens_pepper);
+    let public_host = installer::bootstrap::systemd_quote_env_value(public_host);
+    let rust_log = installer::bootstrap::systemd_quote_env_value("info");
+
     format!(
         "\
 FLEDX_CP_SERVER_HOST=0.0.0.0
@@ -402,7 +413,7 @@ FLEDX_CP_OPERATOR_TOKENS={operator_token}
 FLEDX_CP_OPERATOR_HEADER_NAME={operator_header}
 FLEDX_CP_TOKENS_PEPPER={tokens_pepper}
 FLEDX_CP_PORTS_PUBLIC_HOST={public_host}
-RUST_LOG=info
+RUST_LOG={rust_log}
 "
     )
 }
@@ -426,6 +437,9 @@ fn render_cp_unit(input: &CpUnitInputs) -> String {
         bin_path,
     } = input;
 
+    let env_path = installer::bootstrap::systemd_quote_unit_path(env_path);
+    let bin_path = installer::bootstrap::systemd_quote_unit_path(bin_path);
+
     format!(
         "\
 [Unit]
@@ -435,17 +449,15 @@ Wants=network-online.target
 
 [Service]
 User={service_user}
-EnvironmentFile={}
-ExecStart={}
+EnvironmentFile={env_path}
+ExecStart={bin_path}
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target
-",
-        env_path.display(),
-        bin_path.display()
+"
     )
 }
 
@@ -538,5 +550,36 @@ mod tests {
 
         let err = agent_bin_path(&args).expect_err("should fail");
         assert!(err.to_string().contains("missing file name"));
+    }
+
+    #[test]
+    fn cp_unit_quotes_paths_for_systemd() {
+        let unit = render_cp_unit(&CpUnitInputs {
+            service_user: "fledx".to_string(),
+            env_path: PathBuf::from("/etc/fledx dir/fledx-cp.env"),
+            bin_path: PathBuf::from("/usr/local/bin dir/fledx-cp"),
+        });
+
+        assert!(unit.contains("EnvironmentFile=\"/etc/fledx dir/fledx-cp.env\""));
+        assert!(unit.contains("ExecStart=\"/usr/local/bin dir/fledx-cp\""));
+    }
+
+    #[test]
+    fn cp_env_quotes_values_for_systemd_env_file() {
+        let env = render_cp_env(&CpEnvInputs {
+            server_port: 8080,
+            tunnel_host: "localhost".to_string(),
+            tunnel_port: 7443,
+            db_url: "sqlite:////var/lib/fledx dir/control-plane.db".to_string(),
+            registration_token: "deadbeef".to_string(),
+            operator_token: "cafebabe".to_string(),
+            operator_header: "x-fledx-operator-token".to_string(),
+            tokens_pepper: "0123".to_string(),
+            public_host: "127.0.0.1".to_string(),
+        });
+
+        assert!(env.contains(
+            "FLEDX_CP_DATABASE_URL=\"sqlite:////var/lib/fledx dir/control-plane.db\""
+        ));
     }
 }

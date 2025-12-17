@@ -939,38 +939,70 @@ pub fn render_agent_env(input: &AgentEnvInputs) -> String {
     } = input;
 
     let mut out = String::new();
-    let _ = writeln!(out, "FLEDX_AGENT_CONTROL_PLANE_URL={control_plane_url}");
-    let _ = writeln!(out, "FLEDX_AGENT_NODE_ID={node_id}");
-    let _ = writeln!(out, "FLEDX_AGENT_NODE_TOKEN={node_token}");
+    let _ = writeln!(
+        out,
+        "FLEDX_AGENT_CONTROL_PLANE_URL={}",
+        systemd_quote_env_value(control_plane_url)
+    );
+    let _ = writeln!(
+        out,
+        "FLEDX_AGENT_NODE_ID={}",
+        systemd_quote_env_value(&node_id.to_string())
+    );
+    let _ = writeln!(
+        out,
+        "FLEDX_AGENT_NODE_TOKEN={}",
+        systemd_quote_env_value(node_token)
+    );
     let _ = writeln!(
         out,
         "FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES={}",
-        volume_dir.display()
+        systemd_quote_env_value(&volume_dir.display().to_string())
     );
     if *allow_insecure_http {
-        let _ = writeln!(out, "FLEDX_AGENT_ALLOW_INSECURE_HTTP=true");
+        let _ = writeln!(
+            out,
+            "FLEDX_AGENT_ALLOW_INSECURE_HTTP={}",
+            systemd_quote_env_value("true")
+        );
     }
 
-    let _ = writeln!(out, "FLEDX_AGENT_TUNNEL_ENDPOINT_HOST={tunnel_host}");
-    let _ = writeln!(out, "FLEDX_AGENT_TUNNEL_ENDPOINT_PORT={}", tunnel.port);
-    let _ = writeln!(out, "FLEDX_AGENT_TUNNEL_USE_TLS={}", tunnel.use_tls);
+    let _ = writeln!(
+        out,
+        "FLEDX_AGENT_TUNNEL_ENDPOINT_HOST={}",
+        systemd_quote_env_value(tunnel_host)
+    );
+    let _ = writeln!(
+        out,
+        "FLEDX_AGENT_TUNNEL_ENDPOINT_PORT={}",
+        systemd_quote_env_value(&tunnel.port.to_string())
+    );
+    let _ = writeln!(
+        out,
+        "FLEDX_AGENT_TUNNEL_USE_TLS={}",
+        systemd_quote_env_value(&tunnel.use_tls.to_string())
+    );
     let _ = writeln!(
         out,
         "FLEDX_AGENT_TUNNEL_CONNECT_TIMEOUT_SECS={}",
-        tunnel.connect_timeout_secs
+        systemd_quote_env_value(&tunnel.connect_timeout_secs.to_string())
     );
     let _ = writeln!(
         out,
         "FLEDX_AGENT_TUNNEL_HEARTBEAT_INTERVAL_SECS={}",
-        tunnel.heartbeat_interval_secs
+        systemd_quote_env_value(&tunnel.heartbeat_interval_secs.to_string())
     );
     let _ = writeln!(
         out,
         "FLEDX_AGENT_TUNNEL_HEARTBEAT_TIMEOUT_SECS={}",
-        tunnel.heartbeat_timeout_secs
+        systemd_quote_env_value(&tunnel.heartbeat_timeout_secs.to_string())
     );
-    let _ = writeln!(out, "FLEDX_AGENT_TUNNEL_TOKEN_HEADER={}", tunnel.token_header);
-    let _ = writeln!(out, "RUST_LOG=info");
+    let _ = writeln!(
+        out,
+        "FLEDX_AGENT_TUNNEL_TOKEN_HEADER={}",
+        systemd_quote_env_value(&tunnel.token_header)
+    );
+    let _ = writeln!(out, "RUST_LOG={}", systemd_quote_env_value("info"));
     out
 }
 
@@ -991,6 +1023,9 @@ pub fn render_agent_unit(input: &AgentUnitInputs) -> String {
         bin_path,
     } = input;
 
+    let env_path_escaped = systemd_quote_unit_path(env_path);
+    let bin_path_escaped = systemd_quote_unit_path(bin_path);
+
     format!(
         "\
 [Unit]
@@ -1001,8 +1036,8 @@ Wants=network-online.target
 
 [Service]
 User={service_user}
-EnvironmentFile={}
-ExecStart={}
+EnvironmentFile={env_path}
+ExecStart={bin_path}
 Restart=on-failure
 RestartSec=5
 LimitNOFILE=65536
@@ -1010,8 +1045,8 @@ LimitNOFILE=65536
 [Install]
 WantedBy=multi-user.target
 ",
-        env_path.display(),
-        bin_path.display()
+        env_path = env_path_escaped,
+        bin_path = bin_path_escaped
     )
 }
 
@@ -1446,6 +1481,39 @@ fn sh_quote_path(path: &Path) -> String {
     sh_quote(&path.as_os_str().to_string_lossy())
 }
 
+pub fn systemd_quote_unit_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '%' => out.push_str("%%"),
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+pub fn systemd_quote_unit_path(path: &Path) -> String {
+    systemd_quote_unit_value(&path.as_os_str().to_string_lossy())
+}
+
+pub fn systemd_quote_env_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            _ => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn run_checked(mut cmd: Command) -> anyhow::Result<String> {
     let output = cmd.output().with_context(|| format!("failed to run {:?}", cmd))?;
     if !output.status.success() {
@@ -1674,5 +1742,57 @@ mod tests {
             b"not-hello",
             &signature
         ));
+    }
+
+    #[test]
+    fn systemd_quote_unit_value_escapes_percent() {
+        assert_eq!(
+            systemd_quote_unit_value("/opt/fledx/%h/bin"),
+            "\"/opt/fledx/%%h/bin\""
+        );
+    }
+
+    #[test]
+    fn systemd_quote_env_value_escapes_quotes_and_backslashes() {
+        assert_eq!(
+            systemd_quote_env_value("a\"b\\c"),
+            "\"a\\\"b\\\\c\""
+        );
+    }
+
+    #[test]
+    fn render_agent_unit_quotes_paths_for_systemd() {
+        let unit = render_agent_unit(&AgentUnitInputs {
+            service_user: "fledx-agent".to_string(),
+            env_path: PathBuf::from("/etc/fledx dir/fledx%agent.env"),
+            bin_path: PathBuf::from("/usr/local/bin dir/fledx-agent"),
+        });
+
+        assert!(unit.contains("EnvironmentFile=\"/etc/fledx dir/fledx%%agent.env\""));
+        assert!(unit.contains("ExecStart=\"/usr/local/bin dir/fledx-agent\""));
+    }
+
+    #[test]
+    fn render_agent_env_quotes_values_for_systemd_env_file() {
+        let env = render_agent_env(&AgentEnvInputs {
+            control_plane_url: "http://localhost:8080".to_string(),
+            node_id: uuid::Uuid::nil(),
+            node_token: "deadbeef".to_string(),
+            allow_insecure_http: true,
+            volume_dir: PathBuf::from("/var/lib/fledx/volumes dir"),
+            tunnel_host: "localhost".to_string(),
+            tunnel: common::api::TunnelEndpoint {
+                host: "localhost".to_string(),
+                port: 1234,
+                use_tls: false,
+                connect_timeout_secs: 5,
+                heartbeat_interval_secs: 5,
+                heartbeat_timeout_secs: 15,
+                token_header: "X-Fledx-Tunnel-Token".to_string(),
+            },
+        });
+
+        assert!(env.contains("FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=\"/var/lib/fledx/volumes dir\""));
+        assert!(env.contains("FLEDX_AGENT_ALLOW_INSECURE_HTTP=\"true\""));
     }
 }
