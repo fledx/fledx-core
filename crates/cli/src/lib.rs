@@ -63,7 +63,7 @@ pub async fn run() -> anyhow::Result<()> {
         maybe_persist_default_profile(&mut store, &selected_profile)?;
 
         cli.profile = selected_profile;
-        return run_parsed(cli).await;
+        run_parsed(cli).await
     }
 
     #[cfg(not(feature = "bootstrap"))]
@@ -211,8 +211,10 @@ mod profile_override_tests {
     use clap::CommandFactory;
 
     fn store_with_default_profile() -> ProfileStore {
-        let mut store = ProfileStore::default();
-        store.default_profile = Some("default".into());
+        let mut store = ProfileStore {
+            default_profile: Some("default".into()),
+            ..Default::default()
+        };
         store.profiles.insert(
             "default".into(),
             crate::profile_store::Profile {

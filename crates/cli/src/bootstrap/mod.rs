@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::Context;
 
 use crate::args::{BootstrapAgentArgs, BootstrapCpArgs};
-use crate::profile_store::{Profile, ProfileStore};
+use crate::profile_store::ProfileStore;
 
 const CORE_REPO: &str = "fledx/fledx-core";
 
@@ -172,10 +172,7 @@ pub async fn bootstrap_cp(
         .unwrap_or_else(|| "default".to_string());
 
     let cp_url = format!("http://{}:{}", args.cp_hostname, args.server_port);
-    let entry = profiles
-        .profiles
-        .entry(profile_name.clone())
-        .or_insert_with(Profile::default);
+    let entry = profiles.profiles.entry(profile_name.clone()).or_default();
     entry.control_plane_url = Some(cp_url);
     entry.operator_header = Some(globals.operator_header.clone());
     entry.operator_token = Some(operator_token);
@@ -539,6 +536,7 @@ struct CpUnitInputs {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::profile_store::Profile;
 
     #[test]
     fn agent_bin_path_defaults_to_bin_dir() {
@@ -666,8 +664,10 @@ mod tests {
 
     #[test]
     fn bootstrap_agent_prefers_global_registration_token() {
-        let mut store = ProfileStore::default();
-        store.default_profile = Some("default".into());
+        let mut store = ProfileStore {
+            default_profile: Some("default".into()),
+            ..Default::default()
+        };
         store.profiles.insert(
             "default".into(),
             Profile {
@@ -718,8 +718,10 @@ mod tests {
 
     #[test]
     fn bootstrap_agent_falls_back_to_default_profile_registration_token() {
-        let mut store = ProfileStore::default();
-        store.default_profile = Some("default".into());
+        let mut store = ProfileStore {
+            default_profile: Some("default".into()),
+            ..Default::default()
+        };
         store.profiles.insert(
             "default".into(),
             Profile {

@@ -114,8 +114,10 @@ mod tests {
         std::env::set_var("XDG_CONFIG_HOME", dir.path());
         std::env::remove_var("HOME");
 
-        let mut store = ProfileStore::default();
-        store.default_profile = Some("default".into());
+        let mut store = ProfileStore {
+            default_profile: Some("default".into()),
+            ..Default::default()
+        };
         store.profiles.insert(
             "default".into(),
             Profile {
@@ -164,8 +166,10 @@ mod tests {
         std::env::set_var("XDG_CONFIG_HOME", dir.path());
         std::env::remove_var("HOME");
 
-        let mut store = ProfileStore::default();
-        store.default_profile = Some("prod".into());
+        let mut store = ProfileStore {
+            default_profile: Some("prod".into()),
+            ..Default::default()
+        };
         store.profiles.insert(
             "prod".into(),
             Profile {
