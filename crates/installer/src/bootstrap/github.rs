@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
+use reqwest::StatusCode;
 use serde::Deserialize;
 use std::time::Duration;
 use tokio::time::timeout as tokio_timeout;
@@ -54,20 +55,41 @@ pub async fn fetch_release(
     repo: &str,
     version: Option<&str>,
 ) -> anyhow::Result<GitHubRelease> {
-    let url = release_api_url(repo, version);
-    let res = send_with_timeout(
-        client
-            .get(&url)
-            .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT),
-        Duration::from_secs(15),
-        &url,
-    )
-    .await
-    .with_context(|| format!("failed to fetch GitHub release metadata: {url}"))?;
-    let res = res
-        .error_for_status()
-        .with_context(|| format!("GitHub release request failed: {url}"))?;
-    Ok(res.json().await?)
+    let urls = release_api_urls(repo, version);
+    debug_assert!(!urls.is_empty());
+
+    let mut tried = Vec::with_capacity(urls.len());
+    for url in urls {
+        tried.push(url.clone());
+        let res = send_with_timeout(
+            client
+                .get(&url)
+                .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT),
+            Duration::from_secs(15),
+            &url,
+        )
+        .await
+        .with_context(|| format!("failed to fetch GitHub release metadata: {url}"))?;
+
+        if res.status() == StatusCode::NOT_FOUND {
+            // Some repos use `0.3.0` tags instead of `v0.3.0` (or vice versa).
+            // Try the next candidate.
+            continue;
+        }
+
+        let res = res
+            .error_for_status()
+            .with_context(|| format!("GitHub release request failed: {url}"))?;
+        return Ok(res.json().await?);
+    }
+
+    let version = version.unwrap_or("latest");
+    anyhow::bail!(
+        "GitHub release not found for repo {} version {} (tried: {})",
+        repo,
+        version,
+        tried.join(", ")
+    );
 }
 
 pub fn release_api_url(repo: &str, version: Option<&str>) -> String {
@@ -80,6 +102,24 @@ pub fn release_api_url(repo: &str, version: Option<&str>) -> String {
             format!("https://api.github.com/repos/{repo}/releases/tags/v{normalized}")
         }
         None => format!("https://api.github.com/repos/{repo}/releases/latest"),
+    }
+}
+
+fn release_api_urls(repo: &str, version: Option<&str>) -> Vec<String> {
+    match version.map(str::trim) {
+        Some(v) if v.eq_ignore_ascii_case("latest") => vec![format!(
+            "https://api.github.com/repos/{repo}/releases/latest"
+        )],
+        Some(v) => {
+            let normalized = v.trim_start_matches('v');
+            vec![
+                format!("https://api.github.com/repos/{repo}/releases/tags/v{normalized}"),
+                format!("https://api.github.com/repos/{repo}/releases/tags/{normalized}"),
+            ]
+        }
+        None => vec![format!(
+            "https://api.github.com/repos/{repo}/releases/latest"
+        )],
     }
 }
 
@@ -413,6 +453,19 @@ mod tests {
         assert_eq!(
             url,
             "https://api.github.com/repos/fledx/fledx-core/releases/tags/v0.3.0"
+        );
+    }
+
+    #[test]
+    fn release_api_urls_includes_v_and_plain_tag() {
+        let urls = release_api_urls("fledx/fledx-core", Some("0.3.0"));
+        assert_eq!(
+            urls[0],
+            "https://api.github.com/repos/fledx/fledx-core/releases/tags/v0.3.0"
+        );
+        assert_eq!(
+            urls[1],
+            "https://api.github.com/repos/fledx/fledx-core/releases/tags/0.3.0"
         );
     }
 

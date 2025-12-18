@@ -16,6 +16,20 @@ pub enum SshHostKeyChecking {
     Off,
 }
 
+#[derive(Debug, Clone, Args)]
+pub struct BootstrapRootArgs {
+    /// Override the GitHub owner/org for bootstrap release assets.
+    ///
+    /// This applies to both `bootstrap cp` and `bootstrap agent` unless the
+    /// subcommand sets `--repo` or `--repo-owner`.
+    #[arg(
+        long = "repo-owner",
+        env = "FLEDX_BOOTSTRAP_REPO_OWNER",
+        value_name = "OWNER"
+    )]
+    pub repo_owner: Option<String>,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum BootstrapCommands {
     /// Install + configure the control-plane (local or via SSH).
@@ -67,6 +81,38 @@ pub struct BootstrapCpArgs {
     /// Control-plane version to install (defaults to latest release; supports `latest`).
     #[arg(long = "version", value_name = "VERSION")]
     pub version: Option<String>,
+
+    /// Override the GitHub repo used for control-plane release assets.
+    ///
+    /// Defaults to the distribution configured by the CLI binary (core vs enterprise).
+    #[arg(
+        long = "repo",
+        env = "FLEDX_BOOTSTRAP_CP_REPO",
+        value_name = "OWNER/REPO"
+    )]
+    pub repo: Option<String>,
+
+    /// Override only the GitHub owner/org for control-plane release assets.
+    ///
+    /// This keeps the default repo name from the distribution spec.
+    /// Example: `--repo-owner myorg` + default `fledx/fledx-enterprise`
+    /// becomes `myorg/fledx-enterprise`.
+    #[arg(
+        long = "repo-owner",
+        env = "FLEDX_BOOTSTRAP_CP_REPO_OWNER",
+        value_name = "OWNER"
+    )]
+    pub repo_owner: Option<String>,
+
+    /// Override the control-plane archive name using a template.
+    ///
+    /// Supported placeholders: `{version}`, `{arch}`.
+    #[arg(
+        long = "archive-template",
+        env = "FLEDX_BOOTSTRAP_CP_ARCHIVE_TEMPLATE",
+        value_name = "TEMPLATE"
+    )]
+    pub archive_template: Option<String>,
 
     /// Directory to install binaries into.
     #[arg(
@@ -166,6 +212,38 @@ pub struct BootstrapAgentArgs {
     /// Use `latest` to install the latest core release.
     #[arg(long = "version", value_name = "VERSION")]
     pub version: Option<String>,
+
+    /// Override the GitHub repo used for agent release assets.
+    ///
+    /// Defaults to the distribution configured by the CLI binary (core vs enterprise).
+    #[arg(
+        long = "repo",
+        env = "FLEDX_BOOTSTRAP_AGENT_REPO",
+        value_name = "OWNER/REPO"
+    )]
+    pub repo: Option<String>,
+
+    /// Override only the GitHub owner/org for agent release assets.
+    ///
+    /// This keeps the default repo name from the distribution spec.
+    /// Example: `--repo-owner myorg` + default `fledx/fledx-core`
+    /// becomes `myorg/fledx-core`.
+    #[arg(
+        long = "repo-owner",
+        env = "FLEDX_BOOTSTRAP_AGENT_REPO_OWNER",
+        value_name = "OWNER"
+    )]
+    pub repo_owner: Option<String>,
+
+    /// Override the agent archive name using a template.
+    ///
+    /// Supported placeholders: `{version}`, `{arch}`.
+    #[arg(
+        long = "archive-template",
+        env = "FLEDX_BOOTSTRAP_AGENT_ARCHIVE_TEMPLATE",
+        value_name = "TEMPLATE"
+    )]
+    pub archive_template: Option<String>,
 
     /// Directory to install binaries into.
     #[arg(

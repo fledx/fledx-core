@@ -3,6 +3,8 @@ pub mod args;
 #[cfg(feature = "bootstrap")]
 #[path = "bootstrap/mod.rs"]
 mod bootstrap_flow;
+#[cfg(feature = "bootstrap")]
+pub mod bootstrap_spec;
 pub mod commands;
 pub mod parse;
 #[cfg(feature = "bootstrap")]
@@ -16,6 +18,10 @@ pub mod watch;
 
 pub use api::OperatorApi;
 pub use args::*;
+#[cfg(feature = "bootstrap")]
+pub use bootstrap_spec::{
+    BootstrapAgentVersionFallback, BootstrapReleaseSpec, BootstrapSecretsMasterKey,
+};
 pub use commands::CommandContext;
 pub use parse::*;
 pub use validate::*;
@@ -75,6 +81,12 @@ pub async fn run() -> anyhow::Result<()> {
 
 /// Execute the CLI given a pre-parsed argument struct.
 pub async fn run_parsed(cli: Cli) -> anyhow::Result<()> {
+    run_parsed_with(cli, RunOptions::default()).await
+}
+
+/// Execute the CLI given a pre-parsed argument struct, with caller-provided
+/// runtime options (primarily used by wrappers like `fledx-enterprise`).
+pub async fn run_parsed_with(cli: Cli, options: RunOptions) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     #[cfg(feature = "bootstrap")]
     let selected_profile = cli.profile.clone();
@@ -99,14 +111,42 @@ pub async fn run_parsed(cli: Cli) -> anyhow::Result<()> {
         Commands::Usage { command } => handle_usage(&ctx, command).await?,
         Commands::Completions { shell } => generate_completions(shell),
         #[cfg(feature = "bootstrap")]
-        Commands::Bootstrap { command } => {
-            handle_bootstrap(client, selected_profile, &globals, command).await?
+        Commands::Bootstrap { args, command } => {
+            handle_bootstrap(
+                client,
+                selected_profile,
+                &globals,
+                options.bootstrap_spec,
+                args,
+                *command,
+            )
+            .await?
         }
         #[cfg(feature = "bootstrap")]
         Commands::Profile { command } => handle_profiles(selected_profile, command)?,
     }
 
     Ok(())
+}
+
+/// Runtime configuration that affects how the CLI executes certain commands.
+///
+/// This exists primarily so downstream binaries can reuse the core CLI command
+/// implementation while tweaking distribution-specific behavior (e.g. bootstrap
+/// downloading enterprise release assets instead of core assets).
+#[derive(Debug, Clone, Copy)]
+pub struct RunOptions {
+    #[cfg(feature = "bootstrap")]
+    pub bootstrap_spec: BootstrapReleaseSpec,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "bootstrap")]
+            bootstrap_spec: BootstrapReleaseSpec::core(),
+        }
+    }
 }
 
 #[cfg(feature = "bootstrap")]

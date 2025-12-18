@@ -23,6 +23,14 @@ pub struct ProfileStore {
     pub default_profile: Option<String>,
     #[serde(default)]
     pub profiles: BTreeMap<String, Profile>,
+
+    /// Optional global default used by `bootstrap` to rewrite `OWNER/REPO`
+    /// strings while keeping the repo name.
+    ///
+    /// This is a convenience so users who fork the project can avoid passing
+    /// `--repo-owner` on every bootstrap invocation.
+    #[serde(default)]
+    pub bootstrap_repo_owner: Option<String>,
 }
 
 impl ProfileStore {
@@ -179,10 +187,12 @@ mod tests {
                 registration_token: Some("reg".into()),
             },
         );
+        store.bootstrap_repo_owner = Some("myorg".into());
         store.save().expect("save");
 
         let loaded = ProfileStore::load().expect("load");
         assert_eq!(loaded.default_profile.as_deref(), Some("prod"));
+        assert_eq!(loaded.bootstrap_repo_owner.as_deref(), Some("myorg"));
         let profile = loaded.profiles.get("prod").expect("profile");
         assert_eq!(
             profile.control_plane_url.as_deref(),

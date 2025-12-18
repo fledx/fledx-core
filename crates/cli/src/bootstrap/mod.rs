@@ -9,9 +9,10 @@ use std::{io, io::IsTerminal};
 use anyhow::Context;
 
 use crate::args::{BootstrapAgentArgs, BootstrapCpArgs};
+use crate::bootstrap_spec::{
+    BootstrapAgentVersionFallback, BootstrapReleaseSpec, BootstrapSecretsMasterKey,
+};
 use crate::profile_store::ProfileStore;
-
-const CORE_REPO: &str = "fledx/fledx-core";
 
 struct PeriodicStatus {
     done: Arc<AtomicBool>,
@@ -64,12 +65,108 @@ impl Drop for PeriodicStatus {
     }
 }
 
+fn validate_archive_name(name: &str) -> anyhow::Result<()> {
+    let name = name.trim();
+    if name.is_empty() {
+        anyhow::bail!("invalid archive name (empty)");
+    }
+    if name == "." || name == ".." {
+        anyhow::bail!("invalid archive name: {}", name);
+    }
+    if name.contains('/') || name.contains('\\') {
+        anyhow::bail!(
+            "invalid archive name (must be a file name, not a path): {}",
+            name
+        );
+    }
+    if name.contains('\0') {
+        anyhow::bail!("invalid archive name (contains NUL byte)");
+    }
+    Ok(())
+}
+
+fn render_archive_name_from_template(
+    template: &str,
+    version: &str,
+    arch: &str,
+) -> anyhow::Result<String> {
+    let template = template.trim();
+    if template.is_empty() {
+        anyhow::bail!("invalid --archive-template (empty)");
+    }
+
+    let rendered = template
+        .replace("{version}", version)
+        .replace("{arch}", arch);
+    validate_archive_name(&rendered)?;
+    Ok(rendered)
+}
+
+fn repo_name_from_owner_repo(repo: &str) -> anyhow::Result<&str> {
+    let repo = repo.trim();
+    let Some((_owner, name)) = repo.split_once('/') else {
+        anyhow::bail!("invalid repo (expected OWNER/REPO): {}", repo);
+    };
+    if name.trim().is_empty() {
+        anyhow::bail!("invalid repo (missing repo name): {}", repo);
+    }
+    Ok(name)
+}
+
+fn resolve_repo<'a>(
+    repo: Option<&'a str>,
+    repo_owner: Option<&'a str>,
+    default_repo: &'a str,
+) -> anyhow::Result<std::borrow::Cow<'a, str>> {
+    let repo = repo.map(str::trim).filter(|s| !s.is_empty());
+    let repo_owner = repo_owner.map(str::trim).filter(|s| !s.is_empty());
+
+    if repo.is_some() && repo_owner.is_some() {
+        anyhow::bail!("cannot combine --repo and --repo-owner");
+    }
+
+    if let Some(repo) = repo {
+        return Ok(std::borrow::Cow::Borrowed(repo));
+    }
+
+    if let Some(owner) = repo_owner {
+        if owner.contains('/') {
+            anyhow::bail!("invalid --repo-owner (must not contain '/'): {}", owner);
+        }
+        let name = repo_name_from_owner_repo(default_repo)?;
+        return Ok(std::borrow::Cow::Owned(format!("{owner}/{name}")));
+    }
+
+    Ok(std::borrow::Cow::Borrowed(default_repo))
+}
+
+fn resolve_repo_for_bootstrap(
+    repo: Option<&str>,
+    repo_owner: Option<&str>,
+    global_repo_owner: Option<&str>,
+    default_repo: &str,
+) -> anyhow::Result<String> {
+    if let Some(repo) = repo {
+        // Explicit repo override must win, even if a global owner is set.
+        let repo = repo.trim();
+        if repo.is_empty() {
+            anyhow::bail!("invalid --repo (empty)");
+        }
+        return Ok(repo.to_string());
+    }
+
+    let owner = repo_owner.or(global_repo_owner);
+    Ok(resolve_repo(None, owner, default_repo)?.into_owned())
+}
+
 pub async fn bootstrap_cp(
     client: &reqwest::Client,
     profiles: &mut ProfileStore,
     selected_profile: Option<String>,
     globals: &crate::GlobalArgs,
     args: BootstrapCpArgs,
+    spec: BootstrapReleaseSpec,
+    global_repo_owner: Option<&str>,
 ) -> anyhow::Result<()> {
     eprintln!(
         "bootstrap cp: target control-plane host {}",
@@ -128,10 +225,20 @@ MITM on first connect; prefer --ssh-host-key-checking strict in production."
     let arch = target.detect_arch(args.sudo_interactive)?;
     eprintln!("bootstrap cp: detected arch {}", arch.as_str());
 
+    let cp_repo = resolve_repo_for_bootstrap(
+        args.repo.as_deref(),
+        args.repo_owner.as_deref(),
+        global_repo_owner,
+        spec.cp_repo,
+    )?;
     let release =
-        installer::bootstrap::fetch_release(client, CORE_REPO, args.version.as_deref()).await?;
+        installer::bootstrap::fetch_release(client, &cp_repo, args.version.as_deref()).await?;
     let version = installer::bootstrap::normalize_version(&release.tag_name);
-    let archive_name = format!("fledx-cp-{}-{}-linux.tar.gz", version, arch.as_str());
+    let archive_name = match args.archive_template.as_deref() {
+        Some(template) => render_archive_name_from_template(template, &version, arch.as_str())?,
+        None => (spec.cp_archive_name)(&version, arch.as_str()),
+    };
+    validate_archive_name(&archive_name)?;
 
     let dir = tempfile::tempdir()?;
     let archive_path = dir.path().join(&archive_name);
@@ -139,12 +246,12 @@ MITM on first connect; prefer --ssh-host-key-checking strict in production."
     let sha_sig_path = dir.path().join(format!("{archive_name}.sha256.sig"));
 
     eprintln!("downloading asset: {}", archive_name);
-    installer::bootstrap::download_asset(client, CORE_REPO, &release, &archive_name, &archive_path)
+    installer::bootstrap::download_asset(client, &cp_repo, &release, &archive_name, &archive_path)
         .await?;
     eprintln!("downloading asset: {}.sha256", archive_name);
     installer::bootstrap::download_asset(
         client,
-        CORE_REPO,
+        &cp_repo,
         &release,
         &format!("{archive_name}.sha256"),
         &sha_path,
@@ -152,7 +259,7 @@ MITM on first connect; prefer --ssh-host-key-checking strict in production."
     .await?;
     if args.insecure_allow_unsigned {
         installer::bootstrap::verify_sha256(
-            CORE_REPO,
+            &cp_repo,
             &release.tag_name,
             &archive_name,
             &archive_path,
@@ -170,7 +277,7 @@ MITM on first connect; prefer --ssh-host-key-checking strict in production."
 This usually means the release is unsigned (older release schema).\n\
 \nFor secure installs, wait for a newer release that includes signed checksums.\n\
 If you understand the risk, rerun with --insecure-allow-unsigned to skip signature verification.",
-                CORE_REPO,
+                &cp_repo,
                 release.tag_name,
                 sig_asset_name
             );
@@ -178,14 +285,14 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         eprintln!("downloading asset: {}", sig_asset_name);
         installer::bootstrap::download_asset(
             client,
-            CORE_REPO,
+            &cp_repo,
             &release,
             &sig_asset_name,
             &sha_sig_path,
         )
         .await?;
         installer::bootstrap::verify_signed_sha256(
-            CORE_REPO,
+            &cp_repo,
             &release.tag_name,
             &archive_name,
             &archive_path,
@@ -199,7 +306,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
             .with_context(|| {
                 format!(
                     "failed to extract fledx-cp from {}@{} asset {}",
-                    CORE_REPO, release.tag_name, archive_name
+                    cp_repo, release.tag_name, archive_name
                 )
             })?;
 
@@ -215,6 +322,10 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         .tokens_pepper
         .clone()
         .unwrap_or_else(|| installer::bootstrap::generate_token_hex(32));
+    let secrets_master_key = match spec.cp_secrets_master_key {
+        BootstrapSecretsMasterKey::None => None,
+        BootstrapSecretsMasterKey::Generate => Some(installer::bootstrap::generate_token_hex(32)),
+    };
 
     let tunnel_bind_host = installer::bootstrap::resolve_ipv4_host(&args.cp_hostname)?;
 
@@ -231,6 +342,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         operator_token: operator_token.clone(),
         operator_header: globals.operator_header.clone(),
         tokens_pepper,
+        secrets_master_key,
         public_host: args.cp_hostname.clone(),
     });
 
@@ -294,7 +406,10 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
     profiles.default_profile = Some(profile_name.clone());
     profiles.save()?;
 
-    println!("control-plane installed (core) version {}", version);
+    println!(
+        "control-plane installed ({}) version {}",
+        spec.cp_label, version
+    );
     println!("profile updated: {}", profile_name);
     Ok(())
 }
@@ -340,6 +455,8 @@ pub async fn bootstrap_agent(
     selected_profile: Option<String>,
     globals: &crate::GlobalArgs,
     args: BootstrapAgentArgs,
+    spec: BootstrapReleaseSpec,
+    global_repo_owner: Option<&str>,
 ) -> anyhow::Result<()> {
     eprintln!(
         "bootstrap agent: control-plane url {}",
@@ -427,25 +544,66 @@ Use --no-docker-group to skip this step."
             )?,
     };
 
+    let agent_repo = resolve_repo_for_bootstrap(
+        args.repo.as_deref(),
+        args.repo_owner.as_deref(),
+        global_repo_owner,
+        spec.agent_repo,
+    )?;
     eprintln!(
-        "resolving agent release: core@{} for arch {}",
+        "resolving agent release: {}@{} for arch {}",
+        spec.agent_label,
         requested_version,
-        arch.as_str()
+        arch.as_str(),
     );
-    let release = installer::bootstrap::fetch_release(client, CORE_REPO, Some(&requested_version))
-        .await
-        .with_context(|| {
-            if requested_from_control_plane {
-                format!(
-                    "failed to resolve agent release matching control-plane version {} (override with --version latest or --version <semver>)",
-                    requested_version
-                )
-            } else {
-                format!("failed to resolve agent release version {}", requested_version)
+    let release = match installer::bootstrap::fetch_release(
+        client,
+        &agent_repo,
+        Some(&requested_version),
+    )
+    .await
+    {
+        Ok(release) => release,
+        Err(err) => {
+            let allow_fallback = requested_from_control_plane
+                && matches!(
+                    spec.agent_version_fallback,
+                    BootstrapAgentVersionFallback::LatestWhenControlPlaneDerived
+                );
+            if !allow_fallback {
+                return Err(err).with_context(|| {
+                    if requested_from_control_plane {
+                        format!(
+                            "failed to resolve agent release matching control-plane version {} (override with --version latest or --version <semver>)",
+                            requested_version
+                        )
+                    } else {
+                        format!("failed to resolve agent release version {}", requested_version)
+                    }
+                });
             }
-        })?;
+
+            eprintln!(
+                "resolving agent release: no {} release matching control-plane version {}; falling back to latest",
+                &agent_repo,
+                requested_version
+            );
+            installer::bootstrap::fetch_release(client, &agent_repo, None)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to resolve agent release matching control-plane version {} and failed to fall back to latest",
+                        requested_version
+                    )
+                })?
+        }
+    };
     let version = installer::bootstrap::normalize_version(&release.tag_name);
-    let archive_name = format!("fledx-agent-{}-{}-linux.tar.gz", version, arch.as_str());
+    let archive_name = match args.archive_template.as_deref() {
+        Some(template) => render_archive_name_from_template(template, &version, arch.as_str())?,
+        None => (spec.agent_archive_name)(&version, arch.as_str()),
+    };
+    validate_archive_name(&archive_name)?;
 
     let dir = tempfile::tempdir()?;
     let archive_path = dir.path().join(&archive_name);
@@ -453,12 +611,18 @@ Use --no-docker-group to skip this step."
     let sha_sig_path = dir.path().join(format!("{archive_name}.sha256.sig"));
 
     eprintln!("downloading asset: {}", archive_name);
-    installer::bootstrap::download_asset(client, CORE_REPO, &release, &archive_name, &archive_path)
-        .await?;
+    installer::bootstrap::download_asset(
+        client,
+        &agent_repo,
+        &release,
+        &archive_name,
+        &archive_path,
+    )
+    .await?;
     eprintln!("downloading asset: {}.sha256", archive_name);
     installer::bootstrap::download_asset(
         client,
-        CORE_REPO,
+        &agent_repo,
         &release,
         &format!("{archive_name}.sha256"),
         &sha_path,
@@ -466,7 +630,7 @@ Use --no-docker-group to skip this step."
     .await?;
     if args.insecure_allow_unsigned {
         installer::bootstrap::verify_sha256(
-            CORE_REPO,
+            &agent_repo,
             &release.tag_name,
             &archive_name,
             &archive_path,
@@ -484,7 +648,7 @@ Use --no-docker-group to skip this step."
 This usually means the release is unsigned (older release schema).\n\
 \nFor secure installs, wait for a newer release that includes signed checksums.\n\
 If you understand the risk, rerun with --insecure-allow-unsigned to skip signature verification.",
-                CORE_REPO,
+                &agent_repo,
                 release.tag_name,
                 sig_asset_name
             );
@@ -492,14 +656,14 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         eprintln!("downloading asset: {}", sig_asset_name);
         installer::bootstrap::download_asset(
             client,
-            CORE_REPO,
+            &agent_repo,
             &release,
             &sig_asset_name,
             &sha_sig_path,
         )
         .await?;
         installer::bootstrap::verify_signed_sha256(
-            CORE_REPO,
+            &agent_repo,
             &release.tag_name,
             &archive_name,
             &archive_path,
@@ -513,7 +677,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
             .with_context(|| {
                 format!(
                     "failed to extract fledx-agent from {}@{} asset {}",
-                    CORE_REPO, release.tag_name, archive_name
+                    agent_repo, release.tag_name, archive_name
                 )
             })?;
 
@@ -589,7 +753,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         installer::bootstrap::wait_for_systemd_active_ssh(&ssh, "fledx-agent", timeout).await?;
     }
 
-    println!("agent installed (core) version {}", version);
+    println!("agent installed ({}) version {}", spec.agent_label, version);
     println!("node registered: {}", node_id);
     println!("node name: {}", node_name);
     println!();
@@ -651,6 +815,7 @@ fn render_cp_env(input: &CpEnvInputs) -> String {
         operator_token,
         operator_header,
         tokens_pepper,
+        secrets_master_key,
         public_host,
     } = input;
 
@@ -662,6 +827,13 @@ fn render_cp_env(input: &CpEnvInputs) -> String {
     let operator_token = installer::bootstrap::systemd_quote_env_value(operator_token);
     let operator_header = installer::bootstrap::systemd_quote_env_value(operator_header);
     let tokens_pepper = installer::bootstrap::systemd_quote_env_value(tokens_pepper);
+    let secrets_master_key_line = match secrets_master_key {
+        Some(value) => {
+            let value = installer::bootstrap::systemd_quote_env_value(value);
+            format!("FLEDX_CP_SECRETS_MASTER_KEY={value}\n")
+        }
+        None => String::new(),
+    };
     let public_host = installer::bootstrap::systemd_quote_env_value(public_host);
     let rust_log = installer::bootstrap::systemd_quote_env_value("info");
 
@@ -676,6 +848,7 @@ FLEDX_CP_REGISTRATION_TOKEN={registration_token}
 FLEDX_CP_OPERATOR_TOKENS={operator_token}
 FLEDX_CP_OPERATOR_HEADER_NAME={operator_header}
 FLEDX_CP_TOKENS_PEPPER={tokens_pepper}
+{secrets_master_key_line}\
 FLEDX_CP_PORTS_PUBLIC_HOST={public_host}
 RUST_LOG={rust_log}
 "
@@ -691,6 +864,7 @@ struct CpEnvInputs {
     operator_token: String,
     operator_header: String,
     tokens_pepper: String,
+    secrets_master_key: Option<String>,
     public_host: String,
 }
 
@@ -748,6 +922,9 @@ mod tests {
             ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
             name: None,
             version: None,
+            repo: None,
+            repo_owner: None,
+            archive_template: None,
             bin_dir: PathBuf::from("/usr/local/bin"),
             install_path: None,
             config_dir: PathBuf::from("/etc/fledx"),
@@ -779,6 +956,9 @@ mod tests {
             ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
             name: None,
             version: None,
+            repo: None,
+            repo_owner: None,
+            archive_template: None,
             bin_dir: PathBuf::from("/usr/local/bin"),
             install_path: Some(PathBuf::from("/opt/fledx/bin/fledx-agent")),
             config_dir: PathBuf::from("/etc/fledx"),
@@ -810,6 +990,9 @@ mod tests {
             ssh_host_key_checking: crate::args::SshHostKeyChecking::AcceptNew,
             name: None,
             version: None,
+            repo: None,
+            repo_owner: None,
+            archive_template: None,
             bin_dir: PathBuf::from("/usr/local/bin"),
             install_path: Some(PathBuf::from("/")),
             config_dir: PathBuf::from("/etc/fledx"),
@@ -852,12 +1035,93 @@ mod tests {
             operator_token: "cafebabe".to_string(),
             operator_header: "x-fledx-operator-token".to_string(),
             tokens_pepper: "0123".to_string(),
+            secrets_master_key: None,
             public_host: "127.0.0.1".to_string(),
         });
 
         assert!(
             env.contains("FLEDX_CP_DATABASE_URL=\"sqlite:////var/lib/fledx dir/control-plane.db\"")
         );
+    }
+
+    #[test]
+    fn archive_template_replaces_placeholders() {
+        let name = render_archive_name_from_template(
+            "fledx-agent-{version}-{arch}-linux.tar.gz",
+            "1.2.3",
+            "x86_64",
+        )
+        .expect("template");
+        assert_eq!(name, "fledx-agent-1.2.3-x86_64-linux.tar.gz");
+    }
+
+    #[test]
+    fn archive_template_rejects_paths() {
+        let err = render_archive_name_from_template("../bad-{version}.tar.gz", "1.2.3", "x86_64")
+            .expect_err("should fail");
+        assert!(err.to_string().contains("must be a file name"));
+    }
+
+    #[test]
+    fn archive_template_rejects_empty() {
+        let err =
+            render_archive_name_from_template("   ", "1.2.3", "x86_64").expect_err("should fail");
+        assert!(err.to_string().contains("archive-template"));
+    }
+
+    #[test]
+    fn resolve_repo_defaults_to_spec() {
+        let repo = resolve_repo(None, None, "fledx/fledx-core").expect("repo");
+        assert_eq!(repo.as_ref(), "fledx/fledx-core");
+    }
+
+    #[test]
+    fn resolve_repo_prefers_explicit_repo() {
+        let repo = resolve_repo(Some(" myorg/custom "), None, "fledx/fledx-core").expect("repo");
+        assert_eq!(repo.as_ref(), "myorg/custom");
+    }
+
+    #[test]
+    fn resolve_repo_owner_overrides_owner_keeps_name() {
+        let repo = resolve_repo(None, Some("myorg"), "fledx/fledx-core").expect("repo");
+        assert_eq!(repo.as_ref(), "myorg/fledx-core");
+    }
+
+    #[test]
+    fn resolve_repo_rejects_combined_repo_and_owner() {
+        let err = resolve_repo(Some("myorg/custom"), Some("myorg"), "fledx/fledx-core")
+            .expect_err("should fail");
+        assert!(err.to_string().contains("cannot combine"));
+    }
+
+    #[test]
+    fn resolve_repo_rejects_owner_with_slash() {
+        let err =
+            resolve_repo(None, Some("myorg/evil"), "fledx/fledx-core").expect_err("should fail");
+        assert!(err.to_string().contains("repo-owner"));
+    }
+
+    #[test]
+    fn resolve_repo_for_bootstrap_uses_global_owner() {
+        let repo = resolve_repo_for_bootstrap(None, None, Some("myorg"), "fledx/fledx-core")
+            .expect("repo");
+        assert_eq!(repo, "myorg/fledx-core");
+    }
+
+    #[test]
+    fn resolve_repo_for_bootstrap_prefers_subcommand_owner_over_global() {
+        let repo =
+            resolve_repo_for_bootstrap(None, Some("myteam"), Some("myorg"), "fledx/fledx-core")
+                .expect("repo");
+        assert_eq!(repo, "myteam/fledx-core");
+    }
+
+    #[test]
+    fn resolve_repo_for_bootstrap_does_not_error_when_repo_and_global_owner() {
+        let repo =
+            resolve_repo_for_bootstrap(Some("other/repo"), None, Some("myorg"), "fledx/fledx-core")
+                .expect("repo");
+        assert_eq!(repo, "other/repo");
     }
 
     #[test]
