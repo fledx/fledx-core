@@ -150,8 +150,8 @@ fn systemd_state_local(service: &str) -> anyhow::Result<String> {
 
 fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
     let unit = normalize_unit_name(service);
-    let output = ssh.run_capture_command(
-        "systemctl",
+    let output = systemctl_capture_ssh(
+        ssh,
         &[
             OsString::from("is-active"),
             OsString::from("--quiet"),
@@ -163,8 +163,8 @@ fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
         return Ok("active".to_string());
     }
 
-    let output = ssh.run_capture_command(
-        "systemctl",
+    let output = systemctl_capture_ssh(
+        ssh,
         &[
             OsString::from("is-failed"),
             OsString::from("--quiet"),
@@ -176,8 +176,8 @@ fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
         return Ok("failed".to_string());
     }
 
-    let output = ssh.run_capture_command(
-        "systemctl",
+    let output = systemctl_capture_ssh(
+        ssh,
         &[
             OsString::from("is-active"),
             OsString::from("--"),
@@ -188,6 +188,29 @@ fn systemd_state_ssh(ssh: &SshTarget, service: &str) -> anyhow::Result<String> {
         "{}\n{}",
         output.stdout, output.stderr
     )))
+}
+
+fn systemctl_capture_ssh(
+    ssh: &SshTarget,
+    args: &[OsString],
+) -> anyhow::Result<super::ssh::CapturedOutput> {
+    let output = ssh.run_capture_command("systemctl", args)?;
+    if !should_retry_systemctl_with_sudo(&output.stderr) {
+        return Ok(output);
+    }
+
+    let mut sudo_args = Vec::with_capacity(args.len() + 2);
+    sudo_args.push(OsString::from("-n"));
+    sudo_args.push(OsString::from("systemctl"));
+    sudo_args.extend_from_slice(args);
+    ssh.run_capture_command("sudo", &sudo_args)
+}
+
+fn should_retry_systemctl_with_sudo(stderr: &str) -> bool {
+    let lowered = stderr.to_ascii_lowercase();
+    lowered.contains("failed to connect to bus")
+        || lowered.contains("permission denied")
+        || lowered.contains("access denied")
 }
 
 fn systemd_debug_bundle_local(service: &str) -> String {

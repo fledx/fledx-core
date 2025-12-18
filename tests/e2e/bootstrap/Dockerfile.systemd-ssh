@@ -1,0 +1,66 @@
+FROM ubuntu:24.04
+
+ENV container=docker
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        iproute2 \
+        openssh-server \
+        sudo \
+        systemd \
+        systemd-sysv \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN systemctl mask \
+        dev-hugepages.mount \
+        sys-fs-fuse-connections.mount \
+        sys-kernel-config.mount \
+        sys-kernel-debug.mount \
+        sys-kernel-tracing.mount
+
+RUN mkdir -p /var/run/sshd /root/.ssh \
+    && chmod 700 /root/.ssh \
+    && ssh-keygen -A
+
+RUN printf '%s\n' 'd /run/sshd 0755 root root -' > /etc/tmpfiles.d/sshd.conf
+
+RUN printf '%s\n' \
+        'PermitRootLogin prohibit-password' \
+        'PasswordAuthentication no' \
+        'KbdInteractiveAuthentication no' \
+        'UsePAM yes' \
+        'PubkeyAuthentication yes' \
+        'PermitUserEnvironment no' \
+        'StrictModes no' \
+        > /etc/ssh/sshd_config.d/e2e.conf
+
+RUN systemctl enable ssh
+
+RUN printf '%s\n' \
+        '[Unit]' \
+        'Description=Stub Docker Service for e2e bootstrap' \
+        'ConditionPathExists=/var/run/docker.sock' \
+        '' \
+        '[Service]' \
+        'Type=oneshot' \
+        'ExecStart=/bin/true' \
+        'RemainAfterExit=yes' \
+        '' \
+        '[Install]' \
+        'WantedBy=multi-user.target' \
+        > /etc/systemd/system/docker.service \
+    && systemctl enable docker.service
+
+RUN useradd -m -s /bin/bash fledx \
+    && echo 'fledx ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/fledx \
+    && chmod 0440 /etc/sudoers.d/fledx
+
+RUN mkdir -p /home/fledx/.ssh \
+    && chown -R fledx:fledx /home/fledx/.ssh \
+    && chmod 700 /home/fledx/.ssh
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

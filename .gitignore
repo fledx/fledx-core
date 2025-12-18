@@ -6,8 +6,10 @@ data/
 # Quickstart demo data
 quickstart-data/
 
+# Local e2e bootstrap artifacts
+tests/e2e/bootstrap/.work/
+
 # Environment files (use .example versions as templates)
 .env.cp
 .env.agent
 .env.cli
-

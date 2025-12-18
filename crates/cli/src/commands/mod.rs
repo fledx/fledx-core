@@ -5,6 +5,8 @@ pub mod bootstrap;
 pub mod completions;
 pub mod configs;
 pub mod deploy;
+#[cfg(feature = "bootstrap")]
+pub mod internal;
 pub mod metrics;
 pub mod nodes;
 #[cfg(feature = "bootstrap")]

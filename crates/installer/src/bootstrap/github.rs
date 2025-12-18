@@ -203,16 +203,33 @@ const RELEASE_SIGNING_PUBKEYS_ED25519_COMPILED: Option<&str> =
     option_env!("FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ReleaseSigningKeysSource {
+pub enum ReleaseSigningKeysSource {
     Compiled,
     Environment,
     None,
+}
+
+impl ReleaseSigningKeysSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ReleaseSigningKeysSource::Compiled => "compiled",
+            ReleaseSigningKeysSource::Environment => "environment",
+            ReleaseSigningKeysSource::None => "none",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct ReleaseSigningKeysInfo {
     source: ReleaseSigningKeysSource,
     env_present: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ReleaseSigningKeysStatus {
+    pub configured: bool,
+    pub source: ReleaseSigningKeysSource,
+    pub env_present: bool,
 }
 
 fn describe_release_signing_keys_source(info: ReleaseSigningKeysInfo) -> String {
@@ -407,6 +424,15 @@ contains the correct public key.\n\
     }
 
     super::verify_sha256(repo, tag, asset, archive, sha_file)
+}
+
+pub fn release_signing_keys_status() -> anyhow::Result<ReleaseSigningKeysStatus> {
+    let (keys, info) = load_release_signing_keys_ed25519()?;
+    Ok(ReleaseSigningKeysStatus {
+        configured: !keys.is_empty(),
+        source: info.source,
+        env_present: info.env_present,
+    })
 }
 
 #[cfg(test)]
