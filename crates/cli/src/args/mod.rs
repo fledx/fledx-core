@@ -115,8 +115,10 @@ pub enum Commands {
     /// Bootstrap (install + configure) control-plane and agents.
     #[cfg(feature = "bootstrap")]
     Bootstrap {
+        #[command(flatten)]
+        args: BootstrapRootArgs,
         #[command(subcommand)]
-        command: BootstrapCommands,
+        command: Box<BootstrapCommands>,
     },
 
     /// Local CLI profile management.

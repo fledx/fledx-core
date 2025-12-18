@@ -1,4 +1,7 @@
-use crate::args::{ProfileCommands, ProfileSetArgs, ProfileSetDefaultArgs, ProfileShowArgs};
+use crate::args::{
+    BootstrapRepoOwnerCommands, BootstrapRepoOwnerSetArgs, ProfileCommands, ProfileSetArgs,
+    ProfileSetDefaultArgs, ProfileShowArgs,
+};
 use crate::profile_store::{Profile, ProfileStore};
 
 pub fn handle_profiles(
@@ -13,6 +16,12 @@ pub fn handle_profiles(
                 println!("default_profile: {}", default);
             } else {
                 println!("default_profile: <unset>");
+            }
+
+            if let Some(owner) = store.bootstrap_repo_owner.as_deref() {
+                println!("bootstrap_repo_owner: {}", owner);
+            } else {
+                println!("bootstrap_repo_owner: <unset>");
             }
 
             if store.profiles.is_empty() {
@@ -93,6 +102,32 @@ pub fn handle_profiles(
             store.save()?;
             println!("default_profile set to: {}", name);
         }
+        ProfileCommands::BootstrapRepoOwner { command } => match command {
+            BootstrapRepoOwnerCommands::Show => {
+                if let Some(owner) = store.bootstrap_repo_owner.as_deref() {
+                    println!("bootstrap_repo_owner: {}", owner);
+                } else {
+                    println!("bootstrap_repo_owner: <unset>");
+                }
+            }
+            BootstrapRepoOwnerCommands::Set(BootstrapRepoOwnerSetArgs { owner }) => {
+                let owner = owner.trim();
+                if owner.is_empty() {
+                    anyhow::bail!("invalid owner (empty)");
+                }
+                if owner.contains('/') {
+                    anyhow::bail!("invalid owner (must not contain '/'): {}", owner);
+                }
+                store.bootstrap_repo_owner = Some(owner.to_string());
+                store.save()?;
+                println!("bootstrap_repo_owner set to: {}", owner);
+            }
+            BootstrapRepoOwnerCommands::Unset => {
+                store.bootstrap_repo_owner = None;
+                store.save()?;
+                println!("bootstrap_repo_owner unset");
+            }
+        },
     }
 
     Ok(())

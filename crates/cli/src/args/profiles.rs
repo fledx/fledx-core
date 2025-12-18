@@ -10,6 +10,28 @@ pub enum ProfileCommands {
     Set(ProfileSetArgs),
     /// Set the default profile name.
     SetDefault(ProfileSetDefaultArgs),
+    /// Manage a global default bootstrap repo owner (stored in config.toml).
+    BootstrapRepoOwner {
+        #[command(subcommand)]
+        command: BootstrapRepoOwnerCommands,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BootstrapRepoOwnerCommands {
+    /// Show the configured bootstrap repo owner.
+    Show,
+    /// Set the bootstrap repo owner.
+    Set(BootstrapRepoOwnerSetArgs),
+    /// Unset the bootstrap repo owner.
+    Unset,
+}
+
+#[derive(Debug, Args)]
+pub struct BootstrapRepoOwnerSetArgs {
+    /// GitHub owner/org, e.g. `myorg`.
+    #[arg(long = "owner", value_name = "OWNER")]
+    pub owner: String,
 }
 
 #[derive(Debug, Args)]
