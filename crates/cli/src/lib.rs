@@ -40,6 +40,8 @@ use crate::commands::bootstrap::handle_bootstrap;
 use crate::commands::completions::generate_completions;
 use crate::commands::configs::handle_configs;
 use crate::commands::deploy::handle_deploy_commands;
+#[cfg(feature = "bootstrap")]
+use crate::commands::internal::handle_internal;
 use crate::commands::metrics::handle_metrics;
 use crate::commands::nodes::handle_nodes;
 #[cfg(feature = "bootstrap")]
@@ -124,6 +126,8 @@ pub async fn run_parsed_with(cli: Cli, options: RunOptions) -> anyhow::Result<()
         }
         #[cfg(feature = "bootstrap")]
         Commands::Profile { command } => handle_profiles(selected_profile, command)?,
+        #[cfg(feature = "bootstrap")]
+        Commands::Internal { command } => handle_internal(command)?,
     }
 
     Ok(())

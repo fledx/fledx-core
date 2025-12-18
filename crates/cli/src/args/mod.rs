@@ -7,6 +7,8 @@ use crate::version;
 pub mod bootstrap;
 pub mod common;
 pub mod deploy;
+#[cfg(feature = "bootstrap")]
+pub mod internal;
 pub mod metrics;
 pub mod nodes;
 #[cfg(feature = "bootstrap")]
@@ -18,6 +20,8 @@ pub mod usage;
 pub use bootstrap::*;
 pub use common::*;
 pub use deploy::*;
+#[cfg(feature = "bootstrap")]
+pub use internal::*;
 pub use metrics::*;
 pub use nodes::*;
 #[cfg(feature = "bootstrap")]
@@ -126,6 +130,14 @@ pub enum Commands {
     Profile {
         #[command(subcommand)]
         command: ProfileCommands,
+    },
+
+    /// Internal diagnostics (hidden).
+    #[cfg(feature = "bootstrap")]
+    #[command(hide = true)]
+    Internal {
+        #[command(subcommand)]
+        command: InternalCommands,
     },
 }
 
