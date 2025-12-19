@@ -24,7 +24,9 @@ Usage:
   curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/install-fledx-cli.sh | sh
 
 Options:
-  --version <vX.Y.Z|X.Y.Z|latest>  Install a specific version (default: latest)
+  --version <vX.Y.Z|X.Y.Z|nightly|latest>
+                                  Install a specific version or tag
+                                  (default: latest)
   -b, --bin-dir <DIR>             Install directory (default: /usr/local/bin if root,
                                   otherwise $HOME/.local/bin)
   --repo <OWNER/REPO>             GitHub repo (default: fledx/fledx-core)
@@ -44,6 +46,7 @@ Signature verification:
 Examples:
   curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/install-fledx-cli.sh | sh -s -- -b /usr/local/bin
   curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/install-fledx-cli.sh | sh -s -- --version v0.4.0
+  curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/install-fledx-cli.sh | sh -s -- --version nightly
 USAGE
 }
 
@@ -301,7 +304,8 @@ if [ "$(printf '%s' "$VERSION" | tr 'A-Z' 'a-z')" = "latest" ]; then
 else
   case "$VERSION" in
     v*) TAG="$VERSION" ;;
-    *) TAG="v$VERSION" ;;
+    [0-9]*) TAG="v$VERSION" ;;
+    *) TAG="$VERSION" ;;
   esac
 fi
 

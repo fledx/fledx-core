@@ -35,6 +35,13 @@ curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/insta
 sh -s -- --version v0.4.0 -b /usr/local/bin
 ```
 
+Install the nightly build:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fledx/fledx-core/main/scripts/install-fledx-cli.sh | \
+sh -s -- --version nightly
+```
+
 ```bash
 cargo install --path crates/cli
 ```
