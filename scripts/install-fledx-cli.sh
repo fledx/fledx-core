@@ -338,6 +338,10 @@ if [ "$SKIP_SIGNATURE" -ne 1 ]; then
     fi
     verify_ed25519_signature "$SHA_FILE" "$SIG_FILE" "$keys"
   else
+    if [ "$sig_downloaded" -eq 1 ]; then
+      note "signature file present but no trusted public keys configured"
+      note "export FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS=0x<64-hex>[,...] to verify authenticity"
+    fi
     if [ "$REQUIRE_SIGNATURE" -eq 1 ]; then
       die "missing FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS (required for signature verification)"
     fi

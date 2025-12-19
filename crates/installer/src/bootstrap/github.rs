@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::Context;
+use base64::{engine::general_purpose, Engine as _};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -249,6 +250,63 @@ fn describe_release_signing_keys_source(info: ReleaseSigningKeysInfo) -> String 
     }
 }
 
+fn read_ssh_string<'a>(data: &'a [u8], cursor: &mut usize) -> anyhow::Result<&'a [u8]> {
+    if *cursor + 4 > data.len() {
+        anyhow::bail!("invalid ssh-ed25519 public key (truncated length)");
+    }
+    let len = u32::from_be_bytes([
+        data[*cursor],
+        data[*cursor + 1],
+        data[*cursor + 2],
+        data[*cursor + 3],
+    ]) as usize;
+    *cursor += 4;
+    if *cursor + len > data.len() {
+        anyhow::bail!("invalid ssh-ed25519 public key (truncated data)");
+    }
+    let out = &data[*cursor..*cursor + len];
+    *cursor += len;
+    Ok(out)
+}
+
+fn parse_ssh_ed25519_pubkey(value: &str) -> anyhow::Result<[u8; 32]> {
+    let mut parts = value.split_whitespace();
+    let key_type = parts.next().unwrap_or_default();
+    if key_type != "ssh-ed25519" {
+        anyhow::bail!(
+            "unsupported ssh public key type '{}'; expected ssh-ed25519",
+            key_type
+        );
+    }
+    let key_b64 = parts
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("ssh-ed25519 public key is missing base64 data"))?;
+    let decoded = general_purpose::STANDARD
+        .decode(key_b64)
+        .context("invalid ssh-ed25519 base64 data")?;
+    let mut cursor = 0;
+    let decoded_type = read_ssh_string(&decoded, &mut cursor)?;
+    if decoded_type != b"ssh-ed25519" {
+        anyhow::bail!(
+            "invalid ssh-ed25519 public key (unexpected type {})",
+            String::from_utf8_lossy(decoded_type)
+        );
+    }
+    let key_bytes = read_ssh_string(&decoded, &mut cursor)?;
+    if key_bytes.len() != 32 {
+        anyhow::bail!(
+            "invalid ed25519 public key length: expected 32 bytes, got {}",
+            key_bytes.len()
+        );
+    }
+    if cursor != decoded.len() {
+        anyhow::bail!("invalid ssh-ed25519 public key (trailing data)");
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(key_bytes);
+    Ok(out)
+}
+
 fn parse_hex_n<const N: usize>(value: &str) -> anyhow::Result<[u8; N]> {
     let trimmed = value.trim();
     let without_prefix = trimmed
@@ -275,6 +333,25 @@ fn parse_hex_n<const N: usize>(value: &str) -> anyhow::Result<[u8; N]> {
         out[idx] = ((hi << 4) | lo) as u8;
     }
     Ok(out)
+}
+
+fn parse_ed25519_pubkey_entry(value: &str) -> anyhow::Result<[u8; 32]> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("empty entry");
+    }
+    let first_token = trimmed.split_whitespace().next().unwrap_or_default();
+    if first_token.starts_with("ssh-") {
+        return parse_ssh_ed25519_pubkey(trimmed);
+    }
+    if trimmed.starts_with("-----BEGIN") {
+        anyhow::bail!(
+            "PEM public keys are not supported; use 64-hex (optional 0x) or ssh-ed25519"
+        );
+    }
+    parse_hex_n::<32>(trimmed).with_context(|| {
+        "expected 64 hex chars (32 bytes), optionally 0x-prefixed, or ssh-ed25519"
+    })
 }
 
 fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, ReleaseSigningKeysInfo)>
@@ -310,7 +387,7 @@ fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, Rel
             if entry.is_empty() {
                 continue;
             }
-            let bytes = parse_hex_n::<32>(entry).with_context(|| {
+            let bytes = parse_ed25519_pubkey_entry(entry).with_context(|| {
                 format!(
                     "failed to parse ed25519 public key from {} entry '{}'",
                     RELEASE_SIGNING_PUBKEYS_ED25519_ENV, entry
@@ -355,8 +432,9 @@ pub fn verify_signed_sha256(
         anyhow::bail!(
             "release signature verification is enabled but no trusted ed25519 \
 release signing keys are configured.\n\
-Set {} to a comma-separated list of 32-byte hex public keys (64 hex chars), \
-or pass --insecure-allow-unsigned to skip signature verification.\n\
+Set {} to a comma-separated list of 32-byte public keys in hex (64 chars, \
+optional 0x) or ssh-ed25519 format, or pass --insecure-allow-unsigned to skip \
+signature verification.\n\
 \nkey source: {}\n\
 \nrepo: {}\ntag: {}\nasset: {}",
             RELEASE_SIGNING_PUBKEYS_ED25519_ENV,
@@ -522,5 +600,23 @@ mod tests {
             b"not-hello",
             &signature
         ));
+    }
+
+    #[test]
+    fn parse_ed25519_pubkey_entry_accepts_hex() {
+        let key = parse_ed25519_pubkey_entry("0x1111111111111111111111111111111111111111111111111111111111111111")
+            .expect("hex key");
+        assert_eq!(key, [0x11u8; 32]);
+    }
+
+    #[test]
+    fn parse_ed25519_pubkey_entry_accepts_ssh_ed25519() {
+        let ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0XDtf2pLFc+LVsG9CUlgpOm7GmL+bBcUKDD940ZNmP";
+        let expected = parse_hex_n::<32>(
+            "ad170ed7f6a4b15cf8b56c1bd094960a4e9bb1a62fe6c17142830fde3464d98f",
+        )
+        .expect("expected hex");
+        let parsed = parse_ed25519_pubkey_entry(ssh_key).expect("ssh key");
+        assert_eq!(parsed, expected);
     }
 }

@@ -14,6 +14,8 @@ use crate::bootstrap_spec::{
 };
 use crate::profile_store::ProfileStore;
 
+const RELEASE_SIGNING_PUBKEYS_ENV: &str = "FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS";
+
 struct PeriodicStatus {
     done: Arc<AtomicBool>,
     handle: Option<thread::JoinHandle<()>>,
@@ -63,6 +65,36 @@ impl Drop for PeriodicStatus {
             let _ = handle.join();
         }
     }
+}
+
+fn log_release_signing_keys_status() -> anyhow::Result<()> {
+    let status = installer::bootstrap::release_signing_keys_status()?;
+    let state = if status.configured {
+        "configured"
+    } else {
+        "missing"
+    };
+    eprintln!(
+        "bootstrap: release signing keys: {state} (source: {})",
+        status.source.as_str()
+    );
+    if !status.configured {
+        eprintln!(
+            "bootstrap: hint: this build does not embed signing keys; set {} or use an official release binary.",
+            RELEASE_SIGNING_PUBKEYS_ENV
+        );
+    } else if status.env_present
+        && matches!(
+            status.source,
+            installer::bootstrap::ReleaseSigningKeysSource::Compiled
+        )
+    {
+        eprintln!(
+            "bootstrap: note: {} is set but embedded keys are in use",
+            RELEASE_SIGNING_PUBKEYS_ENV
+        );
+    }
+    Ok(())
 }
 
 fn validate_archive_name(name: &str) -> anyhow::Result<()> {
@@ -195,6 +227,7 @@ MITM on first connect; prefer --ssh-host-key-checking strict in production."
             }
         }
     }
+    log_release_signing_keys_status()?;
     let target = match &args.ssh_host {
         Some(host) => {
             let mut ssh = installer::bootstrap::SshTarget::from_user_at_host(
@@ -497,6 +530,7 @@ MITM on first connect; prefer --ssh-host-key-checking strict in production."
 Use --no-docker-group to skip this step."
         );
     }
+    log_release_signing_keys_status()?;
     let registration_token =
         resolve_registration_token_for_bootstrap(profiles, &selected_profile, globals)?;
 
