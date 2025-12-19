@@ -115,6 +115,8 @@ fledx nodes status --wide
 | `--label`                 | -          | Labels (repeatable)    |
 | `--capacity-cpu-millis`   | -          | CPU capacity           |
 | `--capacity-memory-bytes` | -          | Memory capacity        |
+| `--docker-service`        | docker.service | Override docker.service dependency |
+| `--no-docker-service`     | -          | Skip docker.service dependency (WSL/Docker Desktop or custom service names) |
 
 ---
 

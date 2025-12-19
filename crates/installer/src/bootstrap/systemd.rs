@@ -473,7 +473,16 @@ pub struct AgentEnvInputs {
     pub tunnel: common::api::TunnelEndpoint,
 }
 
+const DEFAULT_DOCKER_SERVICE: &str = "docker.service";
+
 pub fn render_agent_unit(input: &AgentUnitInputs) -> String {
+    render_agent_unit_with_docker_service(input, Some(DEFAULT_DOCKER_SERVICE))
+}
+
+pub fn render_agent_unit_with_docker_service(
+    input: &AgentUnitInputs,
+    docker_service: Option<&str>,
+) -> String {
     let AgentUnitInputs {
         service_user,
         env_path,
@@ -482,14 +491,25 @@ pub fn render_agent_unit(input: &AgentUnitInputs) -> String {
 
     let env_path_escaped = systemd_escape_environment_file_path(env_path);
     let bin_path_escaped = systemd_quote_unit_path(bin_path);
+    let docker_service = docker_service
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(normalize_unit_name);
+    let after_line = match docker_service.as_deref() {
+        Some(service) => format!("After=network-online.target {service}"),
+        None => "After=network-online.target".to_string(),
+    };
+    let requires_line = docker_service
+        .as_deref()
+        .map(|service| format!("Requires={service}\n"))
+        .unwrap_or_default();
 
     format!(
         "\
 [Unit]
 Description=Distributed Edge Hosting Node Agent
-After=network-online.target docker.service
-Requires=docker.service
-Wants=network-online.target
+{after_line}
+{requires_line}Wants=network-online.target
 
 [Service]
 User={service_user}
@@ -503,7 +523,7 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 ",
         env_path = env_path_escaped,
-        bin_path = bin_path_escaped
+        bin_path = bin_path_escaped,
     )
 }
 
@@ -1098,6 +1118,37 @@ authorization: bearer qwerty
 
         assert!(unit.contains("EnvironmentFile=/etc/fledx\\x20dir/fledx%%agent.env"));
         assert!(unit.contains("ExecStart=\"/usr/local/bin dir/fledx-agent\""));
+    }
+
+    #[test]
+    fn render_agent_unit_omits_docker_service_when_disabled() {
+        let unit = render_agent_unit_with_docker_service(
+            &AgentUnitInputs {
+                service_user: "fledx-agent".to_string(),
+                env_path: PathBuf::from("/etc/fledx/fledx-agent.env"),
+                bin_path: PathBuf::from("/usr/local/bin/fledx-agent"),
+            },
+            None,
+        );
+
+        assert!(unit.contains("After=network-online.target"));
+        assert!(!unit.contains("docker.service"));
+        assert!(!unit.contains("Requires="));
+    }
+
+    #[test]
+    fn render_agent_unit_normalizes_docker_service_name() {
+        let unit = render_agent_unit_with_docker_service(
+            &AgentUnitInputs {
+                service_user: "fledx-agent".to_string(),
+                env_path: PathBuf::from("/etc/fledx/fledx-agent.env"),
+                bin_path: PathBuf::from("/usr/local/bin/fledx-agent"),
+            },
+            Some("containerd"),
+        );
+
+        assert!(unit.contains("After=network-online.target containerd.service"));
+        assert!(unit.contains("Requires=containerd.service"));
     }
 
     #[test]

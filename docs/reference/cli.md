@@ -136,6 +136,8 @@ fledx bootstrap agent \
 | `--label`                 | -                     | Node labels (repeatable, KEY=VALUE) |
 | `--capacity-cpu-millis`   | -                     | CPU capacity hint                   |
 | `--capacity-memory-bytes` | -                     | Memory capacity hint                |
+| `--docker-service`        | docker.service        | Override docker.service dependency  |
+| `--no-docker-service`     | -                     | Skip docker.service dependency (WSL/Docker Desktop or custom service names) |
 
 ## Profile Commands
 

@@ -283,6 +283,28 @@ pub struct BootstrapAgentArgs {
     #[arg(long = "no-docker-group", default_value_t = false)]
     pub no_docker_group: bool,
 
+    /// Override the Docker systemd unit name required by the agent.
+    ///
+    /// Defaults to `docker.service` when omitted. Use `--no-docker-service` to
+    /// disable the dependency entirely.
+    #[arg(
+        long = "docker-service",
+        value_name = "UNIT",
+        conflicts_with = "no_docker_service"
+    )]
+    pub docker_service: Option<String>,
+
+    /// Do not require docker.service in the systemd unit.
+    ///
+    /// Useful for Docker Desktop on WSL2 or custom Docker service names where
+    /// `docker.service` does not exist.
+    #[arg(
+        long = "no-docker-service",
+        default_value_t = false,
+        conflicts_with = "docker_service"
+    )]
+    pub no_docker_service: bool,
+
     /// Node label in KEY=VALUE form (repeatable).
     #[arg(long = "label", visible_alias = "labels", value_name = "KEY=VALUE")]
     pub labels: Vec<String>,

@@ -748,12 +748,22 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
     });
 
     let bin_path = agent_bin_path(&args)?;
-    let agent_unit =
-        installer::bootstrap::render_agent_unit(&installer::bootstrap::AgentUnitInputs {
+    let docker_service = if args.no_docker_service {
+        None
+    } else {
+        args.docker_service
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .or(Some("docker.service"))
+    };
+    let agent_unit = installer::bootstrap::render_agent_unit_with_docker_service(
+        &installer::bootstrap::AgentUnitInputs {
             service_user: args.service_user.clone(),
             env_path: args.config_dir.join("fledx-agent.env"),
             bin_path: bin_path.clone(),
-        });
+        },
+        docker_service,
+    );
 
     let settings = installer::bootstrap::AgentInstallSettings {
         config_dir: args.config_dir.clone(),
@@ -965,6 +975,8 @@ mod tests {
             data_dir: PathBuf::from("/var/lib/fledx"),
             service_user: "fledx-agent".into(),
             no_docker_group: false,
+            docker_service: None,
+            no_docker_service: false,
             labels: Vec::new(),
             capacity_cpu_millis: None,
             capacity_memory_bytes: None,
@@ -999,6 +1011,8 @@ mod tests {
             data_dir: PathBuf::from("/var/lib/fledx"),
             service_user: "fledx-agent".into(),
             no_docker_group: false,
+            docker_service: None,
+            no_docker_service: false,
             labels: Vec::new(),
             capacity_cpu_millis: None,
             capacity_memory_bytes: None,
@@ -1033,6 +1047,8 @@ mod tests {
             data_dir: PathBuf::from("/var/lib/fledx"),
             service_user: "fledx-agent".into(),
             no_docker_group: false,
+            docker_service: None,
+            no_docker_service: false,
             labels: Vec::new(),
             capacity_cpu_millis: None,
             capacity_memory_bytes: None,

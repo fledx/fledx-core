@@ -155,6 +155,8 @@ fledx bootstrap agent --ssh-host <HOST> [OPTIONS]
 | `--label`                 | -                     | Node labels (repeatable, KEY=VALUE) |
 | `--capacity-cpu-millis`   | -                     | CPU capacity hint                   |
 | `--capacity-memory-bytes` | -                     | Memory capacity hint                |
+| `--docker-service`        | docker.service        | Override docker.service dependency  |
+| `--no-docker-service`     | -                     | Skip docker.service dependency (WSL/Docker Desktop or custom service names) |
 
 ## CLI Commands
 
