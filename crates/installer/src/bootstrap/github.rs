@@ -345,13 +345,10 @@ fn parse_ed25519_pubkey_entry(value: &str) -> anyhow::Result<[u8; 32]> {
         return parse_ssh_ed25519_pubkey(trimmed);
     }
     if trimmed.starts_with("-----BEGIN") {
-        anyhow::bail!(
-            "PEM public keys are not supported; use 64-hex (optional 0x) or ssh-ed25519"
-        );
+        anyhow::bail!("PEM public keys are not supported; use 64-hex (optional 0x) or ssh-ed25519");
     }
-    parse_hex_n::<32>(trimmed).with_context(|| {
-        "expected 64 hex chars (32 bytes), optionally 0x-prefixed, or ssh-ed25519"
-    })
+    parse_hex_n::<32>(trimmed)
+        .with_context(|| "expected 64 hex chars (32 bytes), optionally 0x-prefixed, or ssh-ed25519")
 }
 
 fn load_release_signing_keys_ed25519() -> anyhow::Result<(Vec<VerifyingKey>, ReleaseSigningKeysInfo)>
@@ -604,18 +601,20 @@ mod tests {
 
     #[test]
     fn parse_ed25519_pubkey_entry_accepts_hex() {
-        let key = parse_ed25519_pubkey_entry("0x1111111111111111111111111111111111111111111111111111111111111111")
-            .expect("hex key");
+        let key = parse_ed25519_pubkey_entry(
+            "0x1111111111111111111111111111111111111111111111111111111111111111",
+        )
+        .expect("hex key");
         assert_eq!(key, [0x11u8; 32]);
     }
 
     #[test]
     fn parse_ed25519_pubkey_entry_accepts_ssh_ed25519() {
-        let ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0XDtf2pLFc+LVsG9CUlgpOm7GmL+bBcUKDD940ZNmP";
-        let expected = parse_hex_n::<32>(
-            "ad170ed7f6a4b15cf8b56c1bd094960a4e9bb1a62fe6c17142830fde3464d98f",
-        )
-        .expect("expected hex");
+        let ssh_key =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK0XDtf2pLFc+LVsG9CUlgpOm7GmL+bBcUKDD940ZNmP";
+        let expected =
+            parse_hex_n::<32>("ad170ed7f6a4b15cf8b56c1bd094960a4e9bb1a62fe6c17142830fde3464d98f")
+                .expect("expected hex");
         let parsed = parse_ed25519_pubkey_entry(ssh_key).expect("ssh key");
         assert_eq!(parsed, expected);
     }

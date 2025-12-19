@@ -1712,6 +1712,7 @@ name = "installer"
 version = "0.5.0-dev"
 dependencies = [
  "anyhow",
+ "base64",
  "common",
  "ed25519-dalek",
  "flate2",

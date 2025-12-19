@@ -183,6 +183,9 @@ normalize_pubkey_hex() {
   trimmed="$(printf '%s' "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
   case "$trimmed" in
     ssh-ed25519*)
+      if ! ssh_ed25519_parser_available; then
+        die "ssh-ed25519 public keys require python3, python, or perl to parse; provide 64-hex instead"
+      fi
       key="$(ssh_ed25519_to_hex "$trimmed" 2>/dev/null || true)"
       [ -n "$key" ] || return 1
       echo "$key"
@@ -196,6 +199,13 @@ normalize_pubkey_hex() {
 
   echo "$key" | grep -Eq '^[0-9a-f]{64}$' || return 1
   echo "$key"
+}
+
+ssh_ed25519_parser_available() {
+  command -v python3 >/dev/null 2>&1 && return 0
+  command -v python >/dev/null 2>&1 && return 0
+  command -v perl >/dev/null 2>&1 && return 0
+  return 1
 }
 
 ssh_ed25519_to_hex() {
