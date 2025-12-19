@@ -88,7 +88,7 @@ pub async fn run_parsed(cli: Cli) -> anyhow::Result<()> {
 
 /// Execute the CLI given a pre-parsed argument struct, with caller-provided
 /// runtime options (primarily used by wrappers like `fledx-enterprise`).
-pub async fn run_parsed_with(cli: Cli, options: RunOptions) -> anyhow::Result<()> {
+pub async fn run_parsed_with(cli: Cli, _options: RunOptions) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     #[cfg(feature = "bootstrap")]
     let selected_profile = cli.profile.clone();
@@ -118,7 +118,7 @@ pub async fn run_parsed_with(cli: Cli, options: RunOptions) -> anyhow::Result<()
                 client,
                 selected_profile,
                 &globals,
-                options.bootstrap_spec,
+                _options.bootstrap_spec,
                 args,
                 *command,
             )
