@@ -39,7 +39,7 @@ Signature verification:
   .sha256 file. If you also want authenticity verification, provide a trusted
   Ed25519 public key allowlist via:
 
-    export FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS="0x<64-hex>,0x<64-hex>"
+    export FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS="0x<64-hex>,ssh-ed25519 <b64>"
 
   The release contains a raw 64-byte signature file: *.sha256.sig.
 
@@ -180,12 +180,133 @@ verify_sha256_file() {
 
 normalize_pubkey_hex() {
   raw="$1"
-  key="$(printf '%s' "$raw" | tr -d '[:space:]' | tr 'A-F' 'a-f')"
+  trimmed="$(printf '%s' "$raw" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  case "$trimmed" in
+    ssh-ed25519*)
+      key="$(ssh_ed25519_to_hex "$trimmed" 2>/dev/null || true)"
+      [ -n "$key" ] || return 1
+      echo "$key"
+      return 0
+      ;;
+  esac
+
+  key="$(printf '%s' "$trimmed" | tr -d '[:space:]' | tr 'A-F' 'a-f')"
   key="${key#0x}"
   key="${key#0X}"
 
   echo "$key" | grep -Eq '^[0-9a-f]{64}$' || return 1
   echo "$key"
+}
+
+ssh_ed25519_to_hex() {
+  key="$1"
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$key" <<'PY'
+import base64
+import sys
+
+key = sys.argv[1].strip()
+parts = key.split()
+if len(parts) < 2 or parts[0] != "ssh-ed25519":
+    sys.exit(1)
+
+try:
+    blob = base64.b64decode(parts[1])
+except Exception:
+    sys.exit(1)
+
+def read_str(buf, off):
+    if off + 4 > len(buf):
+        raise ValueError
+    n = int.from_bytes(buf[off:off+4], "big")
+    off += 4
+    if off + n > len(buf):
+        raise ValueError
+    return buf[off:off+n], off + n
+
+try:
+    t, off = read_str(blob, 0)
+    if t != b"ssh-ed25519":
+        raise ValueError
+    k, off = read_str(blob, off)
+    if len(k) != 32 or off != len(blob):
+        raise ValueError
+    print(k.hex())
+except Exception:
+    sys.exit(1)
+PY
+    return $?
+  fi
+
+  if command -v python >/dev/null 2>&1; then
+    python - "$key" <<'PY'
+import base64
+import sys
+
+key = sys.argv[1].strip()
+parts = key.split()
+if len(parts) < 2 or parts[0] != "ssh-ed25519":
+    sys.exit(1)
+
+try:
+    blob = base64.b64decode(parts[1])
+except Exception:
+    sys.exit(1)
+
+def read_str(buf, off):
+    if off + 4 > len(buf):
+        raise ValueError
+    n = int.from_bytes(buf[off:off+4], "big")
+    off += 4
+    if off + n > len(buf):
+        raise ValueError
+    return buf[off:off+n], off + n
+
+try:
+    t, off = read_str(blob, 0)
+    if t != b"ssh-ed25519":
+        raise ValueError
+    k, off = read_str(blob, off)
+    if len(k) != 32 or off != len(blob):
+        raise ValueError
+    sys.stdout.write(k.hex())
+except Exception:
+    sys.exit(1)
+PY
+    return $?
+  fi
+
+  if command -v perl >/dev/null 2>&1; then
+    perl -MMIME::Base64 -e '
+use strict;
+use warnings;
+my $key = shift // "";
+$key =~ s/^\s+|\s+$//g;
+my @parts = split /\s+/, $key;
+exit 1 if @parts < 2 || $parts[0] ne "ssh-ed25519";
+my $blob = MIME::Base64::decode_base64($parts[1]);
+my $off = 0;
+sub read_str {
+  my ($buf, $offref) = @_;
+  return undef if $$offref + 4 > length($buf);
+  my $len = unpack("N", substr($buf, $$offref, 4));
+  $$offref += 4;
+  return undef if $$offref + $len > length($buf);
+  my $out = substr($buf, $$offref, $len);
+  $$offref += $len;
+  return $out;
+}
+my $type = read_str($blob, \$off) // exit 1;
+exit 1 if $type ne "ssh-ed25519";
+my $key_bytes = read_str($blob, \$off) // exit 1;
+exit 1 if length($key_bytes) != 32 || $off != length($blob);
+print unpack("H*", $key_bytes);
+' "$key"
+    return $?
+  fi
+
+  return 1
 }
 
 verify_ed25519_signature() {
@@ -340,7 +461,7 @@ if [ "$SKIP_SIGNATURE" -ne 1 ]; then
   else
     if [ "$sig_downloaded" -eq 1 ]; then
       note "signature file present but no trusted public keys configured"
-      note "export FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS=0x<64-hex>[,...] to verify authenticity"
+      note "export FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS=0x<64-hex>[,...] or ssh-ed25519 <b64> to verify authenticity"
     fi
     if [ "$REQUIRE_SIGNATURE" -eq 1 ]; then
       die "missing FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS (required for signature verification)"
