@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the default gateway ports to 49441 (admin) and 49442 (listener).
 - Normalize Docker unit names when rendering the agent systemd unit.
 - Explicitly re-export bootstrap systemd helpers for downstream consumers.
+- Map database constraint errors to structured API responses instead of
+  generic internal errors.
+- Return not-found when config updates target a missing config record.
 
 ## [0.4.1] – 2025-12-19
 

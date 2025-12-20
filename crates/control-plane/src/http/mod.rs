@@ -1856,7 +1856,8 @@ pub(crate) async fn update_config(
             &entries,
             &files,
         )
-        .await?;
+        .await?
+        .ok_or_else(|| AppError::not_found("config not found"))?;
 
         let response = build_config_response(&state, updated).await?;
         Ok(Json(response))

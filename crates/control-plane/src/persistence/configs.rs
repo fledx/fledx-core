@@ -141,7 +141,7 @@ pub async fn replace_config_data(
     version: i64,
     entries: &[ConfigEntry],
     files: &[ConfigFileRef],
-) -> Result<ConfigRecord> {
+) -> Result<Option<ConfigRecord>> {
     let mut tx = pool.begin().await?;
     let updated = sqlx::query(
         r#"
@@ -159,7 +159,7 @@ pub async fn replace_config_data(
     .await?;
 
     if updated.rows_affected() == 0 {
-        anyhow::bail!("config not found for update");
+        return Ok(None);
     }
 
     sqlx::query(
@@ -185,9 +185,10 @@ pub async fn replace_config_data(
 
     tx.commit().await?;
 
-    get_config(pool, config_id)
+    let record = get_config(pool, config_id)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("config missing after update"))
+        .ok_or_else(|| anyhow::anyhow!("config missing after update"))?;
+    Ok(Some(record))
 }
 
 pub async fn get_config(pool: &Db, id: Uuid) -> Result<Option<ConfigRecord>> {
