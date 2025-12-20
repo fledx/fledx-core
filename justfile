@@ -27,6 +27,12 @@ check:
 test:
   cargo test --workspace --all-features
 
+llvm-cov:
+  cargo llvm-cov --workspace --all-features
+
+llvm-cov-html:
+  cargo llvm-cov --workspace --all-features --html
+
 chaos-test:
   FLEDX_CHAOS_SMOKE=1 FLEDX_RUN_CHAOS=1 cargo test -p node-agent --all-features --test chaos_recovery
 

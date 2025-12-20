@@ -68,6 +68,45 @@ jobs:
           # Skip chaos tests in CI
           FLEDX_RUN_CHAOS: "0"
 
+  coverage:
+    name: Coverage (llvm-cov)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install llvm-tools-preview
+        run: rustup component add llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ runner.os }}-coverage
+
+      - name: Run coverage
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov --workspace --all-features --lcov \
+            --output-path coverage/lcov.info
+        env:
+          # Skip chaos tests in CI
+          FLEDX_RUN_CHAOS: "0"
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-core-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
+
   # Build on aarch64 (cross-compilation check)
   build-aarch64:
     name: Build (aarch64-unknown-linux-gnu)
