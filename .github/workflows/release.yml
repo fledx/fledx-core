@@ -12,9 +12,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  create-release:
-    name: Create Release
+  build:
+    name: Build Release (${{ matrix.target }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - target: aarch64-unknown-linux-gnu
+            arch: aarch64
     outputs:
       version: ${{ steps.get_version.outputs.version }}
     steps:
@@ -24,30 +31,6 @@ jobs:
           tag="${GITHUB_REF#refs/tags/}"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: true
-
-  build-release:
-    name: Build Release (${{ matrix.target }})
-    needs: create-release
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            arch: x86_64
-          - target: aarch64-unknown-linux-gnu
-            arch: aarch64
-    steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
@@ -68,7 +51,7 @@ jobs:
 
       - name: Export version
         run: |
-          version="${{ needs.create-release.outputs.version }}"
+          version="${{ steps.get_version.outputs.version }}"
           echo "VERSION=${version#v}" >> "$GITHUB_ENV"
 
       - name: Validate tag matches Cargo versions
@@ -188,13 +171,11 @@ jobs:
           done
 
       - name: Upload release artifacts
-        uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          fail_on_unmatched_files: true
-          files: |
+          name: fledx-release-${{ matrix.arch }}-linux
+          if-no-files-found: error
+          path: |
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256.sig
@@ -204,3 +185,90 @@ jobs:
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256.sig
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Validate release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          if [ -z "$version" ]; then
+            echo "version could not be derived from tag: $GITHUB_REF" >&2
+            exit 1
+          fi
+
+          if [ ! -d artifacts ]; then
+            echo "artifacts directory is missing" >&2
+            exit 1
+          fi
+
+          arches=(x86_64 aarch64)
+          bins=(fledx fledx-cp fledx-agent)
+          expected=()
+          for arch in "${arches[@]}"; do
+            for bin in "${bins[@]}"; do
+              base="${bin}-${version}-${arch}-linux.tar.gz"
+              expected+=("$base" "$base.sha256" "$base.sha256.sig")
+            done
+          done
+
+          mapfile -d '' actual_paths < <(find artifacts -type f -name '*.tar.gz*' -print0)
+          actual=()
+          for path in "${actual_paths[@]}"; do
+            actual+=("$(basename "$path")")
+          done
+
+          expected_file="$(mktemp)"
+          actual_file="$(mktemp)"
+          trap 'rm -f "$expected_file" "$actual_file"' EXIT
+
+          printf '%s\n' "${expected[@]}" | sort -u > "$expected_file"
+          printf '%s\n' "${actual[@]}" | sort -u > "$actual_file"
+
+          missing="$(comm -23 "$expected_file" "$actual_file" || true)"
+          extra="$(comm -13 "$expected_file" "$actual_file" || true)"
+
+          if [ -n "$missing" ] || [ -n "$extra" ]; then
+            echo "artifact validation failed" >&2
+            if [ -n "$missing" ]; then
+              echo "missing files:" >&2
+              echo "$missing" >&2
+            fi
+            if [ -n "$extra" ]; then
+              echo "unexpected files:" >&2
+              echo "$extra" >&2
+            fi
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/**/fledx-*.tar.gz*
