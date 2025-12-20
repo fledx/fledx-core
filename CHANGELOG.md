@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the default node-agent metrics port to 49431.
 - Changed the default gateway ports to 49441 (admin) and 49442 (listener).
 - Normalize Docker unit names when rendering the agent systemd unit.
+- Explicitly re-export bootstrap systemd helpers for downstream consumers.
 
 ## [0.4.1] – 2025-12-19
 
