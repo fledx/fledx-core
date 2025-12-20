@@ -3333,6 +3333,7 @@ async fn heartbeat_persists_instances_and_status_endpoints() {
         )
         .await
         .unwrap();
+    let hb_received_at = Utc::now();
     assert_eq!(hb_res.status(), StatusCode::OK);
 
     let instances = logs::list_instance_statuses_for_node(&db, reg.node_id)
@@ -3350,8 +3351,8 @@ async fn heartbeat_persists_instances_and_status_endpoints() {
         "last_seen should be at least the heartbeat send time"
     );
     assert!(
-        (inst.last_seen.timestamp() - hb_ts.timestamp()) < 5,
-        "last_seen should be close to heartbeat send time"
+        inst.last_seen <= hb_received_at,
+        "last_seen should not be after heartbeat response"
     );
     assert_eq!(inst.restart_count, 2);
     assert_eq!(
@@ -3390,7 +3391,7 @@ async fn heartbeat_persists_instances_and_status_endpoints() {
     assert_eq!(node_status.status, NodeStatus::Ready);
     let node_last_seen = node_status.last_seen.expect("node last_seen");
     assert!(
-        node_last_seen >= hb_ts && (node_last_seen - hb_ts).num_seconds() < 5,
+        node_last_seen >= hb_ts && node_last_seen <= hb_received_at,
         "node last_seen should track latest heartbeat"
     );
     assert_eq!(node_status.instances.len(), 1);
