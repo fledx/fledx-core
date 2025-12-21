@@ -4097,6 +4097,7 @@ mod tests {
                 }),
                 operator_authorizer: None,
                 registration_limiter: Some(registration_limiter),
+                operator_limiter: None,
                 token_pepper: "pepper".into(),
                 limits,
                 retention: crate::config::RetentionConfig {

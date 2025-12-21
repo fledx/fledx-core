@@ -295,6 +295,7 @@ pub fn make_state(db: db::Db, config: &TestAppConfig, schema: db::MigrationSnaps
         }),
         operator_authorizer: None,
         registration_limiter: Some(registration_limiter),
+        operator_limiter: None,
         token_pepper: "test-pepper".into(),
         limits,
         retention: RetentionConfig {

@@ -14,7 +14,13 @@ pub(crate) fn into_response(err: AppError) -> axum::response::Response {
         "error": err.message,
         "code": err.code,
     }));
-    (err.status, body).into_response()
+    let mut response = (err.status, body).into_response();
+    if let Some(headers) = err.headers.as_deref() {
+        for (name, value) in headers.iter() {
+            response.headers_mut().insert(name.clone(), value.clone());
+        }
+    }
+    response
 }
 
 impl IntoResponse for AppError {
@@ -43,6 +49,7 @@ mod tests {
             status: StatusCode::BAD_REQUEST,
             code: "bad_request",
             message: "nope".into(),
+            headers: None,
         };
         let response = into_response(app_error);
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);

@@ -1,3 +1,4 @@
+use axum::http::HeaderMap;
 use sqlx::{error::DatabaseError, Error as SqlxError};
 use tracing::error;
 
@@ -7,6 +8,7 @@ pub struct AppError {
     pub status: axum::http::StatusCode,
     pub code: &'static str,
     pub message: String,
+    pub headers: Option<Box<HeaderMap>>,
 }
 
 pub type ApiResult<T> = std::result::Result<T, AppError>;
@@ -19,6 +21,7 @@ impl AppError {
             status: axum::http::StatusCode::BAD_REQUEST,
             code: "bad_request",
             message: msg.into(),
+            headers: None,
         }
     }
 
@@ -27,6 +30,7 @@ impl AppError {
             status: axum::http::StatusCode::UNAUTHORIZED,
             code: "unauthorized",
             message: msg.into(),
+            headers: None,
         }
     }
 
@@ -35,6 +39,7 @@ impl AppError {
             status: axum::http::StatusCode::FORBIDDEN,
             code: "forbidden",
             message: msg.into(),
+            headers: None,
         }
     }
 
@@ -43,6 +48,7 @@ impl AppError {
             status: axum::http::StatusCode::NOT_FOUND,
             code: "not_found",
             message: msg.into(),
+            headers: None,
         }
     }
 
@@ -51,6 +57,7 @@ impl AppError {
             status: axum::http::StatusCode::SERVICE_UNAVAILABLE,
             code: "service_unavailable",
             message: msg.into(),
+            headers: None,
         }
     }
 
@@ -59,6 +66,7 @@ impl AppError {
             status: axum::http::StatusCode::PAYLOAD_TOO_LARGE,
             code: "payload_too_large",
             message: msg.into(),
+            headers: None,
         }
     }
 
@@ -67,6 +75,7 @@ impl AppError {
             status: axum::http::StatusCode::TOO_MANY_REQUESTS,
             code: "rate_limited",
             message: msg.into(),
+            headers: None,
         }
     }
 
@@ -75,7 +84,13 @@ impl AppError {
             status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
             code: "internal_error",
             message: msg.to_string(),
+            headers: None,
         }
+    }
+
+    pub fn with_headers(mut self, headers: HeaderMap) -> Self {
+        self.headers = Some(Box::new(headers));
+        self
     }
 }
 

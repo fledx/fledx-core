@@ -80,10 +80,12 @@ pub async fn register_node(
 ) -> ApiResult<RegistrationResponse> {
     if let Some(limiter) = &state.registration_limiter {
         let mut limiter = limiter.lock().await;
-        if !limiter.try_acquire() {
-            return Err(AppError::too_many_requests(
-                "registration rate limit exceeded",
-            ));
+        let decision = limiter.acquire();
+        if !decision.allowed {
+            return Err(
+                AppError::too_many_requests("registration rate limit exceeded")
+                    .with_headers(decision.headers()),
+            );
         }
     }
 

@@ -71,6 +71,15 @@ pub async fn require_operator_auth(
         }
     }
 
+    if let Some(limiter) = &state.operator_limiter {
+        let mut limiter = limiter.lock().await;
+        let decision = limiter.acquire();
+        if !decision.allowed {
+            return Err(AppError::too_many_requests("operator rate limit exceeded")
+                .with_headers(decision.headers()));
+        }
+    }
+
     req.extensions_mut().insert(identity);
     Ok(next.run(req).await)
 }

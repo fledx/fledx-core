@@ -15,7 +15,9 @@ use crate::{
     },
     error::ApiResult,
     metrics::MetricsHistory,
-    persistence, scheduler,
+    persistence,
+    rate_limit::RateLimitDecision,
+    scheduler,
 };
 use axum::body::Body;
 use axum::http::HeaderName;
@@ -35,6 +37,7 @@ pub struct AppState {
     /// Optional authorizer for operator requests (RBAC enforcement).
     pub operator_authorizer: Option<OperatorAuthorizer>,
     pub registration_limiter: Option<RegistrationLimiterRef>,
+    pub operator_limiter: Option<RegistrationLimiterRef>,
     pub token_pepper: String,
     pub limits: LimitsConfig,
     pub retention: RetentionConfig,
@@ -98,7 +101,7 @@ pub type OperatorAuthorizer =
 /// control node registration frequency. The control plane also provides a built-in
 /// `SlidingWindowRegistrationLimiter` that can be enabled via configuration.
 pub trait RegistrationLimiter: Send + Sync + 'static {
-    fn try_acquire(&mut self) -> bool;
+    fn acquire(&mut self) -> RateLimitDecision;
 }
 
 /// Convenience alias for sharing the limiter through state.
@@ -119,8 +122,8 @@ fn _assert_app_state_bounds() {
 pub struct NoopRegistrationLimiter;
 
 impl RegistrationLimiter for NoopRegistrationLimiter {
-    fn try_acquire(&mut self) -> bool {
-        true
+    fn acquire(&mut self) -> RateLimitDecision {
+        RateLimitDecision::allowed(0, 0, Duration::ZERO)
     }
 }
 
@@ -143,7 +146,7 @@ impl SlidingWindowRegistrationLimiter {
 }
 
 impl RegistrationLimiter for SlidingWindowRegistrationLimiter {
-    fn try_acquire(&mut self) -> bool {
+    fn acquire(&mut self) -> RateLimitDecision {
         let now = Instant::now();
         while let Some(front) = self.events.front() {
             if now.duration_since(*front) > self.window {
@@ -154,10 +157,21 @@ impl RegistrationLimiter for SlidingWindowRegistrationLimiter {
         }
 
         if self.events.len() >= self.capacity {
-            return false;
+            let reset_after = self
+                .events
+                .front()
+                .map(|front| self.window.saturating_sub(now.duration_since(*front)))
+                .unwrap_or(self.window);
+            return RateLimitDecision::limited(self.capacity, reset_after);
         }
 
         self.events.push_back(now);
-        true
+        let remaining = self.capacity.saturating_sub(self.events.len());
+        let reset_after = self
+            .events
+            .front()
+            .map(|front| self.window.saturating_sub(now.duration_since(*front)))
+            .unwrap_or(self.window);
+        RateLimitDecision::allowed(self.capacity, remaining, reset_after)
     }
 }
