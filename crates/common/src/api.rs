@@ -1198,6 +1198,12 @@ pub struct TlsCert {
     /// Expiry time of the certificate (UTC) for observability/refresh.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_after: Option<DateTime<Utc>>,
+    /// Expiry time of the certificate (UTC).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<DateTime<Utc>>,
+    /// Whole days remaining until expiry (floored; negative when expired).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub days_remaining: Option<i64>,
     /// When set the certificate can no longer be bound to routes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub revoked_at: Option<DateTime<Utc>>,
