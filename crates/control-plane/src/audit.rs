@@ -9,13 +9,22 @@ const MAX_PAYLOAD_LEN: usize = 2048;
 pub struct AuditActor {
     pub token_id: Option<Uuid>,
     pub token_hash: Option<String>,
+    pub role: Option<String>,
+    pub scopes: Option<Vec<String>>,
 }
 
 impl AuditActor {
-    pub fn new(token_id: Option<Uuid>, token_hash: Option<String>) -> Self {
+    pub fn new(
+        token_id: Option<Uuid>,
+        token_hash: Option<String>,
+        role: Option<String>,
+        scopes: Option<Vec<String>>,
+    ) -> Self {
         Self {
             token_id,
             token_hash,
+            role,
+            scopes,
         }
     }
 }

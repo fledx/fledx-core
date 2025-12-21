@@ -1485,6 +1485,12 @@ pub struct AuditLogEntry {
     /// Hash of the operator token used (for env-configured tokens).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operator_token_hash: Option<String>,
+    /// Role associated with the operator token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_role: Option<String>,
+    /// Scopes associated with the operator token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_scopes: Option<Vec<String>>,
     /// Request identifier associated with the action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,

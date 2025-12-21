@@ -7,15 +7,19 @@ use std::{
 };
 
 use crate::{
+    auth::OperatorIdentity,
     compat::AgentCompatibility,
     config::{
         AuditExportConfig, LimitsConfig, PortsConfig, ReachabilityConfig, RetentionConfig,
         TunnelConfig, VolumesConfig,
     },
+    error::ApiResult,
     metrics::MetricsHistory,
     persistence, scheduler,
 };
+use axum::body::Body;
 use axum::http::HeaderName;
+use axum::http::Request;
 use metrics_exporter_prometheus::PrometheusHandle;
 use subtle::ConstantTimeEq;
 
@@ -28,6 +32,8 @@ pub struct AppState {
     pub operator_auth: OperatorAuth,
     /// Pluggable validator for operator bearer tokens (env-only by default).
     pub operator_token_validator: OperatorTokenValidator,
+    /// Optional authorizer for operator requests (RBAC enforcement).
+    pub operator_authorizer: Option<OperatorAuthorizer>,
     pub registration_limiter: Option<RegistrationLimiterRef>,
     pub token_pepper: String,
     pub limits: LimitsConfig,
@@ -81,6 +87,10 @@ pub type OperatorTokenValidator = Arc<
         > + Send
         + Sync,
 >;
+
+/// Callback used to authorize operator requests after token validation.
+pub type OperatorAuthorizer =
+    Arc<dyn for<'a> Fn(&'a Request<Body>, &'a OperatorIdentity) -> ApiResult<()> + Send + Sync>;
 
 /// Interface for registration rate limiting.
 ///

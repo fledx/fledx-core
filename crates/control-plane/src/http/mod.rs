@@ -4095,6 +4095,7 @@ mod tests {
                 operator_token_validator: std::sync::Arc::new(|state, token| {
                     Box::pin(crate::auth::env_only_operator_token_validator(state, token))
                 }),
+                operator_authorizer: None,
                 registration_limiter: Some(registration_limiter),
                 token_pepper: "pepper".into(),
                 limits,

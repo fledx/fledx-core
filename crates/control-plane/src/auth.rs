@@ -8,6 +8,7 @@ use crate::{
     app_state::AppState,
     audit::{self, AuditActor, AuditStatus},
     error::{ApiResult, AppError},
+    rbac::{default_scopes_for_role, OperatorRole},
     telemetry,
     tokens::legacy_hash,
 };
@@ -55,6 +56,21 @@ pub async fn require_operator_auth(
         }
     };
 
+    if let Some(authorizer) = &state.operator_authorizer {
+        if let Err(err) = (authorizer)(&req, &identity) {
+            let actor = identity.to_audit_actor();
+            log_authz_failure(
+                state.clone(),
+                request_id.clone(),
+                path.clone(),
+                actor,
+                err.message.clone(),
+            )
+            .await;
+            return Err(err);
+        }
+    }
+
     req.extensions_mut().insert(identity);
     Ok(next.run(req).await)
 }
@@ -65,7 +81,13 @@ pub async fn env_only_operator_token_validator(
 ) -> crate::Result<Option<OperatorIdentity>> {
     let token_hash = legacy_hash(token);
     if state.operator_auth.is_env_token(token) {
-        return Ok(Some(OperatorIdentity::EnvToken { token_hash }));
+        let role = OperatorRole::Admin;
+        let scopes = default_scopes_for_role(role);
+        return Ok(Some(OperatorIdentity::EnvToken {
+            token_hash,
+            role,
+            scopes,
+        }));
     }
 
     Ok(None)
@@ -98,8 +120,17 @@ pub fn extract_bearer_from_header(
 
 #[derive(Clone, Debug)]
 pub enum OperatorIdentity {
-    EnvToken { token_hash: String },
-    DbToken { id: Uuid, token_hash: String },
+    EnvToken {
+        token_hash: String,
+        role: OperatorRole,
+        scopes: Vec<String>,
+    },
+    DbToken {
+        id: Uuid,
+        token_hash: String,
+        role: OperatorRole,
+        scopes: Vec<String>,
+    },
 }
 
 impl OperatorIdentity {
@@ -112,13 +143,36 @@ impl OperatorIdentity {
 
     pub fn token_hash(&self) -> &str {
         match self {
-            OperatorIdentity::EnvToken { token_hash }
+            OperatorIdentity::EnvToken { token_hash, .. }
             | OperatorIdentity::DbToken { token_hash, .. } => token_hash,
         }
     }
 
+    pub fn role(&self) -> OperatorRole {
+        match self {
+            OperatorIdentity::EnvToken { role, .. } => *role,
+            OperatorIdentity::DbToken { role, .. } => *role,
+        }
+    }
+
+    pub fn scopes(&self) -> &[String] {
+        match self {
+            OperatorIdentity::EnvToken { scopes, .. } => scopes,
+            OperatorIdentity::DbToken { scopes, .. } => scopes,
+        }
+    }
+
+    pub fn has_scope(&self, scope: &str) -> bool {
+        self.scopes().iter().any(|candidate| candidate == scope)
+    }
+
     pub fn to_audit_actor(&self) -> AuditActor {
-        AuditActor::new(self.token_id(), Some(self.token_hash().to_string()))
+        AuditActor::new(
+            self.token_id(),
+            Some(self.token_hash().to_string()),
+            Some(self.role().as_str().to_string()),
+            Some(self.scopes().to_vec()),
+        )
     }
 }
 
@@ -137,6 +191,29 @@ async fn log_auth_failure(
         audit::AuditContext {
             resource_id: None,
             actor: None,
+            request_id: request_id.as_deref(),
+            payload: Some(payload),
+        },
+    )
+    .await;
+}
+
+async fn log_authz_failure(
+    state: AppState,
+    request_id: Option<String>,
+    path: String,
+    actor: AuditActor,
+    reason: String,
+) {
+    let payload = format!("{path}: {reason}");
+    telemetry::record_audit_log(
+        &state,
+        "authz",
+        "authz",
+        AuditStatus::Failure,
+        audit::AuditContext {
+            resource_id: None,
+            actor: Some(&actor),
             request_id: request_id.as_deref(),
             payload: Some(payload),
         },
