@@ -15,6 +15,8 @@ pub struct AppConfig {
     pub tokens: TokenConfig,
     pub limits: LimitsConfig,
     pub retention: RetentionConfig,
+    #[serde(default)]
+    pub audit: AuditConfig,
     pub reachability: ReachabilityConfig,
     pub ports: PortsConfig,
     pub volumes: VolumesConfig,
@@ -118,6 +120,38 @@ pub struct RetentionConfig {
     pub instance_metrics_secs: u64,
     pub usage_window_secs: u64,
     pub usage_cleanup_interval_secs: u64,
+    pub audit_log_secs: u64,
+    pub audit_log_cleanup_interval_secs: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct AuditConfig {
+    #[serde(default)]
+    pub redaction: AuditRedactionConfig,
+    #[serde(default)]
+    pub export: AuditExportConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditRedactionConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_audit_redaction_keys")]
+    pub keys: Vec<String>,
+    #[serde(default = "default_audit_redaction_value_markers")]
+    pub value_markers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AuditExportConfig {
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+    #[serde(default = "default_audit_webhook_timeout_secs")]
+    pub webhook_timeout_secs: u64,
+    #[serde(default)]
+    pub webhook_headers: Vec<String>,
+    #[serde(default)]
+    pub json_stream_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -282,6 +316,51 @@ const ENV_OVERRIDES: &[(&str, &str, bool)] = &[
         false,
     ),
     (
+        "FLEDX_CP_RETENTION_AUDIT_LOG_SECS",
+        "retention.audit_log_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_RETENTION_AUDIT_LOG_CLEANUP_INTERVAL_SECS",
+        "retention.audit_log_cleanup_interval_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_AUDIT_REDACTION_ENABLED",
+        "audit.redaction.enabled",
+        false,
+    ),
+    (
+        "FLEDX_CP_AUDIT_REDACTION_KEYS",
+        "audit.redaction.keys",
+        true,
+    ),
+    (
+        "FLEDX_CP_AUDIT_REDACTION_VALUE_MARKERS",
+        "audit.redaction.value_markers",
+        true,
+    ),
+    (
+        "FLEDX_CP_AUDIT_EXPORT_WEBHOOK_URL",
+        "audit.export.webhook_url",
+        false,
+    ),
+    (
+        "FLEDX_CP_AUDIT_EXPORT_WEBHOOK_TIMEOUT_SECS",
+        "audit.export.webhook_timeout_secs",
+        false,
+    ),
+    (
+        "FLEDX_CP_AUDIT_EXPORT_WEBHOOK_HEADERS",
+        "audit.export.webhook_headers",
+        true,
+    ),
+    (
+        "FLEDX_CP_AUDIT_EXPORT_JSON_STREAM_PATH",
+        "audit.export.json_stream_path",
+        false,
+    ),
+    (
         "FLEDX_CP_REACHABILITY_HEARTBEAT_STALE_SECS",
         "reachability.heartbeat_stale_secs",
         false,
@@ -354,6 +433,51 @@ fn default_tunnel_use_tls() -> bool {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_audit_webhook_timeout_secs() -> u64 {
+    5
+}
+
+fn default_audit_redaction_keys() -> Vec<String> {
+    vec![
+        "secret".to_string(),
+        "token".to_string(),
+        "password".to_string(),
+        "private_key".to_string(),
+        "private key".to_string(),
+    ]
+}
+
+fn default_audit_redaction_value_markers() -> Vec<String> {
+    vec![
+        "BEGIN PRIVATE KEY".to_string(),
+        "BEGIN RSA PRIVATE KEY".to_string(),
+        "BEGIN EC PRIVATE KEY".to_string(),
+        "BEGIN OPENSSH PRIVATE KEY".to_string(),
+        "PRIVATE KEY-----".to_string(),
+    ]
+}
+
+impl Default for AuditRedactionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            keys: default_audit_redaction_keys(),
+            value_markers: default_audit_redaction_value_markers(),
+        }
+    }
+}
+
+impl Default for AuditExportConfig {
+    fn default() -> Self {
+        Self {
+            webhook_url: None,
+            webhook_timeout_secs: default_audit_webhook_timeout_secs(),
+            webhook_headers: Vec::new(),
+            json_stream_path: None,
+        }
+    }
 }
 
 impl PortsConfig {
@@ -528,6 +652,21 @@ pub fn load() -> anyhow::Result<AppConfig> {
         .set_default("retention.instance_metrics_secs", 10 * 60u64)?
         .set_default("retention.usage_window_secs", 7 * 24 * 60 * 60u64)?
         .set_default("retention.usage_cleanup_interval_secs", 5 * 60u64)?
+        .set_default("retention.audit_log_secs", 90 * 24 * 60 * 60u64)?
+        .set_default("retention.audit_log_cleanup_interval_secs", 60 * 60u64)?
+        .set_default("audit.redaction.enabled", true)?
+        .set_default("audit.redaction.keys", default_audit_redaction_keys())?
+        .set_default(
+            "audit.redaction.value_markers",
+            default_audit_redaction_value_markers(),
+        )?
+        .set_default("audit.export.webhook_url", Option::<String>::None)?
+        .set_default(
+            "audit.export.webhook_timeout_secs",
+            default_audit_webhook_timeout_secs(),
+        )?
+        .set_default("audit.export.webhook_headers", Vec::<String>::new())?
+        .set_default("audit.export.json_stream_path", Option::<String>::None)?
         .set_default("reachability.heartbeat_stale_secs", 90)?
         .set_default("reachability.sweep_interval_secs", 15)?
         .set_default("reachability.reschedule_on_unreachable", true)?

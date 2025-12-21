@@ -54,6 +54,8 @@ mod tests {
             instance_metrics_secs: 600,
             usage_window_secs: window_secs,
             usage_cleanup_interval_secs: 60,
+            audit_log_secs: 90 * 24 * 60 * 60,
+            audit_log_cleanup_interval_secs: 60 * 60,
         }
     }
 

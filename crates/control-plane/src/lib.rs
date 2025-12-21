@@ -234,6 +234,9 @@ where
             Box::pin(crate::auth::env_only_operator_token_validator(state, token))
         })
     });
+    let audit_redactor = Arc::new(crate::audit::AuditRedactor::new(
+        &app_config.audit.redaction,
+    ));
 
     let mut state = AppState {
         db: db_pool.clone(),
@@ -248,6 +251,8 @@ where
         token_pepper: app_config.tokens.pepper.clone(),
         limits: app_config.limits.clone(),
         retention: app_config.retention.clone(),
+        audit_export: app_config.audit.export.clone(),
+        audit_redactor,
         reachability: app_config.reachability.clone(),
         ports: app_config.ports.clone(),
         volumes: app_config.volumes.clone(),
