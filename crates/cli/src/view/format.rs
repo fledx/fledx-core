@@ -89,7 +89,7 @@ pub fn format_timestamp(ts: Option<DateTime<Utc>>) -> String {
 }
 
 pub fn format_redacted() -> String {
-    "[redacted]".to_string()
+    "redacted".to_string()
 }
 
 pub fn format_uuid(id: Uuid, short: bool) -> String {
