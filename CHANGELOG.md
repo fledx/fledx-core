@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added `--docker-service` to bootstrap agent to override the systemd
   Docker unit dependency.
+- Added TLS certificate expiry metadata fields (`expires_at`,
+  `days_remaining`) to API types for downstream consumers.
 
 ### Changed
 
