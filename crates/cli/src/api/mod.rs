@@ -1,6 +1,9 @@
 use ::common::api as common_api;
 use anyhow::Result;
-use reqwest::{header::HeaderName, Client, RequestBuilder, Response, StatusCode};
+use reqwest::{
+    header::{HeaderMap, HeaderName},
+    Client, RequestBuilder, Response, StatusCode,
+};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
@@ -85,6 +88,21 @@ impl OperatorApi {
         Ok(res.json().await?)
     }
 
+    pub async fn post_json_with_headers<B, T>(
+        &self,
+        path: &str,
+        body: &B,
+        headers: HeaderMap,
+    ) -> Result<T>
+    where
+        B: Serialize + ?Sized,
+        T: DeserializeOwned,
+    {
+        let req = self.client.post(self.url(path)).json(body).headers(headers);
+        let res = self.send(req).await?;
+        Ok(res.json().await?)
+    }
+
     pub async fn post_empty(&self, path: &str) -> Result<Response> {
         let req = self.client.post(self.url(path));
         self.send(req).await
@@ -162,6 +180,11 @@ async fn handle_operator_response(res: Response) -> Result<Response> {
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
         let hint = "Set --operator-token or FLEDX_CLI_OPERATOR_TOKEN and \
 --operator-header/FLEDX_CLI_OPERATOR_HEADER if the control plane uses a custom header.";
+        let hint = format!(
+            "{} If requests are forbidden, ensure the operator token has the required \
+role/scopes.",
+            hint
+        );
         let message = match parsed_error {
             Some(err) => format!("operator auth failed with {}: {} {}", status, err, hint),
             None if body.is_empty() => format!("operator auth failed with {}. {}", status, hint),

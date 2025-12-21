@@ -8,6 +8,7 @@ pub mod http;
 pub mod metrics;
 pub mod openapi;
 pub mod persistence;
+pub mod rbac;
 pub mod routes;
 pub mod scheduler;
 pub mod services;
@@ -29,7 +30,9 @@ use tokio::sync::watch;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
-use crate::app_state::{AppState, OperatorAuth, OperatorTokenValidator, RegistrationLimiterRef};
+use crate::app_state::{
+    AppState, OperatorAuth, OperatorAuthorizer, OperatorTokenValidator, RegistrationLimiterRef,
+};
 use crate::metrics::{init_metrics_recorder, record_build_info, MetricsHistory};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +58,7 @@ pub struct ControlPlaneHooks {
     pub migrations: &'static sqlx::migrate::Migrator,
     pub registration_limiter: Option<RegistrationLimiterRef>,
     pub operator_token_validator: Option<OperatorTokenValidator>,
+    pub operator_authorizer: Option<OperatorAuthorizer>,
 }
 
 impl Default for ControlPlaneHooks {
@@ -68,6 +72,7 @@ impl Default for ControlPlaneHooks {
             migrations: crate::persistence::migrations::core_migrator(),
             registration_limiter: None,
             operator_token_validator: None,
+            operator_authorizer: None,
         }
     }
 }
@@ -234,6 +239,7 @@ where
             Box::pin(crate::auth::env_only_operator_token_validator(state, token))
         })
     });
+    let operator_authorizer = hooks.operator_authorizer.clone();
     let audit_redactor = Arc::new(crate::audit::AuditRedactor::new(
         &app_config.audit.redaction,
     ));
@@ -247,6 +253,7 @@ where
             header_name: operator_header,
         },
         operator_token_validator,
+        operator_authorizer,
         registration_limiter,
         token_pepper: app_config.tokens.pepper.clone(),
         limits: app_config.limits.clone(),

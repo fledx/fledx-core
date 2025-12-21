@@ -4,6 +4,7 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::error::{ApiResult, AppError};
 use crate::persistence::{nodes, tokens};
+use crate::rbac::OperatorRole;
 use crate::tokens::{generate_token, hash_token};
 
 #[derive(Clone, Debug)]
@@ -16,6 +17,8 @@ pub struct RotateNodeTokenRequest {
 #[derive(Clone, Debug)]
 pub struct CreateOperatorTokenRequest {
     pub expires_at: Option<DateTime<Utc>>,
+    pub role: OperatorRole,
+    pub scopes: Vec<String>,
 }
 
 #[derive(Clone, Debug)]

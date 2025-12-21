@@ -109,6 +109,8 @@ mod tests {
             resource_id: Some(Uuid::new_v4()),
             operator_token_id: None,
             operator_token_hash: None,
+            operator_role: None,
+            operator_scopes: None,
             request_id: Some("req-123".into()),
             status: "success".into(),
             payload: Some("payload detail".into()),
