@@ -38,6 +38,8 @@ pub struct AppState {
     pub operator_authorizer: Option<OperatorAuthorizer>,
     pub registration_limiter: Option<RegistrationLimiterRef>,
     pub operator_limiter: Option<RegistrationLimiterRef>,
+    /// Optional limiter for authenticated agent endpoints (heartbeats/configs/desired-state).
+    pub agent_limiter: Option<RegistrationLimiterRef>,
     pub token_pepper: String,
     pub limits: LimitsConfig,
     pub retention: RetentionConfig,

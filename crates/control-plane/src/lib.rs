@@ -59,6 +59,7 @@ pub struct ControlPlaneHooks {
     pub migrations: &'static sqlx::migrate::Migrator,
     pub registration_limiter: Option<RegistrationLimiterRef>,
     pub operator_limiter: Option<RegistrationLimiterRef>,
+    pub agent_limiter: Option<RegistrationLimiterRef>,
     pub operator_token_validator: Option<OperatorTokenValidator>,
     pub operator_authorizer: Option<OperatorAuthorizer>,
 }
@@ -74,6 +75,7 @@ impl Default for ControlPlaneHooks {
             migrations: crate::persistence::migrations::core_migrator(),
             registration_limiter: None,
             operator_limiter: None,
+            agent_limiter: None,
             operator_token_validator: None,
             operator_authorizer: None,
         }
@@ -234,6 +236,7 @@ where
             }
         });
     let operator_limiter = hooks.operator_limiter.clone();
+    let agent_limiter = hooks.agent_limiter.clone();
     if hooks.require_master_key && hooks.master_key.is_none() {
         anyhow::bail!("master key is required but missing");
     }
@@ -260,6 +263,7 @@ where
         operator_authorizer,
         registration_limiter,
         operator_limiter,
+        agent_limiter,
         token_pepper: app_config.tokens.pepper.clone(),
         limits: app_config.limits.clone(),
         retention: app_config.retention.clone(),
