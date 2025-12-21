@@ -9,7 +9,8 @@ use std::{
 use crate::{
     compat::AgentCompatibility,
     config::{
-        LimitsConfig, PortsConfig, ReachabilityConfig, RetentionConfig, TunnelConfig, VolumesConfig,
+        AuditExportConfig, LimitsConfig, PortsConfig, ReachabilityConfig, RetentionConfig,
+        TunnelConfig, VolumesConfig,
     },
     metrics::MetricsHistory,
     persistence, scheduler,
@@ -31,6 +32,8 @@ pub struct AppState {
     pub token_pepper: String,
     pub limits: LimitsConfig,
     pub retention: RetentionConfig,
+    pub audit_export: AuditExportConfig,
+    pub audit_redactor: Arc<crate::audit::AuditRedactor>,
     pub reachability: ReachabilityConfig,
     pub ports: PortsConfig,
     pub volumes: VolumesConfig,
