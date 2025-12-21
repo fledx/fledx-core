@@ -88,6 +88,10 @@ pub fn format_timestamp(ts: Option<DateTime<Utc>>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
+pub fn format_redacted() -> String {
+    "[redacted]".to_string()
+}
+
 pub fn format_uuid(id: Uuid, short: bool) -> String {
     if short {
         id.simple().to_string()[..8].to_string()

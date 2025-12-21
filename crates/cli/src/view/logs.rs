@@ -1,7 +1,7 @@
 use ::common::api::AuditLogEntry;
 
 use super::{
-    format::{format_timestamp, format_uuid},
+    format::{format_redacted, format_timestamp, format_uuid},
     table::render_table,
 };
 
@@ -72,7 +72,7 @@ pub fn format_log_entry_line(entry: &AuditLogEntry) -> String {
 
 fn log_entry_resource(entry: &AuditLogEntry) -> String {
     match entry.resource_id {
-        Some(id) => format!("{} {}", entry.resource_type, format_uuid(id, true)),
+        Some(_) => format!("{} {}", entry.resource_type, format_redacted()),
         None => entry.resource_type.clone(),
     }
 }
