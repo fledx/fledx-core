@@ -2,10 +2,13 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use chrono::{Duration as ChronoDuration, Utc};
+use serde_json::json;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::config::{PortsConfig, ReachabilityConfig};
+use crate::app_state::AppState;
+use crate::audit::{AuditContext, AuditStatus};
+use crate::config::PortsConfig;
 use crate::http::{
     assignments_changed, assignments_from_decision, deployment_ports_for_storage,
     deserialize_deployment_fields, port_allocation_config, record_replica_schedule_decision,
@@ -16,6 +19,7 @@ use crate::persistence::{
     deployments as deployment_store, nodes as node_store, ports as port_store,
 };
 use crate::scheduler;
+use crate::telemetry;
 use crate::Result;
 
 #[derive(Debug, Default)]
@@ -31,24 +35,20 @@ struct RescheduleReport {
     marked_pending: usize,
 }
 
-pub async fn reachability_loop(
-    db: db::Db,
-    scheduler: scheduler::RoundRobinScheduler,
-    cfg: ReachabilityConfig,
-    ports: PortsConfig,
-) {
-    let stale_duration = Duration::from_secs(cfg.heartbeat_stale_secs.max(1));
-    let sweep_interval = Duration::from_secs(cfg.sweep_interval_secs.max(1));
+pub async fn reachability_loop(state: AppState) {
+    let stale_duration = Duration::from_secs(state.reachability.heartbeat_stale_secs.max(1));
+    let sweep_interval = Duration::from_secs(state.reachability.sweep_interval_secs.max(1));
     let mut interval = tokio::time::interval(sweep_interval);
 
     loop {
         interval.tick().await;
-        if let Err(err) = run_reachability_sweep(
-            &db,
-            &scheduler,
+        if let Err(err) = run_reachability_sweep_with_audit(
+            &state.db,
+            &state.scheduler,
             stale_duration,
-            cfg.reschedule_on_unreachable,
-            &ports,
+            state.reachability.reschedule_on_unreachable,
+            &state.ports,
+            Some(&state),
         )
         .await
         {
@@ -64,6 +64,25 @@ pub async fn run_reachability_sweep(
     reschedule_on_unreachable: bool,
     ports: &PortsConfig,
 ) -> Result<ReachabilityReport> {
+    run_reachability_sweep_with_audit(
+        db,
+        scheduler,
+        stale_duration,
+        reschedule_on_unreachable,
+        ports,
+        None,
+    )
+    .await
+}
+
+async fn run_reachability_sweep_with_audit(
+    db: &db::Db,
+    scheduler: &scheduler::RoundRobinScheduler,
+    stale_duration: Duration,
+    reschedule_on_unreachable: bool,
+    ports: &PortsConfig,
+    audit_state: Option<&AppState>,
+) -> Result<ReachabilityReport> {
     let cutoff = Utc::now()
         - ChronoDuration::from_std(stale_duration)
             .unwrap_or_else(|_| ChronoDuration::seconds(stale_duration.as_secs() as i64));
@@ -78,11 +97,14 @@ pub async fn run_reachability_sweep(
                 last_seen = ?node.last_seen,
                 "marking node unreachable after missed heartbeats"
             );
+            if let Some(state) = audit_state {
+                record_node_unreachable_audit(state, node).await;
+            }
         }
     }
 
     if reschedule_on_unreachable {
-        let reschedule_report = reschedule_deployments(db, scheduler, ports).await?;
+        let reschedule_report = reschedule_deployments(db, scheduler, ports, audit_state).await?;
         report.rescheduled = reschedule_report.rescheduled;
         report.marked_pending = reschedule_report.marked_pending;
     }
@@ -94,6 +116,7 @@ async fn reschedule_deployments(
     db: &db::Db,
     scheduler: &scheduler::RoundRobinScheduler,
     port_cfg: &PortsConfig,
+    audit_state: Option<&AppState>,
 ) -> Result<RescheduleReport> {
     let nodes = node_store::list_nodes(db).await?;
     let unreachable: HashSet<_> = nodes
@@ -238,9 +261,99 @@ async fn reschedule_deployments(
         } else if assignment_changed {
             report.rescheduled += 1;
         }
+
+        if assignment_changed {
+            if let Some(state) = audit_state {
+                let reason = if current_assignments
+                    .iter()
+                    .any(|assignment| unreachable.contains(&assignment.node_id))
+                {
+                    "node_unreachable"
+                } else {
+                    "under_assigned"
+                };
+                record_deployment_reschedule_audit(
+                    state,
+                    deployment.id,
+                    reason,
+                    &current_assignments,
+                    &new_assignments,
+                    AuditStatus::Success,
+                )
+                .await;
+            }
+        }
     }
 
     Ok(report)
+}
+
+async fn record_node_unreachable_audit(state: &AppState, node: &db::NodeRecord) {
+    let payload = json!({
+        "reason": "heartbeat_timeout",
+        "last_seen": node.last_seen,
+    })
+    .to_string();
+    telemetry::record_audit_log(
+        state,
+        "node.unreachable",
+        "node",
+        AuditStatus::Success,
+        AuditContext {
+            resource_id: Some(node.id),
+            actor: None,
+            request_id: None,
+            payload: Some(payload),
+        },
+    )
+    .await;
+}
+
+async fn record_deployment_reschedule_audit(
+    state: &AppState,
+    deployment_id: Uuid,
+    reason: &str,
+    previous: &[db::DeploymentAssignmentRecord],
+    next: &[db::NewDeploymentAssignment],
+    status: AuditStatus,
+) {
+    let from: Vec<_> = previous
+        .iter()
+        .map(|assignment| {
+            json!({
+                "replica_number": assignment.replica_number,
+                "node_id": assignment.node_id,
+            })
+        })
+        .collect();
+    let to: Vec<_> = next
+        .iter()
+        .map(|assignment| {
+            json!({
+                "replica_number": assignment.replica_number,
+                "node_id": assignment.node_id,
+            })
+        })
+        .collect();
+    let payload = json!({
+        "reason": reason,
+        "from": from,
+        "to": to,
+    })
+    .to_string();
+    telemetry::record_audit_log(
+        state,
+        "deployment.reschedule",
+        "deployment",
+        status,
+        AuditContext {
+            resource_id: Some(deployment_id),
+            actor: None,
+            request_id: None,
+            payload: Some(payload),
+        },
+    )
+    .await;
 }
 
 #[cfg(test)]

@@ -308,12 +308,7 @@ where
         .await;
     }
 
-    tokio::spawn(routes::reachability_loop(
-        state.db.clone(),
-        state.scheduler.clone(),
-        state.reachability.clone(),
-        state.ports.clone(),
-    ));
+    tokio::spawn(routes::reachability_loop(state.clone()));
 
     tokio::spawn(routes::usage_retention_loop(
         state.db.clone(),
