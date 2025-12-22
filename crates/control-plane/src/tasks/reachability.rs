@@ -199,6 +199,9 @@ async fn reschedule_deployments(
         }
 
         let new_assignments = assignments_from_decision(&decision);
+        let pending_failure = decision.compatible_nodes == 0
+            || decision.unplaced_replicas > 0
+            || new_assignments.is_empty();
         let assignment_changed = assignments_changed(&current_assignments, &new_assignments);
         let resolved_ports =
             deployment_ports_for_storage(replica_count, &new_assignments, ports.clone());
@@ -272,13 +275,18 @@ async fn reschedule_deployments(
                 } else {
                     "under_assigned"
                 };
+                let status = if pending_failure {
+                    AuditStatus::Failure
+                } else {
+                    AuditStatus::Success
+                };
                 record_deployment_reschedule_audit(
                     state,
                     deployment.id,
                     reason,
                     &current_assignments,
                     &new_assignments,
-                    AuditStatus::Success,
+                    status,
                 )
                 .await;
             }
