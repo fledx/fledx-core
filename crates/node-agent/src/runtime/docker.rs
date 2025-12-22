@@ -30,12 +30,11 @@ pub struct DockerRuntime {
 
 impl DockerRuntime {
     pub fn connect() -> Result<Self, ContainerRuntimeError> {
-        let docker = Docker::connect_with_local_defaults().map_err(|err| {
-            ContainerRuntimeError::Connection {
+        let docker =
+            Docker::connect_with_defaults().map_err(|err| ContainerRuntimeError::Connection {
                 context: "connect",
                 source: err.into(),
-            }
-        })?;
+            })?;
         Ok(Self { docker })
     }
 
