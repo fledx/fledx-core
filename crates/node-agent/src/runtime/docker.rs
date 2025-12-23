@@ -74,7 +74,7 @@ impl ContainerRuntime for DockerRuntime {
 
         let container_name = spec
             .name
-            .unwrap_or_else(|| format!("node-agent-{}", Uuid::new_v4()));
+            .unwrap_or_else(|| format!("fledx-agent-{}", Uuid::new_v4()));
         let env = format_env(&spec.env);
 
         let (port_bindings, exposed_ports) = build_ports(&spec.ports);

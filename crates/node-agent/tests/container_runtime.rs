@@ -25,7 +25,7 @@ async fn docker_runtime_runs_hello_world() -> anyhow::Result<()> {
     let container_id = runtime
         .start_container(ContainerSpec {
             image: image.to_string(),
-            name: Some(format!("node-agent-test-{}", Uuid::new_v4())),
+            name: Some(format!("fledx-agent-test-{}", Uuid::new_v4())),
             env: vec![],
             ports: vec![],
             command: None,

@@ -62,7 +62,7 @@ pub(crate) fn desired_replica_generation(desired: &api::DeploymentDesired) -> i6
 }
 
 pub(crate) fn container_name(key: &ReplicaKey) -> String {
-    format!("node-agent-{}-{}", key.deployment_id, key.replica_number)
+    format!("fledx-agent-{}-{}", key.deployment_id, key.replica_number)
 }
 
 pub(crate) fn instance_state_from_status(status: &runtime::ContainerStatus) -> InstanceState {
