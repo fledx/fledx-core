@@ -89,7 +89,7 @@ pub async fn run_parsed(cli: Cli) -> anyhow::Result<()> {
 /// Execute the CLI given a pre-parsed argument struct, with caller-provided
 /// runtime options (primarily used by wrappers like `fledx-enterprise`).
 pub async fn run_parsed_with(cli: Cli, _options: RunOptions) -> anyhow::Result<()> {
-    let client = reqwest::Client::new();
+    let client = crate::commands::build_client(&cli.globals.ca_cert_path)?;
     #[cfg(feature = "bootstrap")]
     let selected_profile = cli.profile.clone();
 
@@ -238,6 +238,12 @@ fn apply_profile_overrides(
         }
     }
 
+    if profile_can_override(matches, "ca_cert_path") {
+        if let Some(path) = profile.ca_cert_path.clone() {
+            globals.ca_cert_path = Some(path);
+        }
+    }
+
     Ok(())
 }
 
@@ -266,6 +272,7 @@ mod profile_override_tests {
                 operator_header: Some("x-profile-operator-token".to_string()),
                 operator_token: Some("op".to_string()),
                 registration_token: Some("reg".to_string()),
+                ca_cert_path: Some("/profile/ca.pem".to_string()),
             },
         );
         store
@@ -278,6 +285,7 @@ mod profile_override_tests {
         std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
         std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
         std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+        std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
 
         let store = store_with_default_profile();
         let selected_profile = Some("default".to_string());
@@ -297,6 +305,7 @@ mod profile_override_tests {
         assert_eq!(globals.operator_header, "x-profile-operator-token");
         assert_eq!(globals.operator_token.as_deref(), Some("op"));
         assert_eq!(globals.registration_token.as_deref(), Some("reg"));
+        assert_eq!(globals.ca_cert_path.as_deref(), Some("/profile/ca.pem"));
     }
 
     #[test]
@@ -306,6 +315,7 @@ mod profile_override_tests {
         std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
         std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
         std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+        std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
 
         let store = store_with_default_profile();
         let selected_profile = Some("default".to_string());
@@ -320,6 +330,8 @@ mod profile_override_tests {
             "cli-op",
             "--registration-token",
             "cli-reg",
+            "--ca-cert-path",
+            "/cli/ca.pem",
             "profile",
             "list",
         ]);
@@ -337,6 +349,7 @@ mod profile_override_tests {
         assert_eq!(globals.operator_header, "x-cli-operator-token");
         assert_eq!(globals.operator_token.as_deref(), Some("cli-op"));
         assert_eq!(globals.registration_token.as_deref(), Some("cli-reg"));
+        assert_eq!(globals.ca_cert_path.as_deref(), Some("/cli/ca.pem"));
     }
 
     #[test]
@@ -346,6 +359,7 @@ mod profile_override_tests {
         std::env::set_var("FLEDX_CLI_OPERATOR_HEADER", "x-env-operator-token");
         std::env::set_var("FLEDX_CLI_OPERATOR_TOKEN", "env-op");
         std::env::set_var("FLEDX_CLI_REGISTRATION_TOKEN", "env-reg");
+        std::env::set_var("FLEDX_CLI_CA_CERT_PATH", "/env/ca.pem");
 
         let store = store_with_default_profile();
         let selected_profile = Some("default".to_string());
@@ -365,11 +379,13 @@ mod profile_override_tests {
         assert_eq!(globals.operator_header, "x-env-operator-token");
         assert_eq!(globals.operator_token.as_deref(), Some("env-op"));
         assert_eq!(globals.registration_token.as_deref(), Some("env-reg"));
+        assert_eq!(globals.ca_cert_path.as_deref(), Some("/env/ca.pem"));
 
         std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
         std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
         std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
         std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+        std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
     }
 
     #[test]

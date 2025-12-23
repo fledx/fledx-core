@@ -1187,6 +1187,7 @@ mod tests {
                 operator_header: None,
                 operator_token: None,
                 registration_token: Some("from-profile".into()),
+                ca_cert_path: None,
             },
         );
 
@@ -1195,6 +1196,7 @@ mod tests {
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: Some("from-globals".into()),
+            ca_cert_path: None,
         };
 
         let token =
@@ -1212,6 +1214,7 @@ mod tests {
                 operator_header: None,
                 operator_token: None,
                 registration_token: Some("from-profile".into()),
+                ca_cert_path: None,
             },
         );
 
@@ -1220,6 +1223,7 @@ mod tests {
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,
+            ca_cert_path: None,
         };
 
         let token =
@@ -1241,6 +1245,7 @@ mod tests {
                 operator_header: None,
                 operator_token: None,
                 registration_token: Some("from-default".into()),
+                ca_cert_path: None,
             },
         );
 
@@ -1249,6 +1254,7 @@ mod tests {
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,
+            ca_cert_path: None,
         };
 
         let token =
@@ -1264,6 +1270,7 @@ mod tests {
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,
+            ca_cert_path: None,
         };
 
         let err =
@@ -1285,6 +1292,7 @@ mod tests {
             operator_token: None,
             operator_header: "authorization".into(),
             registration_token: None,
+            ca_cert_path: None,
         };
 
         let err = resolve_registration_token_for_bootstrap(&store, &Some("prod".into()), &globals)

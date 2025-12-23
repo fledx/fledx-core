@@ -1,4 +1,5 @@
 use crate::api::OperatorApi;
+use anyhow::Context;
 
 #[cfg(feature = "bootstrap")]
 pub mod bootstrap;
@@ -46,6 +47,19 @@ impl CommandContext {
             &token,
         ))
     }
+}
+
+pub fn build_client(ca_cert_path: &Option<String>) -> anyhow::Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder();
+
+    if let Some(path) = ca_cert_path.as_deref() {
+        let pem = std::fs::read(path).with_context(|| format!("read CA certificate: {path}"))?;
+        let cert = reqwest::Certificate::from_pem(&pem)
+            .context("parse CA certificate PEM for CLI client")?;
+        builder = builder.add_root_certificate(cert);
+    }
+
+    builder.build().context("build CLI HTTP client")
 }
 
 fn resolve_operator_token(operator_token: &Option<String>) -> anyhow::Result<String> {

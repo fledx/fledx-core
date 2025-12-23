@@ -15,6 +15,8 @@ pub struct Profile {
     pub operator_token: Option<String>,
     #[serde(default)]
     pub registration_token: Option<String>,
+    #[serde(default)]
+    pub ca_cert_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -133,6 +135,7 @@ mod tests {
                 operator_header: Some("authorization".into()),
                 operator_token: Some("op".into()),
                 registration_token: Some("reg".into()),
+                ca_cert_path: Some("/config/ca.pem".into()),
             },
         );
 
@@ -185,6 +188,7 @@ mod tests {
                 operator_header: Some("authorization".into()),
                 operator_token: Some("secret".into()),
                 registration_token: Some("reg".into()),
+                ca_cert_path: Some("/config/ca.pem".into()),
             },
         );
         store.bootstrap_repo_owner = Some("myorg".into());
@@ -198,6 +202,7 @@ mod tests {
             profile.control_plane_url.as_deref(),
             Some("https://cp.example:8443")
         );
+        assert_eq!(profile.ca_cert_path.as_deref(), Some("/config/ca.pem"));
     }
 
     #[cfg(unix)]
