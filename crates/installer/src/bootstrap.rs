@@ -19,12 +19,13 @@ pub use tokens::*;
 
 mod systemd;
 pub use systemd::{
-    install_agent_ssh, install_cp_local, install_cp_ssh, render_agent_env, render_agent_unit,
+    install_agent_ssh, install_agent_ssh_with_ca, install_cp_local, install_cp_local_with_tls,
+    install_cp_ssh, install_cp_ssh_with_tls, render_agent_env, render_agent_unit,
     render_agent_unit_with_docker_service, systemd_escape_environment_file_path,
     systemd_escape_environment_file_value, systemd_quote_env_value, systemd_quote_unit_path,
     systemd_quote_unit_value, wait_for_systemd_active, wait_for_systemd_active_local,
-    wait_for_systemd_active_ssh, AgentEnvInputs, AgentInstallSettings, AgentUnitInputs,
-    ControlPlaneInstallSettings,
+    wait_for_systemd_active_ssh, AgentCaCert, AgentEnvInputs, AgentInstallSettings,
+    AgentUnitInputs, ControlPlaneInstallSettings, ControlPlaneTlsAssets,
 };
 
 fn sh_quote(value: &str) -> String {

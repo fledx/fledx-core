@@ -742,6 +742,7 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         node_id,
         node_token,
         allow_insecure_http: globals.control_plane_url.starts_with("http://"),
+        ca_cert_path: globals.ca_cert_path.clone(),
         volume_dir: args.data_dir.join("volumes"),
         tunnel_host: cp_host,
         tunnel,
@@ -773,6 +774,18 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         add_to_docker_socket_group: !args.no_docker_group,
     };
 
+    let ca_cert = match globals.ca_cert_path.as_deref() {
+        Some(path) => {
+            let pem = std::fs::read_to_string(path)
+                .with_context(|| format!("read CA certificate from {}", path))?;
+            Some(installer::bootstrap::AgentCaCert {
+                cert_pem: pem,
+                cert_path: PathBuf::from(path),
+            })
+        }
+        None => None,
+    };
+
     eprintln!(
         "bootstrap agent: installing on {} (ssh may print connection info)",
         ssh.destination()
@@ -783,13 +796,14 @@ If you understand the risk, rerun with --insecure-allow-unsigned to skip signatu
         // Do not print periodic status while we might be prompting for a sudo password.
         !args.sudo_interactive && ssh.options.batch_mode && io::stderr().is_terminal(),
     );
-    installer::bootstrap::install_agent_ssh(
+    installer::bootstrap::install_agent_ssh_with_ca(
         &ssh,
         &extracted,
         &agent_env,
         &agent_unit,
         &settings,
         &bin_path,
+        ca_cert.as_ref(),
     )?;
 
     if !args.no_wait {
