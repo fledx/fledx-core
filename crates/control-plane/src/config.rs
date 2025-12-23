@@ -28,6 +28,18 @@ pub struct AppConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
+    #[serde(default)]
+    pub tls: ServerTlsConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ServerTlsConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub cert_path: Option<String>,
+    #[serde(default)]
+    pub key_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -197,6 +209,13 @@ pub struct FeatureFlags {
 const ENV_OVERRIDES: &[(&str, &str, bool)] = &[
     ("FLEDX_CP_SERVER_HOST", "server.host", false),
     ("FLEDX_CP_SERVER_PORT", "server.port", false),
+    ("FLEDX_CP_SERVER_TLS_ENABLED", "server.tls.enabled", false),
+    (
+        "FLEDX_CP_SERVER_TLS_CERT_PATH",
+        "server.tls.cert_path",
+        false,
+    ),
+    ("FLEDX_CP_SERVER_TLS_KEY_PATH", "server.tls.key_path", false),
     ("FLEDX_CP_METRICS_HOST", "metrics.host", false),
     ("FLEDX_CP_METRICS_PORT", "metrics.port", false),
     (
@@ -497,6 +516,46 @@ impl PortsConfig {
     }
 }
 
+impl ServerTlsConfig {
+    pub fn normalize(&mut self) -> anyhow::Result<()> {
+        if let Some(cert_path) = self.cert_path.take() {
+            let trimmed = cert_path.trim();
+            if trimmed.is_empty() {
+                anyhow::bail!("server.tls.cert_path cannot be empty");
+            }
+            self.cert_path = Some(trimmed.to_string());
+        }
+
+        if let Some(key_path) = self.key_path.take() {
+            let trimmed = key_path.trim();
+            if trimmed.is_empty() {
+                anyhow::bail!("server.tls.key_path cannot be empty");
+            }
+            self.key_path = Some(trimmed.to_string());
+        }
+
+        let has_cert = self.cert_path.is_some();
+        let has_key = self.key_path.is_some();
+        if self.enabled || has_cert || has_key {
+            if !has_cert || !has_key {
+                anyhow::bail!(
+                    "server.tls.cert_path and server.tls.key_path must both be set when TLS is enabled"
+                );
+            }
+            self.enabled = true;
+        }
+
+        Ok(())
+    }
+}
+
+impl ServerConfig {
+    pub fn validate(&mut self) -> anyhow::Result<()> {
+        self.tls.normalize()?;
+        Ok(())
+    }
+}
+
 impl VolumesConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         for prefix in &self.allowed_host_prefixes {
@@ -613,6 +672,9 @@ pub fn load() -> anyhow::Result<AppConfig> {
         .add_source(config::File::with_name("config").required(false))
         .set_default("server.host", "0.0.0.0")?
         .set_default("server.port", 49421)?
+        .set_default("server.tls.enabled", false)?
+        .set_default("server.tls.cert_path", Option::<String>::None)?
+        .set_default("server.tls.key_path", Option::<String>::None)?
         .set_default("metrics.host", "0.0.0.0")?
         .set_default("metrics.port", 49422)?
         .set_default("tunnel.advertised_host", "127.0.0.1")?
@@ -708,6 +770,7 @@ pub fn load() -> anyhow::Result<AppConfig> {
         }
         app.ports.public_host = Some(trimmed.to_string());
     }
+    app.server.validate()?;
     app.ports.validate()?;
     app.volumes.validate()?;
     app.tunnel.validate()?;
@@ -806,6 +869,46 @@ mod tests {
                 let cfg = load().expect("config loads");
                 assert!(!cfg.features.enforce_agent_compatibility);
                 assert!(cfg.features.migrations_dry_run_on_start);
+            },
+        );
+    }
+
+    #[test]
+    fn server_tls_defaults_to_disabled() {
+        let cfg = load().expect("config loads");
+        assert!(!cfg.server.tls.enabled);
+        assert!(cfg.server.tls.cert_path.is_none());
+        assert!(cfg.server.tls.key_path.is_none());
+    }
+
+    #[test]
+    fn server_tls_enables_with_paths() {
+        with_control_plane_env(
+            &[
+                ("FLEDX_CP_SERVER_TLS_CERT_PATH", "cert.pem"),
+                ("FLEDX_CP_SERVER_TLS_KEY_PATH", "key.pem"),
+            ],
+            || {
+                let cfg = load().expect("config loads");
+                assert!(cfg.server.tls.enabled);
+                assert_eq!(cfg.server.tls.cert_path.as_deref(), Some("cert.pem"));
+                assert_eq!(cfg.server.tls.key_path.as_deref(), Some("key.pem"));
+            },
+        );
+    }
+
+    #[test]
+    fn server_tls_requires_both_paths() {
+        with_control_plane_env(
+            &[
+                ("FLEDX_CP_SERVER_TLS_ENABLED", "true"),
+                ("FLEDX_CP_SERVER_TLS_CERT_PATH", "cert.pem"),
+            ],
+            || {
+                let err = load().expect_err("config should reject missing tls key path");
+                let msg = err.to_string();
+                assert!(msg.contains("server.tls.cert_path"));
+                assert!(msg.contains("server.tls.key_path"));
             },
         );
     }

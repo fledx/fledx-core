@@ -22,12 +22,16 @@ pub mod version;
 
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
 
-use std::{env, future::Future, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
+use std::{env, future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
-use axum::{http::HeaderName, Router};
+use anyhow::Context;
+use axum::{http::HeaderName, serve::Listener, Router};
 use metrics_exporter_prometheus::PrometheusHandle;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde_json::json;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
+use tokio_rustls::{server::TlsStream, TlsAcceptor};
 use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -128,6 +132,11 @@ where
     S: Future<Output = ()> + Send + 'static,
 {
     let app_config = config::load()?;
+    let tls_acceptor = if app_config.server.tls.enabled {
+        Some(TlsAcceptor::from(load_tls_config(&app_config.server.tls)?))
+    } else {
+        None
+    };
     let metrics_handle = init_metrics_recorder();
     let metrics_history = MetricsHistory::new(app_config.limits.metrics_summary_window_secs);
     let agent_compat = compat::AgentCompatibility::from_config(&app_config.compatibility)?;
@@ -328,14 +337,17 @@ where
 
     let base_router: Router<AppState> = routes::build_router(state.clone());
     let app = (hooks.extend_router)(state.clone(), base_router).with_state(state.clone());
-    let make_service = app.into_make_service_with_connect_info::<SocketAddr>();
 
     let metrics_app = crate::http::build_metrics_router().with_state(state.clone());
     let metrics_service = metrics_app.into_make_service_with_connect_info::<SocketAddr>();
 
-    let api_listener = tokio::net::TcpListener::bind(api_addr).await?;
-    let metrics_listener = tokio::net::TcpListener::bind(metrics_addr).await?;
-    info!(%api_addr, "control-plane listening");
+    let api_listener = TcpListener::bind(api_addr).await?;
+    let metrics_listener = TcpListener::bind(metrics_addr).await?;
+    if tls_acceptor.is_some() {
+        info!(%api_addr, "control-plane listening (https)");
+    } else {
+        info!(%api_addr, "control-plane listening");
+    }
     info!(%metrics_addr, "control-plane metrics listening");
 
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -348,13 +360,26 @@ where
     let mut api_shutdown = shutdown_rx.clone();
     let mut metrics_shutdown = shutdown_rx.clone();
 
-    let mut api_task = tokio::spawn(async move {
-        axum::serve(api_listener, make_service)
-            .with_graceful_shutdown(async move {
-                let _ = api_shutdown.changed().await;
-            })
-            .await
-    });
+    let mut api_task = if let Some(tls_acceptor) = tls_acceptor {
+        let tls_listener = TlsListener::new(api_listener, tls_acceptor);
+        let make_service = app.clone().into_make_service();
+        tokio::spawn(async move {
+            axum::serve(tls_listener, make_service)
+                .with_graceful_shutdown(async move {
+                    let _ = api_shutdown.changed().await;
+                })
+                .await
+        })
+    } else {
+        let make_service = app.into_make_service_with_connect_info::<SocketAddr>();
+        tokio::spawn(async move {
+            axum::serve(api_listener, make_service)
+                .with_graceful_shutdown(async move {
+                    let _ = api_shutdown.changed().await;
+                })
+                .await
+        })
+    };
 
     let mut metrics_task = tokio::spawn(async move {
         axum::serve(metrics_listener, metrics_service)
@@ -434,6 +459,80 @@ pub async fn run_standalone(hooks: ControlPlaneHooks) -> Result<()> {
     Ok(())
 }
 
+struct TlsListener {
+    listener: TcpListener,
+    acceptor: TlsAcceptor,
+}
+
+impl TlsListener {
+    fn new(listener: TcpListener, acceptor: TlsAcceptor) -> Self {
+        Self { listener, acceptor }
+    }
+}
+
+impl Listener for TlsListener {
+    type Io = TlsStream<TcpStream>;
+    type Addr = SocketAddr;
+
+    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
+        loop {
+            let (stream, addr) = match self.listener.accept().await {
+                Ok(value) => value,
+                Err(err) => {
+                    handle_accept_error(err).await;
+                    continue;
+                }
+            };
+
+            match self.acceptor.accept(stream).await {
+                Ok(tls_stream) => return (tls_stream, addr),
+                Err(err) => {
+                    error!(%err, %addr, "tls handshake failed");
+                }
+            }
+        }
+    }
+
+    fn local_addr(&self) -> io::Result<Self::Addr> {
+        self.listener.local_addr()
+    }
+}
+
+fn load_tls_config(cfg: &config::ServerTlsConfig) -> Result<Arc<rustls::ServerConfig>> {
+    let cert_path = cfg
+        .cert_path
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("server.tls.cert_path is required when TLS is enabled"))?;
+    let key_path = cfg
+        .key_path
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("server.tls.key_path is required when TLS is enabled"))?;
+
+    let cert_bytes = std::fs::read(cert_path)
+        .with_context(|| format!("read TLS certificate from {cert_path}"))?;
+    let mut certs = Vec::new();
+    for cert in CertificateDer::pem_slice_iter(&cert_bytes) {
+        certs.push(cert.context("parse TLS certificate")?);
+    }
+    if certs.is_empty() {
+        anyhow::bail!("TLS certificate file contains no PEM certificates");
+    }
+
+    let key_bytes =
+        std::fs::read(key_path).with_context(|| format!("read TLS private key from {key_path}"))?;
+    use rustls::pki_types::pem::PemObject;
+    let key = PrivateKeyDer::from_pem_slice(&key_bytes)
+        .map_err(|err| anyhow::anyhow!("parse TLS private key: {err}"))?;
+
+    let mut config = rustls::ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .context("build TLS server config")?;
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+
+    Ok(Arc::new(config))
+}
+
 pub fn init_tracing() {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::registry()
@@ -473,4 +572,73 @@ async fn shutdown_signal() {
     }
 
     tokio::time::sleep(Duration::from_millis(100)).await;
+}
+
+async fn handle_accept_error(err: io::Error) {
+    if is_connection_error(&err) {
+        return;
+    }
+
+    error!("accept error: {err}");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+}
+
+fn is_connection_error(err: &io::Error) -> bool {
+    matches!(
+        err.kind(),
+        io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::ConnectionReset
+    )
+}
+
+#[cfg(test)]
+mod tls_tests {
+    use super::{config::ServerTlsConfig, load_tls_config};
+    use rcgen::CertificateParams;
+    use std::fs;
+
+    #[test]
+    fn load_tls_config_accepts_valid_material() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cert =
+            rcgen::Certificate::from_params(CertificateParams::new(vec!["localhost".to_string()]))
+                .expect("cert");
+        let cert_path = dir.path().join("cert.pem");
+        let key_path = dir.path().join("key.pem");
+        fs::write(&cert_path, cert.serialize_pem().expect("cert pem")).expect("write cert");
+        fs::write(&key_path, cert.serialize_private_key_pem()).expect("write key");
+
+        let cfg = ServerTlsConfig {
+            enabled: true,
+            cert_path: Some(cert_path.to_string_lossy().to_string()),
+            key_path: Some(key_path.to_string_lossy().to_string()),
+        };
+
+        load_tls_config(&cfg).expect("tls config loads");
+    }
+
+    #[test]
+    fn load_tls_config_rejects_invalid_key() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cert =
+            rcgen::Certificate::from_params(CertificateParams::new(vec!["localhost".to_string()]))
+                .expect("cert");
+        let cert_path = dir.path().join("cert.pem");
+        let key_path = dir.path().join("key.pem");
+        fs::write(&cert_path, cert.serialize_pem().expect("cert pem")).expect("write cert");
+        fs::write(&key_path, "not a key").expect("write key");
+
+        let cfg = ServerTlsConfig {
+            enabled: true,
+            cert_path: Some(cert_path.to_string_lossy().to_string()),
+            key_path: Some(key_path.to_string_lossy().to_string()),
+        };
+
+        let err = load_tls_config(&cfg).expect_err("invalid key should error");
+        assert!(
+            err.to_string().contains("TLS private key"),
+            "unexpected error: {err}"
+        );
+    }
 }
