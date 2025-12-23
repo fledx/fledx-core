@@ -390,6 +390,7 @@ pub fn render_agent_env(input: &AgentEnvInputs) -> String {
         node_id,
         node_token,
         allow_insecure_http,
+        ca_cert_path,
         volume_dir,
         tunnel_host,
         tunnel,
@@ -421,6 +422,13 @@ pub fn render_agent_env(input: &AgentEnvInputs) -> String {
             out,
             "FLEDX_AGENT_ALLOW_INSECURE_HTTP={}",
             systemd_quote_env_value("true")
+        );
+    }
+    if let Some(path) = ca_cert_path.as_deref() {
+        let _ = writeln!(
+            out,
+            "FLEDX_AGENT_CA_CERT_PATH={}",
+            systemd_quote_env_value(path)
         );
     }
 
@@ -468,6 +476,7 @@ pub struct AgentEnvInputs {
     pub node_id: uuid::Uuid,
     pub node_token: String,
     pub allow_insecure_http: bool,
+    pub ca_cert_path: Option<String>,
     pub volume_dir: PathBuf,
     pub tunnel_host: String,
     pub tunnel: common::api::TunnelEndpoint,
@@ -541,11 +550,30 @@ pub struct ControlPlaneInstallSettings {
     pub sudo_interactive: bool,
 }
 
+pub struct ControlPlaneTlsAssets {
+    pub ca_cert_pem: String,
+    pub cert_pem: String,
+    pub key_pem: String,
+    pub ca_cert_path: PathBuf,
+    pub cert_path: PathBuf,
+    pub key_path: PathBuf,
+}
+
 pub fn install_cp_local(
     bin: &Path,
     env: &str,
     unit: &str,
     settings: &ControlPlaneInstallSettings,
+) -> anyhow::Result<()> {
+    install_cp_local_with_tls(bin, env, unit, settings, None)
+}
+
+pub fn install_cp_local_with_tls(
+    bin: &Path,
+    env: &str,
+    unit: &str,
+    settings: &ControlPlaneInstallSettings,
+    tls_assets: Option<&ControlPlaneTlsAssets>,
 ) -> anyhow::Result<()> {
     validate_linux_username(&settings.service_user)?;
     let sudo = SudoMode::root(settings.sudo_interactive);
@@ -629,6 +657,74 @@ pub fn install_cp_local(
         ],
     )?;
 
+    if let Some(tls) = tls_assets {
+        let tls_dir = tls.ca_cert_path.parent().ok_or_else(|| {
+            anyhow::anyhow!(
+                "TLS CA path must include a parent directory: {}",
+                tls.ca_cert_path.display()
+            )
+        })?;
+        sudo_run_cmd(
+            sudo,
+            "install",
+            vec![
+                OsString::from("-d"),
+                OsString::from("-o"),
+                OsString::from("root"),
+                OsString::from("-g"),
+                OsString::from("root"),
+                tls_dir.as_os_str().to_os_string(),
+            ],
+        )?;
+
+        let ca_tmp = tempfile::NamedTempFile::new()?;
+        fs::write(ca_tmp.path(), &tls.ca_cert_pem)?;
+        sudo_run_cmd(
+            sudo,
+            "install",
+            vec![
+                OsString::from("-m"),
+                OsString::from("0644"),
+                ca_tmp.path().as_os_str().to_os_string(),
+                tls.ca_cert_path.clone().into_os_string(),
+            ],
+        )?;
+
+        let cert_tmp = tempfile::NamedTempFile::new()?;
+        fs::write(cert_tmp.path(), &tls.cert_pem)?;
+        sudo_run_cmd(
+            sudo,
+            "install",
+            vec![
+                OsString::from("-m"),
+                OsString::from("0644"),
+                OsString::from("-o"),
+                OsString::from(settings.service_user.clone()),
+                OsString::from("-g"),
+                OsString::from(settings.service_user.clone()),
+                cert_tmp.path().as_os_str().to_os_string(),
+                tls.cert_path.clone().into_os_string(),
+            ],
+        )?;
+
+        let key_tmp = tempfile::NamedTempFile::new()?;
+        fs::write(key_tmp.path(), &tls.key_pem)?;
+        sudo_run_cmd(
+            sudo,
+            "install",
+            vec![
+                OsString::from("-m"),
+                OsString::from("0600"),
+                OsString::from("-o"),
+                OsString::from(settings.service_user.clone()),
+                OsString::from("-g"),
+                OsString::from(settings.service_user.clone()),
+                key_tmp.path().as_os_str().to_os_string(),
+                tls.key_path.clone().into_os_string(),
+            ],
+        )?;
+    }
+
     let unit_tmp = tempfile::NamedTempFile::new()?;
     fs::write(unit_tmp.path(), unit)?;
     sudo_run_cmd(
@@ -662,6 +758,17 @@ pub fn install_cp_ssh(
     unit: &str,
     settings: &ControlPlaneInstallSettings,
 ) -> anyhow::Result<()> {
+    install_cp_ssh_with_tls(ssh, bin, env, unit, settings, None)
+}
+
+pub fn install_cp_ssh_with_tls(
+    ssh: &SshTarget,
+    bin: &Path,
+    env: &str,
+    unit: &str,
+    settings: &ControlPlaneInstallSettings,
+    tls_assets: Option<&ControlPlaneTlsAssets>,
+) -> anyhow::Result<()> {
     let sudo = SudoMode::root(settings.sudo_interactive);
     validate_linux_username(&settings.service_user)?;
     let remote_dir = ssh.mktemp_dir("fledx-bootstrap-cp")?;
@@ -676,6 +783,29 @@ pub fn install_cp_ssh(
     let local_unit = local_dir.path().join("fledx-cp.service");
     write_file_with_mode(&local_unit, unit, 0o644)?;
 
+    if let Some(tls) = tls_assets {
+        let local_ca = local_dir.path().join("fledx-cp-ca.pem");
+        write_file_with_mode(&local_ca, &tls.ca_cert_pem, 0o644)?;
+        ssh.upload_file(
+            &local_ca,
+            &PathBuf::from(format!("{remote_dir}/fledx-cp-ca.pem")),
+        )?;
+
+        let local_cert = local_dir.path().join("fledx-cp-cert.pem");
+        write_file_with_mode(&local_cert, &tls.cert_pem, 0o644)?;
+        ssh.upload_file(
+            &local_cert,
+            &PathBuf::from(format!("{remote_dir}/fledx-cp-cert.pem")),
+        )?;
+
+        let local_key = local_dir.path().join("fledx-cp-key.pem");
+        write_file_with_mode(&local_key, &tls.key_pem, 0o600)?;
+        ssh.upload_file(
+            &local_key,
+            &PathBuf::from(format!("{remote_dir}/fledx-cp-key.pem")),
+        )?;
+    }
+
     // IMPORTANT: Do not execute multi-line scripts via `ssh host sh -c <script>`.
     // Some SSH configurations inject banners/motd text, and multi-line payloads
     // can be split by the remote shell in surprising ways (leading to parts of
@@ -683,7 +813,35 @@ pub fn install_cp_ssh(
     //
     // Upload the script as a file and execute it via `sh <path>` under sudo.
     let local_script = local_dir.path().join("install-cp.sh");
-    let script = render_cp_install_script(settings, &remote_dir);
+    let tls_install = if let Some(tls) = tls_assets {
+        let tls_dir = tls.ca_cert_path.parent().ok_or_else(|| {
+            anyhow::anyhow!(
+                "TLS CA path must include a parent directory: {}",
+                tls.ca_cert_path.display()
+            )
+        })?;
+        let tls_dir_q = sh_quote_path(tls_dir);
+        let ca_path_q = sh_quote_path(&tls.ca_cert_path);
+        let cert_path_q = sh_quote_path(&tls.cert_path);
+        let key_path_q = sh_quote_path(&tls.key_path);
+        let service_user_q = sh_quote(&settings.service_user);
+        format!(
+            "\
+install -d -o root -g root {tls_dir}
+install -m 0644 \"$REMOTE_DIR/fledx-cp-ca.pem\" {ca_path}
+install -m 0644 -o {service_user} -g {service_user} \"$REMOTE_DIR/fledx-cp-cert.pem\" {cert_path}
+install -m 0600 -o {service_user} -g {service_user} \"$REMOTE_DIR/fledx-cp-key.pem\" {key_path}
+",
+            tls_dir = tls_dir_q,
+            ca_path = ca_path_q,
+            cert_path = cert_path_q,
+            key_path = key_path_q,
+            service_user = service_user_q,
+        )
+    } else {
+        String::new()
+    };
+    let script = render_cp_install_script(settings, &remote_dir, &tls_install);
     write_file_with_mode(&local_script, &script, 0o700)?;
 
     ssh.upload_file(&local_bin, &PathBuf::from(format!("{remote_dir}/fledx-cp")))?;
@@ -704,7 +862,11 @@ pub fn install_cp_ssh(
     Ok(())
 }
 
-fn render_cp_install_script(settings: &ControlPlaneInstallSettings, remote_dir: &str) -> String {
+fn render_cp_install_script(
+    settings: &ControlPlaneInstallSettings,
+    remote_dir: &str,
+    tls_install: &str,
+) -> String {
     let env_path = settings.config_dir.join("fledx-cp.env");
     let bin_path = settings.bin_dir.join("fledx-cp");
     let cp_dir = settings.data_dir.join("cp");
@@ -738,6 +900,7 @@ useradd -r -s /bin/false \"$SERVICE_USER\" 2>/dev/null || true
 install -d -o root -g root \"$BIN_DIR\"
 install -d -o root -g root \"$CONFIG_DIR\"
 install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$CP_DIR\"
+{tls_install}\
 install -m 0755 \"$REMOTE_DIR/fledx-cp\" \"$BIN_PATH\"
 install -m 0600 \"$REMOTE_DIR/fledx-cp.env\" \"$ENV_PATH\"
 install -m 0644 \"$REMOTE_DIR/fledx-cp.service\" /etc/systemd/system/fledx-cp.service
@@ -753,6 +916,7 @@ systemctl restart fledx-cp
         cp_dir = cp_dir_q,
         bin_path = bin_path_q,
         env_path = env_path_q,
+        tls_install = tls_install,
     )
 }
 
@@ -769,6 +933,11 @@ pub struct AgentInstallSettings {
     pub add_to_docker_socket_group: bool,
 }
 
+pub struct AgentCaCert {
+    pub cert_pem: String,
+    pub cert_path: PathBuf,
+}
+
 pub fn install_agent_ssh(
     ssh: &SshTarget,
     bin: &Path,
@@ -776,6 +945,18 @@ pub fn install_agent_ssh(
     unit: &str,
     settings: &AgentInstallSettings,
     bin_path: &Path,
+) -> anyhow::Result<()> {
+    install_agent_ssh_with_ca(ssh, bin, env, unit, settings, bin_path, None)
+}
+
+pub fn install_agent_ssh_with_ca(
+    ssh: &SshTarget,
+    bin: &Path,
+    env: &str,
+    unit: &str,
+    settings: &AgentInstallSettings,
+    bin_path: &Path,
+    ca_cert: Option<&AgentCaCert>,
 ) -> anyhow::Result<()> {
     let sudo = SudoMode::root(settings.sudo_interactive);
     validate_linux_username(&settings.service_user)?;
@@ -792,7 +973,27 @@ pub fn install_agent_ssh(
     write_file_with_mode(&local_unit, unit, 0o644)?;
 
     let local_script = local_dir.path().join("install-agent.sh");
-    let script = render_agent_install_script(settings, &remote_dir, bin_path);
+    let ca_install = if let Some(ca_cert) = ca_cert {
+        let ca_dir = ca_cert.cert_path.parent().ok_or_else(|| {
+            anyhow::anyhow!(
+                "CA cert path must include a parent directory: {}",
+                ca_cert.cert_path.display()
+            )
+        })?;
+        let ca_dir_q = sh_quote_path(ca_dir);
+        let ca_path_q = sh_quote_path(&ca_cert.cert_path);
+        format!(
+            "\
+install -d -o root -g root {ca_dir}
+install -m 0644 \"$REMOTE_DIR/fledx-agent-ca.pem\" {ca_path}
+",
+            ca_dir = ca_dir_q,
+            ca_path = ca_path_q,
+        )
+    } else {
+        String::new()
+    };
+    let script = render_agent_install_script(settings, &remote_dir, bin_path, &ca_install);
     write_file_with_mode(&local_script, &script, 0o700)?;
 
     ssh.upload_file(
@@ -807,6 +1008,14 @@ pub fn install_agent_ssh(
         &local_unit,
         &PathBuf::from(format!("{remote_dir}/fledx-agent.service")),
     )?;
+    if let Some(ca_cert) = ca_cert {
+        let local_ca = local_dir.path().join("fledx-agent-ca.pem");
+        write_file_with_mode(&local_ca, &ca_cert.cert_pem, 0o644)?;
+        ssh.upload_file(
+            &local_ca,
+            &PathBuf::from(format!("{remote_dir}/fledx-agent-ca.pem")),
+        )?;
+    }
 
     let remote_script = PathBuf::from(format!("{remote_dir}/install-agent.sh"));
     ssh.upload_file(&local_script, &remote_script)?;
@@ -820,6 +1029,7 @@ fn render_agent_install_script(
     settings: &AgentInstallSettings,
     remote_dir: &str,
     bin_path: &Path,
+    ca_install: &str,
 ) -> String {
     let env_path = settings.config_dir.join("fledx-agent.env");
     let bin_dir = bin_path.parent().unwrap_or_else(|| Path::new("/"));
@@ -877,10 +1087,11 @@ BIN_DIR={bin_dir}
 	  usermod -a -G \"$docker_group\" \"$SERVICE_USER\"
 	fi
 
-	install -d -o root -g root \"$BIN_DIR\"
-	install -d -o root -g root \"$CONFIG_DIR\"
-	install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$AGENT_DIR\"
+install -d -o root -g root \"$BIN_DIR\"
+install -d -o root -g root \"$CONFIG_DIR\"
+install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$AGENT_DIR\"
 install -d -o \"$SERVICE_USER\" -g \"$SERVICE_USER\" \"$VOLUMES_DIR\"
+{ca_install}\
 install -m 0755 \"$REMOTE_DIR/fledx-agent\" \"$BIN_PATH\"
 install -m 0600 \"$REMOTE_DIR/fledx-agent.env\" \"$ENV_PATH\"
 install -m 0644 \"$REMOTE_DIR/fledx-agent.service\" /etc/systemd/system/fledx-agent.service
@@ -898,6 +1109,7 @@ systemctl restart fledx-agent
         bin_path = bin_path_q,
         env_path = env_path_q,
         add_to_docker_socket_group = add_to_docker_socket_group,
+        ca_install = ca_install,
     )
 }
 
@@ -1158,6 +1370,7 @@ authorization: bearer qwerty
             node_id: uuid::Uuid::nil(),
             node_token: "deadbeef".to_string(),
             allow_insecure_http: true,
+            ca_cert_path: Some("/etc/fledx/tls/ca.pem".to_string()),
             volume_dir: PathBuf::from("/var/lib/fledx/volumes dir"),
             tunnel_host: "localhost".to_string(),
             tunnel: common::api::TunnelEndpoint {
@@ -1173,6 +1386,7 @@ authorization: bearer qwerty
 
         assert!(env.contains("FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES=\"/var/lib/fledx/volumes dir\""));
         assert!(env.contains("FLEDX_AGENT_ALLOW_INSECURE_HTTP=\"true\""));
+        assert!(env.contains("FLEDX_AGENT_CA_CERT_PATH=\"/etc/fledx/tls/ca.pem\""));
     }
 
     #[test]
