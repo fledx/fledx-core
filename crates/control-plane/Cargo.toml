@@ -35,6 +35,8 @@ sha2.workspace = true
 tower.workspace = true
 http-body-util.workspace = true
 hyper.workspace = true
+rustls.workspace = true
+tokio-rustls.workspace = true
 common = { path = "../common" }
 node-agent = { path = "../node-agent" }
 argon2.workspace = true
