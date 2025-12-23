@@ -60,6 +60,9 @@ pub fn handle_profiles(
             if profile.registration_token.is_some() {
                 println!("registration_token: <set>");
             }
+            if let Some(path) = profile.ca_cert_path.as_deref() {
+                println!("ca_cert_path: {}", path);
+            }
         }
         ProfileCommands::Set(ProfileSetArgs {
             name,
@@ -67,6 +70,7 @@ pub fn handle_profiles(
             operator_header,
             operator_token,
             registration_token,
+            ca_cert_path,
         }) => {
             let entry = store
                 .profiles
@@ -83,6 +87,9 @@ pub fn handle_profiles(
             }
             if registration_token.is_some() {
                 entry.registration_token = registration_token;
+            }
+            if ca_cert_path.is_some() {
+                entry.ca_cert_path = ca_cert_path;
             }
 
             if store.default_profile.is_none() {

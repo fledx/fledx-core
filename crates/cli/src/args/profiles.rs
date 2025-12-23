@@ -69,4 +69,8 @@ pub struct ProfileSetArgs {
     /// Registration token required by the control plane for node enrollment.
     #[arg(long = "registration-token", value_name = "TOKEN")]
     pub registration_token: Option<String>,
+
+    /// CA certificate bundle to trust for HTTPS control-plane endpoints.
+    #[arg(long = "ca-cert-path", value_name = "PATH")]
+    pub ca_cert_path: Option<String>,
 }

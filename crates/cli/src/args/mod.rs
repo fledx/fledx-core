@@ -78,6 +78,14 @@ pub struct GlobalArgs {
     /// Registration token required by the control plane for node enrollment.
     #[arg(long, env = "FLEDX_CLI_REGISTRATION_TOKEN", global = true)]
     pub registration_token: Option<String>,
+
+    /// Optional CA certificate bundle to trust for HTTPS control-plane endpoints.
+    #[arg(
+        long = "ca-cert-path",
+        env = "FLEDX_CLI_CA_CERT_PATH",
+        value_name = "PATH"
+    )]
+    pub ca_cert_path: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]
