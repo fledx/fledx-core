@@ -499,6 +499,9 @@ impl Listener for TlsListener {
 }
 
 fn load_tls_config(cfg: &config::ServerTlsConfig) -> Result<Arc<rustls::ServerConfig>> {
+    // Install a provider explicitly because multiple rustls backends can be enabled.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let cert_path = cfg
         .cert_path
         .as_ref()
