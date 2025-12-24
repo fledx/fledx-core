@@ -1619,3 +1619,65 @@ fn default_replicas() -> u32 {
 fn default_replica_number() -> u32 {
     0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn enum_as_str_is_lowercase() {
+        assert_eq!(DesiredState::Running.as_str(), "running");
+        assert_eq!(DesiredState::Stopped.as_str(), "stopped");
+        assert_eq!(DeploymentStatus::Pending.as_str(), "pending");
+        assert_eq!(DeploymentStatus::Deploying.as_str(), "deploying");
+        assert_eq!(DeploymentStatus::Running.as_str(), "running");
+        assert_eq!(DeploymentStatus::Stopped.as_str(), "stopped");
+        assert_eq!(DeploymentStatus::Failed.as_str(), "failed");
+    }
+
+    #[test]
+    fn ingress_route_tls_ref_handles_nullability() {
+        let missing: IngressRouteUpdateRequest =
+            serde_json::from_value(json!({})).expect("deserialize update request without tls_ref");
+        assert_eq!(missing.tls_ref, None);
+
+        let null_value: IngressRouteUpdateRequest =
+            serde_json::from_value(json!({"tls_ref": null}))
+                .expect("deserialize update request with null tls_ref");
+        assert_eq!(null_value.tls_ref, Some(None));
+
+        let string_value: IngressRouteUpdateRequest =
+            serde_json::from_value(json!({"tls_ref": "edge-cert"}))
+                .expect("deserialize update request with string tls_ref");
+        assert_eq!(string_value.tls_ref, Some(Some("edge-cert".to_string())));
+    }
+
+    #[test]
+    fn defaulted_fields_apply_on_deserialize() {
+        let port: PortMapping = serde_json::from_value(json!({"container_port": 8080}))
+            .expect("deserialize port mapping");
+        assert_eq!(port.protocol, "tcp");
+        assert_eq!(port.host_port, None);
+        assert_eq!(port.host_ip, None);
+        assert!(!port.expose);
+
+        let create: IngressRouteCreateRequest = serde_json::from_value(json!({
+            "domain": "edge.example.com",
+            "backend_id": "00000000-0000-0000-0000-000000000042"
+        }))
+        .expect("deserialize ingress create request");
+        assert_eq!(create.path_prefix, "/");
+
+        let tunnel: TunnelEndpoint = serde_json::from_value(json!({
+            "host": "tunnel.edge.example.com",
+            "port": 49423,
+            "connect_timeout_secs": 10,
+            "heartbeat_interval_secs": 30,
+            "heartbeat_timeout_secs": 90,
+            "token_header": "x-fledx-tunnel-token"
+        }))
+        .expect("deserialize tunnel endpoint");
+        assert!(tunnel.use_tls);
+    }
+}
