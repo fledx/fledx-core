@@ -389,27 +389,40 @@ where
             .await
     });
 
-    tokio::select! {
+    enum CompletedTask {
+        Api,
+        Metrics,
+    }
+
+    let completed = tokio::select! {
         res = &mut api_task => {
             let _ = shutdown_tx.send(true);
             res.map_err(|err| anyhow::anyhow!("control-plane task failed: {err}"))?
                 .map_err(|err| anyhow::anyhow!("control-plane server failed: {err}"))?;
+            CompletedTask::Api
         }
         res = &mut metrics_task => {
             let _ = shutdown_tx.send(true);
             res.map_err(|err| anyhow::anyhow!("control-plane metrics task failed: {err}"))?
                 .map_err(|err| anyhow::anyhow!("control-plane metrics server failed: {err}"))?;
+            CompletedTask::Metrics
+        }
+    };
+
+    match completed {
+        CompletedTask::Api => {
+            metrics_task
+                .await
+                .map_err(|err| anyhow::anyhow!("control-plane metrics task failed: {err}"))?
+                .map_err(|err| anyhow::anyhow!("control-plane metrics server failed: {err}"))?;
+        }
+        CompletedTask::Metrics => {
+            api_task
+                .await
+                .map_err(|err| anyhow::anyhow!("control-plane task failed: {err}"))?
+                .map_err(|err| anyhow::anyhow!("control-plane server failed: {err}"))?;
         }
     }
-
-    api_task
-        .await
-        .map_err(|err| anyhow::anyhow!("control-plane task failed: {err}"))?
-        .map_err(|err| anyhow::anyhow!("control-plane server failed: {err}"))?;
-    metrics_task
-        .await
-        .map_err(|err| anyhow::anyhow!("control-plane metrics task failed: {err}"))?
-        .map_err(|err| anyhow::anyhow!("control-plane metrics server failed: {err}"))?;
 
     Ok(())
 }
