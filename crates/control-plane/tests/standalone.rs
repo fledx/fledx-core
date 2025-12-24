@@ -123,6 +123,31 @@ async fn stop_process(child: &mut Child, signal: Signal, timeout: Duration) -> a
     }
 }
 
+async fn stop_process_checked(
+    child: &mut Child,
+    signal: Signal,
+    timeout: Duration,
+) -> anyhow::Result<()> {
+    if let Some(id) = child.id() {
+        let pid = Pid::from_raw(id as i32);
+        let _ = kill(pid, signal);
+    }
+
+    match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(Ok(status)) => {
+            if !status.success() {
+                anyhow::bail!("process exited with status {status}");
+            }
+            Ok(())
+        }
+        Ok(Err(err)) => Err(err.into()),
+        Err(_) => {
+            let _ = child.kill().await;
+            anyhow::bail!("timed out waiting for process to exit");
+        }
+    }
+}
+
 struct CpEnv {
     _tmp: TempDir,
     db_path: PathBuf,
@@ -375,7 +400,7 @@ async fn standalone_metrics_include_agent_and_cp() -> anyhow::Result<()> {
         "expected node-agent metrics in /metrics"
     );
 
-    stop_process(&mut child, Signal::SIGINT, Duration::from_secs(10)).await?;
+    stop_process_checked(&mut child, Signal::SIGINT, Duration::from_secs(10)).await?;
     Ok(())
 }
 
