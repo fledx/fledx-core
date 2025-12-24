@@ -324,6 +324,31 @@ mod tests {
     }
 
     #[test]
+    fn resolve_secret_env_skips_optional_missing() {
+        let entries = vec![api::SecretEnv {
+            name: "TOKEN".into(),
+            secret: "OPTIONAL_SECRET".into(),
+            optional: true,
+        }];
+
+        std::env::remove_var("FLEDX_SECRET_OPTIONAL_SECRET");
+        let resolved = resolve_secret_env(&entries, "FLEDX_SECRET_").expect("resolved env");
+        assert!(resolved.is_empty());
+    }
+
+    #[test]
+    fn resolve_secret_env_rejects_empty_prefix() {
+        let entries = vec![api::SecretEnv {
+            name: "TOKEN".into(),
+            secret: "ANY".into(),
+            optional: false,
+        }];
+
+        let err = resolve_secret_env(&entries, "   ").unwrap_err();
+        assert!(err.to_string().contains("secrets_prefix is empty"));
+    }
+
+    #[test]
     fn resolve_secret_files_builds_mounts() {
         let dir = tempdir().expect("tempdir");
         let secret_path = dir.path().join("creds");
@@ -342,6 +367,32 @@ mod tests {
     }
 
     #[test]
+    fn resolve_secret_files_skips_optional_missing() {
+        let dir = tempdir().expect("tempdir");
+        let entries = vec![api::SecretFile {
+            secret: "missing".into(),
+            path: "/etc/missing".into(),
+            optional: true,
+        }];
+
+        let mounts = resolve_secret_files(&entries, dir.path().to_str().unwrap()).unwrap();
+        assert!(mounts.is_empty());
+    }
+
+    #[test]
+    fn resolve_secret_files_errors_for_missing_required() {
+        let dir = tempdir().expect("tempdir");
+        let entries = vec![api::SecretFile {
+            secret: "missing".into(),
+            path: "/etc/missing".into(),
+            optional: false,
+        }];
+
+        let err = resolve_secret_files(&entries, dir.path().to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("failed to read secret file"));
+    }
+
+    #[test]
     fn validate_health_rejects_empty_configuration() {
         let health = DeploymentHealth {
             liveness: None,
@@ -352,5 +403,39 @@ mod tests {
         assert!(err
             .to_string()
             .contains("health configuration must define at least one probe"));
+    }
+
+    #[test]
+    fn validate_health_rejects_empty_exec_args() {
+        let health = DeploymentHealth {
+            liveness: Some(HealthProbe {
+                kind: HealthProbeKind::Exec {
+                    command: vec!["".into()],
+                },
+                interval_seconds: None,
+                timeout_seconds: None,
+                failure_threshold: None,
+                start_period_seconds: None,
+            }),
+            readiness: None,
+        };
+
+        let err = validate_health(&health).unwrap_err();
+        assert!(err.to_string().contains("exec arguments cannot be empty"));
+    }
+
+    #[test]
+    fn validate_volume_mounts_rejects_disabled_volume_mounts() {
+        let mut cfg = base_config();
+        cfg.allowed_volume_prefixes = Vec::new();
+
+        let volumes = vec![api::VolumeMount {
+            host_path: "/var/lib/fledx/volumes".into(),
+            container_path: "/data".into(),
+            read_only: Some(false),
+        }];
+
+        let err = validate_volume_mounts(&volumes, &cfg).unwrap_err();
+        assert!(err.to_string().contains("volume mounts are disabled"));
     }
 }

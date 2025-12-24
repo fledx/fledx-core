@@ -621,3 +621,177 @@ fn normalize_allowed_volume_prefixes(root: &mut Value) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use config::Map;
+    use std::sync::{Mutex, OnceLock};
+    use uuid::Uuid;
+
+    struct EnvStore {
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl EnvStore {
+        fn new() -> Self {
+            Self { saved: Vec::new() }
+        }
+
+        fn set(&mut self, key: &'static str, value: &str) {
+            if self.saved.iter().all(|(k, _)| *k != key) {
+                self.saved.push((key, std::env::var(key).ok()));
+            }
+            std::env::set_var(key, value);
+        }
+    }
+
+    impl Drop for EnvStore {
+        fn drop(&mut self) {
+            for (key, previous) in self.saved.drain(..) {
+                match previous {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
+            }
+        }
+    }
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn normalize_path_prefix_trims_and_slashes() {
+        assert_eq!(normalize_path_prefix("  /api/  "), "/api");
+        assert_eq!(normalize_path_prefix("health/"), "/health");
+        assert_eq!(normalize_path_prefix(""), "/");
+    }
+
+    #[test]
+    fn tunnel_route_normalizes_and_validates() {
+        let mut route = TunnelRoute {
+            path_prefix: " api/ ".into(),
+            target_host: "  example.com ".into(),
+            target_port: 443,
+        };
+        route.normalize();
+        assert_eq!(route.path_prefix, "/api");
+        assert_eq!(route.target_host, "example.com");
+        route.validate().expect("route valid");
+    }
+
+    #[test]
+    fn gateway_validate_requires_envoy_image() {
+        let cfg = GatewayConfig {
+            enabled: true,
+            envoy_image: None,
+            admin_port: 1,
+            listener_port: 2,
+            xds_host: None,
+            xds_port: 3,
+        };
+        let err = cfg.validate(false).unwrap_err();
+        assert!(err.to_string().contains("gateway.envoy_image"));
+
+        let ok = GatewayConfig {
+            enabled: false,
+            envoy_image: Some("envoy:latest".into()),
+            admin_port: 1,
+            listener_port: 2,
+            xds_host: None,
+            xds_port: 3,
+        };
+        ok.validate(true).expect("envoy image should pass");
+    }
+
+    #[test]
+    fn tunnel_validate_rejects_timeout_mismatch() {
+        let tunnel = TunnelConfig {
+            heartbeat_interval_secs: 10,
+            heartbeat_timeout_secs: 10,
+            ..Default::default()
+        };
+        let err = tunnel.validate().unwrap_err();
+        assert!(err.to_string().contains("tunnel.heartbeat_timeout_secs"));
+    }
+
+    #[test]
+    fn normalize_allowed_volume_prefixes_handles_table_and_string() {
+        let mut allowed_table = Map::new();
+        allowed_table.insert("1".into(), Value::new(None, "/b"));
+        allowed_table.insert("0".into(), Value::new(None, "/a"));
+
+        let mut root_table = Map::new();
+        root_table.insert(
+            "allowed_volume_prefixes".into(),
+            Value::new(None, ValueKind::Table(allowed_table)),
+        );
+        let mut root = Value::new(None, ValueKind::Table(root_table));
+        normalize_allowed_volume_prefixes(&mut root);
+        let ValueKind::Table(root_table) = &root.kind else {
+            panic!("expected table root");
+        };
+        let allowed = root_table
+            .get("allowed_volume_prefixes")
+            .expect("allowed_volume_prefixes");
+        let ValueKind::Array(entries) = &allowed.kind else {
+            panic!("expected array");
+        };
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0].clone().try_deserialize::<String>().unwrap(),
+            "/a"
+        );
+        assert_eq!(
+            entries[1].clone().try_deserialize::<String>().unwrap(),
+            "/b"
+        );
+
+        let mut root_table = Map::new();
+        root_table.insert(
+            "allowed_volume_prefixes".into(),
+            Value::new(None, ValueKind::String("/one".into())),
+        );
+        let mut root = Value::new(None, ValueKind::Table(root_table));
+        normalize_allowed_volume_prefixes(&mut root);
+        let ValueKind::Table(root_table) = &root.kind else {
+            panic!("expected table root");
+        };
+        let allowed = root_table
+            .get("allowed_volume_prefixes")
+            .expect("allowed_volume_prefixes");
+        let ValueKind::Array(entries) = &allowed.kind else {
+            panic!("expected array");
+        };
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].clone().try_deserialize::<String>().unwrap(),
+            "/one"
+        );
+    }
+
+    #[test]
+    fn load_applies_env_overrides_and_trims_tunnel_fields() {
+        let _guard = env_lock().lock().expect("env lock");
+        let mut env = EnvStore::new();
+        let node_id = Uuid::new_v4();
+        env.set("FLEDX_AGENT_NODE_ID", &node_id.to_string());
+        env.set("FLEDX_AGENT_NODE_TOKEN", "token");
+        env.set("FLEDX_AGENT_ALLOWED_VOLUME_PREFIXES", " /data , /more ");
+        env.set("FLEDX_AGENT_LABELS", "region=us-west, role=edge");
+        env.set("FLEDX_AGENT_TUNNEL_TOKEN_HEADER", "  token ");
+        env.set("FLEDX_AGENT_TUNNEL_ENDPOINT_HOST", "  host ");
+
+        let cfg = load().expect("load config");
+        assert_eq!(cfg.allowed_volume_prefixes, vec!["/data", "/more"]);
+        assert_eq!(
+            cfg.labels.get("region").map(String::as_str),
+            Some("us-west")
+        );
+        assert_eq!(cfg.labels.get("role").map(String::as_str), Some("edge"));
+        assert_eq!(cfg.tunnel.token_header, "token");
+        assert_eq!(cfg.tunnel.endpoint_host, "host");
+    }
+}

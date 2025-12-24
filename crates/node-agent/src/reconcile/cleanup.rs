@@ -199,4 +199,14 @@ mod tests {
             "containers should be removed for missing deployments"
         );
     }
+
+    #[tokio::test]
+    async fn stop_and_remove_ignores_missing_container() {
+        let mock = MockRuntime::default();
+        let runtime: DynContainerRuntime = std::sync::Arc::new(mock);
+
+        stop_and_remove(&runtime, "missing")
+            .await
+            .expect("should ignore not found");
+    }
 }

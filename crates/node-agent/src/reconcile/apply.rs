@@ -477,4 +477,57 @@ mod tests {
         assert_eq!(env_value("SHARED"), Some("from-deploy".into()));
         assert_eq!(env_value("CONFIG_ONLY"), Some("yes".into()));
     }
+
+    #[tokio::test]
+    async fn reconcile_stopped_removes_container_and_marks_state() {
+        let deployment_id = Uuid::new_v4();
+        let key = ReplicaKey::new(deployment_id, 0);
+        let name = container_name(&key);
+
+        let container = runtime::ContainerDetails {
+            id: name.clone(),
+            name: Some(name.clone()),
+            status: runtime::ContainerStatus::Running,
+            labels: None,
+        };
+
+        let mock = MockRuntime::with_containers(vec![container]);
+        let runtime: DynContainerRuntime = std::sync::Arc::new(mock.clone());
+        let state = state_with_runtime_and_config(runtime.clone(), base_config());
+
+        let desired = api::DeploymentDesired {
+            deployment_id,
+            name: "example/image:1".into(),
+            replica_number: key.replica_number,
+            image: "example/image:1".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: None,
+            volumes: None,
+            requires_public_ip: false,
+            tunnel_only: false,
+            placement: None,
+            health: None,
+            desired_state: api::DesiredState::Stopped,
+            replica_generation: Some(1),
+            generation: 1,
+        };
+
+        apply_deployment(&state, desired, runtime.clone())
+            .await
+            .expect("apply stopped");
+
+        let guard = state.managed_read().await;
+        let entry = guard.managed.get(&key).expect("managed entry");
+        assert_eq!(entry.state, InstanceState::Stopped);
+        assert_eq!(entry.consecutive_failures, 0);
+        assert!(entry.backoff_until.is_none());
+        assert!(entry.container_id.is_none());
+
+        let containers = mock.containers.lock().expect("lock");
+        assert!(containers.is_empty(), "container should be removed");
+    }
 }
