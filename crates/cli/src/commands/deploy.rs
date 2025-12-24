@@ -1137,6 +1137,7 @@ pub(crate) fn apply_expose_flags(
 mod tests {
     use super::*;
     use ::common::api::{self as common_api, DeploymentStatus};
+    use std::collections::HashMap;
 
     #[test]
     fn apply_expose_flags_marks_specified_ports() {
@@ -1294,6 +1295,22 @@ mod tests {
     }
 
     #[test]
+    fn health_spec_builds_exec_probe() {
+        let args = HealthSpecArgs {
+            exec_command: vec!["/bin/true".into(), "--fast".into()],
+            ..Default::default()
+        };
+        let health = args.build_health().expect("health").expect("probe");
+        let liveness = health.liveness.expect("liveness");
+        match liveness.kind {
+            HealthProbeKind::Exec { command } => {
+                assert_eq!(command, vec!["/bin/true".to_string(), "--fast".to_string()]);
+            }
+            _ => panic!("expected exec probe"),
+        }
+    }
+
+    #[test]
     fn health_spec_rejects_multiple_probe_types() {
         let args = HealthSpecArgs {
             http_path: Some("/live".into()),
@@ -1390,5 +1407,179 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains("reason: connection refused")));
+    }
+
+    #[test]
+    fn build_constraints_returns_none_when_empty() {
+        assert!(build_constraints(None, None, None, None, None).is_none());
+    }
+
+    #[test]
+    fn build_constraints_populates_labels_and_capacity() {
+        let constraints = build_constraints(
+            Some("x86_64".into()),
+            Some("linux".into()),
+            Some(vec![("region".to_string(), "west".to_string())]),
+            Some(500),
+            Some(1024),
+        )
+        .expect("constraints");
+        assert_eq!(constraints.arch.as_deref(), Some("x86_64"));
+        assert_eq!(constraints.os.as_deref(), Some("linux"));
+        assert_eq!(constraints.labels.get("region").unwrap(), "west");
+        let capacity = constraints.capacity.expect("capacity");
+        assert_eq!(capacity.cpu_millis, Some(500));
+        assert_eq!(capacity.memory_bytes, Some(1024));
+    }
+
+    #[test]
+    fn build_placement_hints_includes_affinity_and_spread() {
+        let node_id = Uuid::new_v4();
+        let hints = build_placement_hints(
+            &[node_id],
+            &Some(vec![("zone".to_string(), "a".to_string())]),
+            &[],
+            &None,
+            true,
+        )
+        .expect("hints");
+        assert!(hints.affinity.is_some());
+        assert!(hints.anti_affinity.is_none());
+        assert!(hints.spread);
+    }
+
+    #[test]
+    fn deployment_status_lines_include_assignments_and_secrets() {
+        let deployment_id = Uuid::new_v4();
+        let now = Utc::now();
+        let mut labels = HashMap::new();
+        labels.insert("region".to_string(), "west".to_string());
+        let status = DeploymentStatusResponse {
+            deployment_id,
+            name: "demo".into(),
+            image: "nginx".into(),
+            replicas: 2,
+            command: None,
+            env: None,
+            secret_env: Some(vec![common_api::SecretEnv {
+                name: "TOKEN".into(),
+                secret: "token-ref".into(),
+                optional: true,
+            }]),
+            secret_files: Some(vec![common_api::SecretFile {
+                path: "/etc/secret".into(),
+                secret: "secret-ref".into(),
+                optional: false,
+            }]),
+            ports: Some(vec![PortMapping {
+                container_port: 8080,
+                host_port: Some(18080),
+                protocol: "tcp".into(),
+                host_ip: None,
+                expose: false,
+                endpoint: None,
+            }]),
+            requires_public_ip: false,
+            constraints: None,
+            placement: Some(PlacementHints {
+                affinity: Some(PlacementAffinity {
+                    node_ids: vec![Uuid::from_u128(1)],
+                    labels,
+                }),
+                anti_affinity: Some(PlacementAffinity {
+                    node_ids: vec![Uuid::from_u128(2)],
+                    labels: HashMap::new(),
+                }),
+                spread: true,
+            }),
+            volumes: Some(vec![common_api::VolumeMount {
+                host_path: "/data".into(),
+                container_path: "/var/data".into(),
+                read_only: Some(false),
+            }]),
+            health: None,
+            desired_state: DesiredState::Running,
+            status: DeploymentStatus::Running,
+            assigned_node_id: Some(Uuid::from_u128(99)),
+            assignments: vec![common_api::ReplicaAssignment {
+                replica_number: 1,
+                node_id: Uuid::from_u128(3),
+            }],
+            generation: 3,
+            tunnel_only: false,
+            last_reported: Some(now),
+            instance: Some(common_api::InstanceStatusResponse {
+                deployment_id,
+                replica_number: 1,
+                container_id: None,
+                state: common_api::InstanceState::Running,
+                message: None,
+                restart_count: 0,
+                generation: 3,
+                last_updated: now,
+                last_seen: now,
+                endpoints: vec!["http://edge".into()],
+                health: None,
+                metrics: Vec::new(),
+            }),
+            usage_summary: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let lines = deployment_status_lines(&status);
+        assert!(lines.iter().any(|line| line == "assignments:"));
+        assert!(lines.iter().any(|line| line.contains("replica 1 ->")));
+        assert!(lines.iter().any(|line| line.contains("placement.affinity")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("placement.anti_affinity")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("placement.spread: true")));
+        assert!(lines.iter().any(|line| line.contains("volume:")));
+        assert!(lines.iter().any(|line| line.contains("secret_env:")));
+        assert!(lines.iter().any(|line| line.contains("secret_file:")));
+        assert!(lines.iter().any(|line| line.contains("port:")));
+        assert!(lines.iter().any(|line| line == "instance endpoints:"));
+    }
+
+    #[test]
+    fn deployment_status_lines_uses_assigned_node_when_no_assignments() {
+        let deployment_id = Uuid::new_v4();
+        let node_id = Uuid::new_v4();
+        let now = Utc::now();
+        let status = DeploymentStatusResponse {
+            deployment_id,
+            name: "demo".into(),
+            image: "nginx".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: None,
+            requires_public_ip: false,
+            constraints: None,
+            placement: None,
+            volumes: None,
+            health: None,
+            desired_state: DesiredState::Running,
+            status: DeploymentStatus::Running,
+            assigned_node_id: Some(node_id),
+            assignments: Vec::new(),
+            generation: 1,
+            tunnel_only: false,
+            last_reported: Some(now),
+            instance: None,
+            usage_summary: None,
+            created_at: now,
+            updated_at: now,
+        };
+
+        let lines = deployment_status_lines(&status);
+        assert!(lines
+            .iter()
+            .any(|line| line.contains(&format!("assigned_node_id: {node_id}"))));
     }
 }

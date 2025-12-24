@@ -416,3 +416,78 @@ pub async fn fetch_config_attachments_for_targets(
 
     Ok(lookup)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn render_configs_table_includes_counts_and_version() {
+        let summary = api::ConfigSummary {
+            metadata: api::ConfigMetadata {
+                config_id: Uuid::from_u128(1),
+                name: "app-config".to_string(),
+                version: 2,
+                created_at: Utc.with_ymd_and_hms(2024, 1, 2, 3, 4, 5).unwrap(),
+                updated_at: Utc.with_ymd_and_hms(2024, 2, 3, 4, 5, 6).unwrap(),
+            },
+            entry_count: 3,
+            file_count: 1,
+        };
+
+        let output = render_configs_table(&[summary]);
+        assert!(output.contains("app-config"));
+        assert!(output.contains("2"));
+        assert!(output.contains("3"));
+        assert!(output.contains("1"));
+    }
+
+    #[test]
+    fn config_lines_include_entries_files_and_attachments() {
+        let config_id = Uuid::from_u128(42);
+        let node_id = Uuid::from_u128(7);
+        let config = api::ConfigResponse {
+            metadata: api::ConfigMetadata {
+                config_id,
+                name: "demo".to_string(),
+                version: 1,
+                created_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+                updated_at: Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap(),
+            },
+            entries: vec![
+                api::ConfigEntry {
+                    key: "MODE".to_string(),
+                    value: Some("prod".to_string()),
+                    secret_ref: None,
+                },
+                api::ConfigEntry {
+                    key: "TOKEN".to_string(),
+                    value: None,
+                    secret_ref: Some("token-ref".to_string()),
+                },
+            ],
+            files: vec![api::ConfigFile {
+                path: "/etc/app/config.yml".to_string(),
+                file_ref: "config-blobs/app-v1".to_string(),
+            }],
+            attached_deployments: vec![config_id],
+            attached_nodes: vec![node_id],
+        };
+
+        let lines = config_lines(&config);
+        assert!(lines.iter().any(|line| line == "entries:"));
+        assert!(lines.iter().any(|line| line.contains("MODE = prod")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("TOKEN = secret:token-ref")));
+        assert!(lines.iter().any(|line| line == "files:"));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("/etc/app/config.yml -> config-blobs/app-v1")));
+        assert!(lines
+            .iter()
+            .any(|line| line.contains("attached_deployments:")));
+        assert!(lines.iter().any(|line| line.contains("attached_nodes:")));
+    }
+}

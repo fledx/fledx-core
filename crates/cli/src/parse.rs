@@ -334,6 +334,7 @@ pub fn validate_backend_id(backend_id: Uuid) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::SecondsFormat;
 
     #[test]
     fn parse_uuid_returns_error_for_invalid_input() {
@@ -343,6 +344,50 @@ mod tests {
             parse_uuid(&valid).unwrap(),
             Uuid::parse_str(&valid).unwrap()
         );
+    }
+
+    #[test]
+    fn parse_kv_rejects_missing_separator_and_empty_key() {
+        assert!(parse_kv("missing").is_err());
+        let err = parse_kv("=value").unwrap_err();
+        assert!(err.contains("env key cannot be empty"));
+    }
+
+    #[test]
+    fn parse_kv_parses_key_value() {
+        let (key, value) = parse_kv("FOO=bar").expect("kv");
+        assert_eq!(key, "FOO");
+        assert_eq!(value, "bar");
+    }
+
+    #[test]
+    fn parse_duration_arg_parses_units() {
+        assert_eq!(
+            parse_duration_arg("5m").unwrap(),
+            ChronoDuration::minutes(5)
+        );
+        assert_eq!(parse_duration_arg("2h").unwrap(), ChronoDuration::hours(2));
+    }
+
+    #[test]
+    fn parse_duration_arg_rejects_invalid_inputs() {
+        assert!(parse_duration_arg("0m").is_err());
+        assert!(parse_duration_arg("12").is_err());
+        assert!(parse_duration_arg("12w").is_err());
+    }
+
+    #[test]
+    fn parse_timestamp_parses_rfc3339() {
+        let parsed = parse_timestamp("2024-01-02T03:04:05Z").expect("timestamp");
+        assert_eq!(
+            parsed.to_rfc3339_opts(SecondsFormat::Secs, true),
+            "2024-01-02T03:04:05Z"
+        );
+    }
+
+    #[test]
+    fn parse_timestamp_rejects_invalid() {
+        assert!(parse_timestamp("not-a-timestamp").is_err());
     }
 
     #[test]

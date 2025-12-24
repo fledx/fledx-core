@@ -423,4 +423,78 @@ mod tests {
         json_watch.json = true;
         assert!(validate_status_args(&json_watch).is_err());
     }
+
+    #[test]
+    fn expires_at_from_hours_handles_none_and_zero() {
+        assert!(expires_at_from_hours(None).unwrap().is_none());
+        assert!(expires_at_from_hours(Some(0)).is_err());
+    }
+
+    #[test]
+    fn expires_at_from_hours_adds_duration() {
+        let now = Utc::now();
+        let expiry = expires_at_from_hours(Some(1)).unwrap().expect("expiry");
+        let delta = expiry - now;
+        assert!(
+            delta.num_minutes() >= 59,
+            "delta minutes: {}",
+            delta.num_minutes()
+        );
+    }
+
+    #[test]
+    fn validate_replica_count_rejects_zero() {
+        assert!(validate_replica_count(0).is_err());
+        assert!(validate_replica_count(1).is_ok());
+    }
+
+    #[test]
+    fn validate_config_version_arg_rejects_invalid() {
+        assert!(validate_config_version_arg(Some(0)).is_err());
+        assert!(validate_config_version_arg(Some(1)).is_ok());
+    }
+
+    #[test]
+    fn unique_config_ids_preserves_order_and_drops_dupes() {
+        let first = Uuid::new_v4();
+        let second = Uuid::new_v4();
+        let ids = vec![first, second, first];
+        let unique = unique_config_ids(&ids).expect("unique");
+        assert_eq!(unique, vec![first, second]);
+    }
+
+    #[test]
+    fn collect_plain_entries_reads_env_files() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("env.list");
+        fs::write(&path, "export A=1\nB=2\n# comment\n").expect("write");
+
+        let vars = vec![("BASE".into(), "yes".into())];
+        let entries = collect_plain_entries(&vars, &[path]).expect("entries");
+        assert_eq!(
+            entries,
+            vec![
+                ("BASE".to_string(), "yes".to_string()),
+                ("A".to_string(), "1".to_string()),
+                ("B".to_string(), "2".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn collect_plain_entries_rejects_bad_lines() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("env.bad");
+        fs::write(&path, "NOPE\n").expect("write");
+        let err = collect_plain_entries(&[], &[path]).unwrap_err();
+        assert!(err.to_string().contains("KEY=VALUE"));
+    }
+
+    #[test]
+    fn config_entries_from_args_rejects_mixed_inputs() {
+        let vars = vec![("A".to_string(), "1".to_string())];
+        let secrets = vec![("B".to_string(), "secret".to_string())];
+        let err = config_entries_from_args(&vars, &[], &secrets).unwrap_err();
+        assert!(err.to_string().contains("cannot mix plaintext"));
+    }
 }

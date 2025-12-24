@@ -247,4 +247,34 @@ mod tests {
         assert_eq!(nodes[1].node_id, Uuid::from_u128(1));
         assert_eq!(nodes[2].node_id, Uuid::from_u128(2));
     }
+
+    #[test]
+    fn empty_node_page_returns_limits() {
+        let page = empty_node_page(25, 50);
+        assert_eq!(page.limit, 25);
+        assert_eq!(page.offset, 50);
+        assert!(page.items.is_empty());
+    }
+
+    #[test]
+    fn display_node_page_outputs_json() {
+        let page = Page {
+            limit: 1,
+            offset: 0,
+            items: vec![api::NodeSummary {
+                node_id: Uuid::from_u128(1),
+                name: Some("edge-1".into()),
+                status: api::NodeStatus::Ready,
+                last_seen: None,
+                arch: Some("x86_64".into()),
+                os: Some("linux".into()),
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+            }],
+        };
+        let configs = HashMap::new();
+        assert!(display_node_page(&page, &configs, OutputMode::Json, false, false, false).is_ok());
+    }
 }
