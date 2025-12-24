@@ -1420,7 +1420,7 @@ authorization: bearer qwerty
             service_user: "fledx-cp".to_string(),
             sudo_interactive: false,
         };
-        let script = render_cp_install_script(&settings, "/tmp/fledx-bootstrap-cp.ABCDEF");
+        let script = render_cp_install_script(&settings, "/tmp/fledx-bootstrap-cp.ABCDEF", "");
         assert!(script.contains("systemctl enable --now fledx-cp"));
         assert!(script.contains("systemctl restart fledx-cp"));
     }
@@ -1438,6 +1438,7 @@ authorization: bearer qwerty
             &settings,
             "/tmp/fledx-bootstrap-agent.ABCDEF",
             Path::new("/usr/local/bin/fledx-agent"),
+            "",
         );
         assert!(script.contains("systemctl enable --now fledx-agent"));
         assert!(script.contains("systemctl restart fledx-agent"));
