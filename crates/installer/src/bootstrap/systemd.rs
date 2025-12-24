@@ -559,6 +559,32 @@ pub struct ControlPlaneTlsAssets {
     pub key_path: PathBuf,
 }
 
+fn cp_env_with_tls(env: &str, tls_assets: Option<&ControlPlaneTlsAssets>) -> String {
+    let Some(tls) = tls_assets else {
+        return env.to_string();
+    };
+
+    let mut out = String::new();
+    for line in env.lines() {
+        let trimmed = line.trim_start();
+        let is_tls_line = trimmed.starts_with("FLEDX_CP_SERVER_TLS_ENABLED=")
+            || trimmed.starts_with("FLEDX_CP_SERVER_TLS_CERT_PATH=")
+            || trimmed.starts_with("FLEDX_CP_SERVER_TLS_KEY_PATH=");
+        if !is_tls_line {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    let enabled = systemd_quote_env_value("true");
+    let cert_path = systemd_quote_env_value(&tls.cert_path.to_string_lossy());
+    let key_path = systemd_quote_env_value(&tls.key_path.to_string_lossy());
+    out.push_str(&format!("FLEDX_CP_SERVER_TLS_ENABLED={enabled}\n"));
+    out.push_str(&format!("FLEDX_CP_SERVER_TLS_CERT_PATH={cert_path}\n"));
+    out.push_str(&format!("FLEDX_CP_SERVER_TLS_KEY_PATH={key_path}\n"));
+    out
+}
+
 pub fn install_cp_local(
     bin: &Path,
     env: &str,
@@ -644,6 +670,7 @@ pub fn install_cp_local_with_tls(
     )?;
 
     let env_tmp = tempfile::NamedTempFile::new()?;
+    let env = cp_env_with_tls(env, tls_assets);
     fs::write(env_tmp.path(), env)?;
     let env_path = settings.config_dir.join("fledx-cp.env");
     sudo_run_cmd(
@@ -778,7 +805,8 @@ pub fn install_cp_ssh_with_tls(
     fs::copy(bin, &local_bin)?;
 
     let local_env = local_dir.path().join("fledx-cp.env");
-    write_file_with_mode(&local_env, env, 0o600)?;
+    let env = cp_env_with_tls(env, tls_assets);
+    write_file_with_mode(&local_env, &env, 0o600)?;
 
     let local_unit = local_dir.path().join("fledx-cp.service");
     write_file_with_mode(&local_unit, unit, 0o644)?;
@@ -1409,6 +1437,41 @@ authorization: bearer qwerty
             parse_systemctl_is_active_output("active\nsome banner"),
             "active"
         );
+    }
+
+    #[test]
+    fn cp_env_with_tls_adds_tls_settings() {
+        let tls = ControlPlaneTlsAssets {
+            ca_cert_pem: "ca".to_string(),
+            cert_pem: "cert".to_string(),
+            key_pem: "key".to_string(),
+            ca_cert_path: PathBuf::from("/etc/fledx/tls/ca.pem"),
+            cert_path: PathBuf::from("/etc/fledx/tls/cert.pem"),
+            key_path: PathBuf::from("/etc/fledx/tls/key.pem"),
+        };
+        let env = cp_env_with_tls("FLEDX_CP_SERVER_HOST=0.0.0.0\n", Some(&tls));
+        assert!(env.contains("FLEDX_CP_SERVER_TLS_ENABLED=\"true\""));
+        assert!(env.contains("FLEDX_CP_SERVER_TLS_CERT_PATH=\"/etc/fledx/tls/cert.pem\""));
+        assert!(env.contains("FLEDX_CP_SERVER_TLS_KEY_PATH=\"/etc/fledx/tls/key.pem\""));
+    }
+
+    #[test]
+    fn cp_env_with_tls_overrides_existing_tls_settings() {
+        let tls = ControlPlaneTlsAssets {
+            ca_cert_pem: "ca".to_string(),
+            cert_pem: "cert".to_string(),
+            key_pem: "key".to_string(),
+            ca_cert_path: PathBuf::from("/etc/fledx/tls/ca.pem"),
+            cert_path: PathBuf::from("/etc/fledx/tls/cert.pem"),
+            key_path: PathBuf::from("/etc/fledx/tls/key.pem"),
+        };
+        let env = cp_env_with_tls(
+            "FLEDX_CP_SERVER_TLS_ENABLED=\"false\"\nFLEDX_CP_SERVER_TLS_CERT_PATH=\"/tmp/old.pem\"\n",
+            Some(&tls),
+        );
+        assert!(!env.contains("/tmp/old.pem"));
+        assert!(env.contains("FLEDX_CP_SERVER_TLS_ENABLED=\"true\""));
+        assert!(env.contains("FLEDX_CP_SERVER_TLS_CERT_PATH=\"/etc/fledx/tls/cert.pem\""));
     }
 
     #[test]
