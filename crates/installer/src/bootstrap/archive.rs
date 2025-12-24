@@ -181,6 +181,26 @@ mod tests {
         assert!(msg.contains(&actual), "{msg}");
     }
 
+    #[test]
+    fn verify_sha256_reports_missing_sha_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("asset.tar.gz");
+        fs::write(&archive, b"hello").expect("write archive");
+
+        let missing_sha = dir.path().join("missing.sha256");
+        let err = verify_sha256(
+            "fledx/fledx-core",
+            "v0.3.0",
+            "asset.tar.gz",
+            &archive,
+            &missing_sha,
+        )
+        .expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("failed to parse sha256 file"), "{msg}");
+        assert!(msg.contains("missing.sha256"), "{msg}");
+    }
+
     fn write_tar_gz_entry(
         archive_path: &Path,
         entry_path: &str,

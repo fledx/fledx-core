@@ -618,4 +618,12 @@ mod tests {
         let parsed = parse_ed25519_pubkey_entry(ssh_key).expect("ssh key");
         assert_eq!(parsed, expected);
     }
+
+    #[test]
+    fn parse_ed25519_pubkey_entry_rejects_pem() {
+        let err =
+            parse_ed25519_pubkey_entry("-----BEGIN PUBLIC KEY-----").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("PEM public keys are not supported"), "{msg}");
+    }
 }

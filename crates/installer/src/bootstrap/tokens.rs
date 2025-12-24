@@ -375,6 +375,8 @@ pub fn capacity_from_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
 
     #[test]
     fn parse_label_rejects_missing_separator() {
@@ -395,5 +397,47 @@ mod tests {
         let err = parse_labels(&["a=1".to_string(), "a=2".to_string()]).expect_err("should fail");
         let msg = err.to_string();
         assert!(msg.contains("duplicate label key"), "{msg}");
+    }
+
+    #[test]
+    fn extract_host_from_url_requires_valid_host() {
+        let err = extract_host_from_url("http:///").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("invalid control-plane URL"), "{msg}");
+    }
+
+    #[test]
+    fn extract_host_from_url_returns_hostname() {
+        let host =
+            extract_host_from_url("https://control-plane.example.com:49421/api/v1").expect("host");
+        assert_eq!(host, "control-plane.example.com");
+    }
+
+    fn spawn_http_server(response: &'static str) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn fetch_control_plane_health_rejects_non_success_status() {
+        let addr = spawn_http_server(
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nerror",
+        );
+        let client = reqwest::Client::new();
+        let base_url = format!("http://{addr}");
+        let err = fetch_control_plane_health(&client, &base_url)
+            .await
+            .expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("status 500"), "{msg}");
+        assert!(msg.contains("error"), "{msg}");
     }
 }

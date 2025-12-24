@@ -1317,6 +1317,13 @@ mod tests {
     }
 
     #[test]
+    fn systemd_escape_environment_file_path_escapes_whitespace() {
+        let escaped =
+            systemd_escape_environment_file_path(Path::new("/etc/fledx dir/fledx\tagent.env"));
+        assert_eq!(escaped, "/etc/fledx\\x20dir/fledx\\x09agent.env");
+    }
+
+    #[test]
     fn systemd_quote_env_value_escapes_quotes_and_backslashes() {
         assert_eq!(systemd_quote_env_value("a\"b\\c"), "\"a\\\"b\\\\c\"");
     }

@@ -699,4 +699,13 @@ mod tests {
         let dir = extract_remote_mktemp_dir(out, "fledx-bootstrap-cp").expect("dir");
         assert_eq!(dir, "/tmp/fledx-bootstrap-cp.123456");
     }
+
+    #[test]
+    fn mktemp_dir_extractor_errors_when_prefix_missing() {
+        let err = extract_remote_mktemp_dir("Welcome!\n/tmp/other.123\n", "fledx-bootstrap-cp")
+            .expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("did not contain an absolute path"), "{msg}");
+        assert!(msg.contains("fledx-bootstrap-cp"), "{msg}");
+    }
 }
