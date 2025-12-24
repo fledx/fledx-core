@@ -214,6 +214,59 @@ impl From<anyhow::Error> for AppError {
 mod tests {
     use super::*;
     use axum::http::StatusCode;
+    use sqlx::error::ErrorKind;
+    use std::borrow::Cow;
+    use std::error::Error as StdError;
+    use std::fmt;
+
+    #[derive(Debug)]
+    struct FakeDbError {
+        code: Option<String>,
+        message: String,
+    }
+
+    impl FakeDbError {
+        fn new(code: Option<&str>, message: &str) -> Self {
+            Self {
+                code: code.map(str::to_string),
+                message: message.to_string(),
+            }
+        }
+    }
+
+    impl fmt::Display for FakeDbError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "{}", self.message)
+        }
+    }
+
+    impl StdError for FakeDbError {}
+
+    impl DatabaseError for FakeDbError {
+        fn message(&self) -> &str {
+            &self.message
+        }
+
+        fn code(&self) -> Option<Cow<'_, str>> {
+            self.code.as_deref().map(Cow::Borrowed)
+        }
+
+        fn as_error(&self) -> &(dyn StdError + Send + Sync + 'static) {
+            self
+        }
+
+        fn as_error_mut(&mut self) -> &mut (dyn StdError + Send + Sync + 'static) {
+            self
+        }
+
+        fn into_error(self: Box<Self>) -> Box<dyn StdError + Send + Sync + 'static> {
+            self
+        }
+
+        fn kind(&self) -> ErrorKind {
+            ErrorKind::Other
+        }
+    }
 
     #[test]
     fn classify_db_error_detects_unique_constraints() {
@@ -276,5 +329,29 @@ mod tests {
         assert_eq!(err.status, StatusCode::NOT_FOUND);
         assert_eq!(err.code, "not_found");
         assert_eq!(err.message, "resource not found");
+    }
+
+    #[test]
+    fn pool_timeout_maps_to_service_unavailable() {
+        let err = AppError::from(anyhow::Error::new(SqlxError::PoolTimedOut));
+        assert_eq!(err.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.code, "service_unavailable");
+        assert_eq!(err.message, DB_UNAVAILABLE_MESSAGE);
+    }
+
+    #[test]
+    fn database_unique_violation_maps_to_bad_request() {
+        let db_err = FakeDbError::new(Some("23505"), "duplicate key value");
+        let err = AppError::from(anyhow::Error::new(SqlxError::Database(Box::new(db_err))));
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert_eq!(err.code, "bad_request");
+        assert_eq!(err.message, "resource already exists");
+    }
+
+    #[test]
+    fn is_unique_violation_detects_database_error() {
+        let db_err = FakeDbError::new(Some("23505"), "duplicate key value");
+        let err = anyhow::Error::new(SqlxError::Database(Box::new(db_err)));
+        assert!(is_unique_violation(&err));
     }
 }

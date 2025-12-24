@@ -220,3 +220,120 @@ fn relay_error(
     });
     (status, body).into_response()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use axum::http::{HeaderMap, HeaderValue, StatusCode};
+    use serde_json::Value;
+
+    #[test]
+    fn extract_forward_path_handles_root_and_query() {
+        let node_id = Uuid::new_v4();
+        let path = format!("/relay/{}/api/v1?x=1", node_id);
+        assert_eq!(
+            extract_forward_path(node_id, Some(path.as_str())),
+            "/api/v1?x=1"
+        );
+        let root = format!("/relay/{}", node_id);
+        assert_eq!(extract_forward_path(node_id, Some(root.as_str())), "/");
+        assert_eq!(extract_forward_path(node_id, None), "/");
+    }
+
+    #[test]
+    fn flatten_headers_skips_non_utf8_values() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-ok", HeaderValue::from_static("yes"));
+        let invalid = HeaderValue::from_bytes(b"bad\xFF").expect("header value");
+        headers.insert("x-bad", invalid);
+
+        let flattened = flatten_headers(&headers);
+        assert_eq!(flattened.get("x-ok").map(String::as_str), Some("yes"));
+        assert!(!flattened.contains_key("x-bad"));
+    }
+
+    #[tokio::test]
+    async fn build_http_response_decodes_body_and_headers() {
+        let mut headers = HashMap::new();
+        headers.insert("X-Test".into(), "ok".into());
+        headers.insert("Bad Header".into(), "no".into());
+        let body_b64 = general_purpose::STANDARD.encode("hello");
+        let response = crate::tunnel::ForwardResponse {
+            id: "1".into(),
+            status: 201,
+            headers,
+            body_b64,
+        };
+
+        let response = build_http_response(response);
+        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(response.headers().get("x-test").unwrap(), "ok");
+        assert!(response.headers().get("bad header").is_none());
+
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        assert_eq!(&bytes[..], b"hello");
+    }
+
+    #[tokio::test]
+    async fn build_http_response_rejects_invalid_base64() {
+        let response = crate::tunnel::ForwardResponse {
+            id: "1".into(),
+            status: 200,
+            headers: HashMap::new(),
+            body_b64: "not-base64".into(),
+        };
+
+        let response = build_http_response(response);
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let payload: Value = serde_json::from_slice(&body).expect("json");
+        assert_eq!(payload["error"], "invalid_response_body");
+    }
+
+    #[tokio::test]
+    async fn map_forward_error_builds_expected_responses() {
+        let cases = vec![
+            (
+                ForwardError::NoTunnel,
+                "tunnel_unavailable",
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ForwardError::Overloaded,
+                "tunnel_overloaded",
+                StatusCode::SERVICE_UNAVAILABLE,
+            ),
+            (
+                ForwardError::Timeout,
+                "tunnel_timeout",
+                StatusCode::GATEWAY_TIMEOUT,
+            ),
+            (
+                ForwardError::ChannelClosed,
+                "tunnel_closed",
+                StatusCode::BAD_GATEWAY,
+            ),
+            (
+                ForwardError::Other("boom".into()),
+                "tunnel_error",
+                StatusCode::BAD_GATEWAY,
+            ),
+        ];
+
+        for (err, label, status) in cases {
+            let (result_label, response) = map_forward_error(err);
+            assert_eq!(result_label, label);
+            assert_eq!(response.status(), status);
+            let body = to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("read body");
+            let payload: Value = serde_json::from_slice(&body).expect("json");
+            assert_eq!(payload["error"], label);
+        }
+    }
+}
