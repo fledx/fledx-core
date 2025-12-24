@@ -3435,8 +3435,8 @@ async fn heartbeat_persists_instances_and_status_endpoints() {
     assert_eq!(dep_instance.endpoints, vec![endpoint_hint]);
     let last_reported = dep_status.last_reported.expect("last_reported");
     assert!(
-        last_reported >= hb_ts && (last_reported - hb_ts).num_seconds() < 5,
-        "last_reported should follow control-plane receipt time"
+        last_reported.timestamp() >= hb_ts.timestamp() && last_reported <= hb_received_at,
+        "last_reported should be between heartbeat timestamp and response"
     );
 }
 
