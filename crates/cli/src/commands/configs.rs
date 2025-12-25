@@ -422,6 +422,33 @@ mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
 
+    #[tokio::test]
+    async fn fetch_configs_page_rejects_invalid_limit() {
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9",
+            "authorization",
+            "token",
+        );
+        let err = fetch_configs_page(&api, 0, 0).await.unwrap_err();
+        assert!(err.to_string().contains("limit must be between"));
+    }
+
+    #[tokio::test]
+    async fn fetch_config_attachments_returns_empty_for_no_targets() {
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9",
+            "authorization",
+            "token",
+        );
+        let lookup = fetch_config_attachments_for_targets(&api, &HashSet::new(), &HashSet::new())
+            .await
+            .expect("lookup");
+        assert!(lookup.node_configs.is_empty());
+        assert!(lookup.deployment_configs.is_empty());
+    }
+
     #[test]
     fn render_configs_table_includes_counts_and_version() {
         let summary = api::ConfigSummary {
@@ -495,5 +522,104 @@ mod tests {
                 .any(|line| line.contains("attached_deployments:"))
         );
         assert!(lines.iter().any(|line| line.contains("attached_nodes:")));
+    }
+
+    #[test]
+    fn config_lines_omits_empty_sections() {
+        let config = api::ConfigResponse {
+            metadata: api::ConfigMetadata {
+                config_id: Uuid::from_u128(9),
+                name: "empty".to_string(),
+                version: 1,
+                created_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+                updated_at: Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap(),
+            },
+            entries: Vec::new(),
+            files: Vec::new(),
+            attached_deployments: Vec::new(),
+            attached_nodes: Vec::new(),
+        };
+
+        let lines = config_lines(&config);
+        assert!(!lines.iter().any(|line| line == "entries:"));
+        assert!(!lines.iter().any(|line| line == "files:"));
+        assert!(
+            !lines
+                .iter()
+                .any(|line| line.starts_with("attached_deployments:"))
+        );
+        assert!(!lines.iter().any(|line| line.starts_with("attached_nodes:")));
+    }
+
+    #[test]
+    fn config_lines_renders_dash_for_missing_entry_value() {
+        let config = api::ConfigResponse {
+            metadata: api::ConfigMetadata {
+                config_id: Uuid::from_u128(10),
+                name: "missing".to_string(),
+                version: 1,
+                created_at: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap(),
+                updated_at: Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap(),
+            },
+            entries: vec![api::ConfigEntry {
+                key: "EMPTY".to_string(),
+                value: None,
+                secret_ref: None,
+            }],
+            files: Vec::new(),
+            attached_deployments: Vec::new(),
+            attached_nodes: Vec::new(),
+        };
+
+        let lines = config_lines(&config);
+        assert!(lines.iter().any(|line| line.contains("EMPTY = -")));
+    }
+
+    #[tokio::test]
+    async fn update_config_rejects_clear_entries_with_inputs() {
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9",
+            "authorization",
+            "token",
+        );
+        let args = ConfigUpdateArgs {
+            config_id: Uuid::from_u128(11),
+            name: None,
+            version: None,
+            vars: vec![("KEY".to_string(), "VALUE".to_string())],
+            env_files: Vec::new(),
+            secret_entries: Vec::new(),
+            files: Vec::new(),
+            clear_entries: true,
+            clear_files: false,
+        };
+
+        let err = update_config(&api, args).await.expect_err("should fail");
+        assert!(err.to_string().contains("clear-entries"));
+    }
+
+    #[tokio::test]
+    async fn update_config_rejects_clear_files_with_inputs() {
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9",
+            "authorization",
+            "token",
+        );
+        let args = ConfigUpdateArgs {
+            config_id: Uuid::from_u128(12),
+            name: None,
+            version: None,
+            vars: Vec::new(),
+            env_files: Vec::new(),
+            secret_entries: Vec::new(),
+            files: vec![("/etc/app.cfg".to_string(), "ref".to_string())],
+            clear_entries: false,
+            clear_files: true,
+        };
+
+        let err = update_config(&api, args).await.expect_err("should fail");
+        assert!(err.to_string().contains("clear-files"));
     }
 }
