@@ -400,6 +400,42 @@ mod tests {
     }
 
     #[test]
+    fn describe_timeout_formats_seconds_and_fractions() {
+        assert_eq!(describe_timeout(Duration::from_secs(2)), "2s");
+        assert_eq!(describe_timeout(Duration::from_millis(1500)), "1.5s");
+    }
+
+    #[test]
+    fn health_url_trims_trailing_slash() {
+        assert_eq!(
+            health_url("https://cp.example.com/"),
+            "https://cp.example.com/health"
+        );
+        assert_eq!(
+            health_url("https://cp.example.com"),
+            "https://cp.example.com/health"
+        );
+    }
+
+    #[test]
+    fn generate_token_hex_has_expected_length() {
+        let token = generate_token_hex(4);
+        assert_eq!(token.len(), 8);
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+
+        let master = generate_master_key_hex();
+        assert_eq!(master.len(), 64);
+        assert!(master.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn resolve_ipv4_host_accepts_ipv4_and_rejects_ipv6() {
+        assert_eq!(resolve_ipv4_host("127.0.0.1").unwrap(), "127.0.0.1");
+        let err = resolve_ipv4_host("::1").expect_err("should reject ipv6");
+        assert!(err.to_string().contains("IPv6 is not supported"));
+    }
+
+    #[test]
     fn extract_host_from_url_requires_valid_host() {
         let err = extract_host_from_url("http:///").expect_err("should fail");
         let msg = err.to_string();

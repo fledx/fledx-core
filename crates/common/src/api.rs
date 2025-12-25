@@ -1680,4 +1680,51 @@ mod tests {
         .expect("deserialize tunnel endpoint");
         assert!(tunnel.use_tls);
     }
+
+    #[test]
+    fn placement_constraints_skip_requires_public_ip_when_false() {
+        let constraints = PlacementConstraints {
+            requires_public_ip: false,
+            ..Default::default()
+        };
+        let value = serde_json::to_value(&constraints).expect("serialize");
+        assert!(value.get("requires_public_ip").is_none());
+
+        let constraints = PlacementConstraints {
+            requires_public_ip: true,
+            ..Default::default()
+        };
+        let value = serde_json::to_value(&constraints).expect("serialize");
+        assert_eq!(value.get("requires_public_ip"), Some(&json!(true)));
+    }
+
+    #[test]
+    fn placement_affinity_rejects_unknown_fields() {
+        let result: Result<PlacementAffinity, _> =
+            serde_json::from_value(json!({ "node_ids": [], "extra": "nope" }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn ingress_route_update_rejects_non_string_tls_ref() {
+        let result: Result<IngressRouteUpdateRequest, _> =
+            serde_json::from_value(json!({ "tls_ref": 42 }));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deployment_desired_defaults_replica_fields() {
+        let desired: DeploymentDesired = serde_json::from_value(json!({
+            "deployment_id": "00000000-0000-0000-0000-000000000042",
+            "name": "edge-app",
+            "image": "nginx:latest",
+            "desired_state": "running",
+            "generation": 5
+        }))
+        .expect("deserialize desired deployment");
+        assert_eq!(desired.replicas, 1);
+        assert_eq!(desired.replica_number, 0);
+        assert!(!desired.requires_public_ip);
+        assert!(!desired.tunnel_only);
+    }
 }

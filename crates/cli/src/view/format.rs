@@ -260,6 +260,7 @@ pub fn format_attached_configs(configs: &[AttachedConfigInfo], short_ids: bool) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
 
     #[test]
     fn format_cpu_percent_rounds_expected() {
@@ -274,5 +275,65 @@ mod tests {
         assert_eq!(format_bytes_i64(0), "0B");
         assert_eq!(format_bytes_i64(2048), "2Ki");
         assert_eq!(format_bytes_i64(1536), "1536B");
+    }
+
+    #[test]
+    fn colorize_wraps_when_enabled() {
+        assert_eq!(colorize("ok", "31", true), "\u{1b}[31mok\u{1b}[0m");
+        assert_eq!(colorize("ok", "31", false), "ok");
+    }
+
+    #[test]
+    fn format_optional_str_falls_back_to_dash() {
+        assert_eq!(format_optional_str(Some("   ")), "-");
+        assert_eq!(format_optional_str(None), "-");
+        assert_eq!(format_optional_str(Some("ready")), "ready");
+    }
+
+    #[test]
+    fn format_labels_sorts_and_formats() {
+        let mut labels = HashMap::new();
+        labels.insert("zone".to_string(), "a".to_string());
+        labels.insert("region".to_string(), "eu".to_string());
+        assert_eq!(format_labels(&Some(labels)), "region=eu,zone=a".to_string());
+        assert_eq!(format_labels(&Some(HashMap::new())), "-");
+        assert_eq!(format_labels(&None), "-");
+    }
+
+    #[test]
+    fn format_bytes_uses_binary_units() {
+        assert_eq!(format_bytes(1), "1B");
+        assert_eq!(format_bytes(1024), "1Ki");
+        assert_eq!(format_bytes(1024 * 1024), "1Mi");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1Gi");
+    }
+
+    #[test]
+    fn format_metric_count_formats_integer_and_fractional_values() {
+        assert_eq!(format_metric_count(12.0), "12");
+        assert_eq!(format_metric_count(12.345), "12.35");
+        assert_eq!(format_metric_count(f64::INFINITY), "inf");
+    }
+
+    #[test]
+    fn format_placement_hint_renders_affinity_and_spread() {
+        let mut labels = HashMap::new();
+        labels.insert("role".to_string(), "edge".to_string());
+        let affinity = PlacementAffinity {
+            node_ids: vec![Uuid::nil()],
+            labels,
+        };
+        let placement = PlacementHints {
+            affinity: Some(affinity),
+            anti_affinity: None,
+            spread: true,
+        };
+        let rendered = format_placement_hint(&Some(placement), true);
+        assert!(rendered.contains("aff("));
+        assert!(rendered.contains("nodes=00000000"));
+        assert!(rendered.contains("labels=role=edge"));
+        assert!(rendered.contains("spread"));
+
+        assert_eq!(format_placement_hint(&None, true), "-");
     }
 }

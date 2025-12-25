@@ -454,4 +454,42 @@ mod tests {
         assert!(second >= first);
         assert!(state.backoff_attempts >= 2);
     }
+
+    #[test]
+    fn snapshot_supports_inclusive_bounds() {
+        let snapshot =
+            CompatSnapshot::from_parts("1.2.3", Some("1.2.0"), Some("1.2.3"), None).unwrap();
+        assert!(snapshot.supports(&Version::new(1, 2, 0)));
+        assert!(snapshot.supports(&Version::new(1, 2, 3)));
+        assert!(!snapshot.supports(&Version::new(1, 1, 9)));
+    }
+
+    #[test]
+    fn snapshot_trims_upgrade_url() {
+        let snapshot = CompatSnapshot::from_parts(
+            "1.2.3",
+            Some("1.0.0"),
+            Some("2.0.0"),
+            Some("  https://upgrade.example  "),
+        )
+        .expect("snapshot");
+        assert_eq!(
+            snapshot.upgrade_url.as_deref(),
+            Some("https://upgrade.example")
+        );
+    }
+
+    #[test]
+    fn compat_error_filters_empty_upgrade_url() {
+        let err = CompatError::from(AgentVersionError {
+            error: "unsupported_agent_version".into(),
+            agent_version: "1.0.0".into(),
+            min_supported: "1.0.0".into(),
+            max_supported: "1.0.0".into(),
+            upgrade_url: "".into(),
+        });
+        match err {
+            CompatError::Incompatible { upgrade_url, .. } => assert!(upgrade_url.is_none()),
+        }
+    }
 }
