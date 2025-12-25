@@ -1133,6 +1133,29 @@ mod tests {
     }
 
     #[test]
+    fn validate_archive_name_accepts_simple_file() {
+        validate_archive_name("fledx-agent.tar.gz").expect("valid name");
+    }
+
+    #[test]
+    fn validate_archive_name_rejects_dot_entries() {
+        let err = validate_archive_name("..").expect_err("should fail");
+        assert!(err.to_string().contains("invalid archive name"));
+    }
+
+    #[test]
+    fn repo_name_from_owner_repo_extracts_name() {
+        let name = repo_name_from_owner_repo("fledx/fledx-core").expect("repo name");
+        assert_eq!(name, "fledx-core");
+    }
+
+    #[test]
+    fn repo_name_from_owner_repo_rejects_missing_name() {
+        let err = repo_name_from_owner_repo("fledx/").expect_err("should fail");
+        assert!(err.to_string().contains("missing repo name"));
+    }
+
+    #[test]
     fn resolve_repo_defaults_to_spec() {
         let repo = resolve_repo(None, None, "fledx/fledx-core").expect("repo");
         assert_eq!(repo.as_ref(), "fledx/fledx-core");
@@ -1185,6 +1208,13 @@ mod tests {
             resolve_repo_for_bootstrap(Some("other/repo"), None, Some("myorg"), "fledx/fledx-core")
                 .expect("repo");
         assert_eq!(repo, "other/repo");
+    }
+
+    #[test]
+    fn resolve_repo_for_bootstrap_rejects_empty_repo() {
+        let err = resolve_repo_for_bootstrap(Some("   "), None, Some("myorg"), "fledx/fledx-core")
+            .expect_err("should fail");
+        assert!(err.to_string().contains("invalid --repo (empty)"));
     }
 
     #[test]
@@ -1315,5 +1345,26 @@ mod tests {
             "{err}"
         );
         assert!(err.to_string().contains("profile 'prod'"), "{err}");
+    }
+
+    #[test]
+    fn cp_env_includes_secrets_master_key_when_present() {
+        let env = render_cp_env(&CpEnvInputs {
+            server_port: 49421,
+            tunnel_host: "localhost".to_string(),
+            tunnel_port: 49423,
+            db_url: "sqlite:////var/lib/fledx/control-plane.db".to_string(),
+            registration_token: "deadbeef".to_string(),
+            operator_token: "cafebabe".to_string(),
+            operator_header: "x-fledx-operator-token".to_string(),
+            tokens_pepper: "0123".to_string(),
+            secrets_master_key: Some("masterkey".to_string()),
+            public_host: "127.0.0.1".to_string(),
+        });
+
+        assert!(
+            env.lines()
+                .any(|line| line.starts_with("FLEDX_CP_SECRETS_MASTER_KEY="))
+        );
     }
 }
