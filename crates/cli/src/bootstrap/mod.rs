@@ -1144,6 +1144,26 @@ mod tests {
     }
 
     #[test]
+    fn validate_archive_name_rejects_empty() {
+        let err = validate_archive_name("   ").expect_err("should fail");
+        assert!(err.to_string().contains("empty"));
+    }
+
+    #[test]
+    fn validate_archive_name_rejects_path_separators() {
+        let err = validate_archive_name("dir/fledx-agent.tar.gz").expect_err("should fail");
+        assert!(err.to_string().contains("file name"));
+        let err = validate_archive_name("dir\\fledx-agent.tar.gz").expect_err("should fail");
+        assert!(err.to_string().contains("file name"));
+    }
+
+    #[test]
+    fn validate_archive_name_rejects_nul_byte() {
+        let err = validate_archive_name("bad\0name").expect_err("should fail");
+        assert!(err.to_string().contains("NUL"));
+    }
+
+    #[test]
     fn repo_name_from_owner_repo_extracts_name() {
         let name = repo_name_from_owner_repo("fledx/fledx-core").expect("repo name");
         assert_eq!(name, "fledx-core");

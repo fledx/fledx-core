@@ -410,6 +410,96 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
+    #[tokio::test]
+    async fn session_cache_waits_for_inflight_refresh() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let started = Arc::new(Notify::new());
+        let proceed = Arc::new(Notify::new());
+
+        let exchange_calls = calls.clone();
+        let started_signal = started.clone();
+        let proceed_signal = proceed.clone();
+        let exchange: ExchangeFn = Arc::new(move || {
+            let exchange_calls = exchange_calls.clone();
+            let started_signal = started_signal.clone();
+            let proceed_signal = proceed_signal.clone();
+            Box::pin(async move {
+                exchange_calls.fetch_add(1, Ordering::SeqCst);
+                started_signal.notify_waiters();
+                proceed_signal.notified().await;
+                Ok(SessionToken {
+                    value: "session-1".to_string(),
+                    expires_at: Utc::now() + chrono::Duration::minutes(10),
+                })
+            })
+        });
+
+        let cache = SessionTokenCache::new_with_exchange(
+            exchange,
+            "host=test;user=test".to_string(),
+            SessionTokenConfig::default(),
+        );
+
+        let first_cache = cache.clone();
+        let first = tokio::spawn(async move { first_cache.token().await });
+
+        tokio::time::timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("exchange started");
+
+        let second_cache = cache.clone();
+        let second = tokio::spawn(async move { second_cache.token().await });
+
+        proceed.notify_waiters();
+
+        let first = tokio::time::timeout(Duration::from_secs(1), first)
+            .await
+            .expect("first task")
+            .expect("first join")
+            .expect("token");
+        let second = tokio::time::timeout(Duration::from_secs(1), second)
+            .await
+            .expect("second task")
+            .expect("second join")
+            .expect("token");
+
+        assert_eq!(first, "session-1");
+        assert_eq!(second, "session-1");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn session_cache_returns_error_when_backoff_active_without_token() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let exchange_calls = calls.clone();
+        let exchange: ExchangeFn = Arc::new(move || {
+            let exchange_calls = exchange_calls.clone();
+            Box::pin(async move {
+                exchange_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(SessionToken {
+                    value: "session-1".to_string(),
+                    expires_at: Utc::now() + chrono::Duration::minutes(10),
+                })
+            })
+        });
+
+        let cache = SessionTokenCache::new_with_exchange(
+            exchange,
+            "host=test;user=test".to_string(),
+            SessionTokenConfig::default(),
+        );
+
+        {
+            let mut state = cache.state.lock().await;
+            state.backoff_until = Some(Instant::now() + Duration::from_secs(30));
+            state.last_error = Some("backoff active".to_string());
+        }
+
+        let err = cache.token().await.expect_err("should backoff");
+        assert!(err.to_string().contains("backoff active"));
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
     #[test]
     fn retry_after_from_headers_prefers_retry_after_and_clamps() {
         let mut headers = HeaderMap::new();
@@ -462,6 +552,19 @@ mod tests {
     fn token_needs_refresh_respects_zero_refresh_before() {
         let config = SessionTokenConfig {
             refresh_before: Duration::ZERO,
+            ..SessionTokenConfig::default()
+        };
+        let token = SessionToken {
+            value: "valid".to_string(),
+            expires_at: Utc::now() + chrono::Duration::minutes(10),
+        };
+        assert!(!token_needs_refresh(&token, &config));
+    }
+
+    #[test]
+    fn token_needs_refresh_ignores_unrepresentable_refresh_before() {
+        let config = SessionTokenConfig {
+            refresh_before: Duration::from_secs(u64::MAX),
             ..SessionTokenConfig::default()
         };
         let token = SessionToken {
