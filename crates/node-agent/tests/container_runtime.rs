@@ -3,9 +3,23 @@ use tracing::warn;
 use tracing_subscriber::fmt;
 use uuid::Uuid;
 
+fn docker_tests_enabled() -> bool {
+    match std::env::var("FLEDX_RUN_DOCKER_TESTS") {
+        Ok(value) => {
+            value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
+        }
+        Err(_) => false,
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn docker_runtime_runs_hello_world() -> anyhow::Result<()> {
     let _ = fmt::try_init();
+
+    if !docker_tests_enabled() {
+        warn!("docker tests disabled; set FLEDX_RUN_DOCKER_TESTS=1 to enable");
+        return Ok(());
+    }
 
     let runtime = match DockerRuntime::connect() {
         Ok(rt) => rt,

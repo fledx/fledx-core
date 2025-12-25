@@ -37,6 +37,15 @@ async fn wait_http_ok_while_running(
     }
 }
 
+fn docker_tests_enabled() -> bool {
+    match std::env::var("FLEDX_RUN_DOCKER_TESTS") {
+        Ok(value) => {
+            value == "1" || value.eq_ignore_ascii_case("true") || value.eq_ignore_ascii_case("yes")
+        }
+        Err(_) => false,
+    }
+}
+
 async fn docker_available() -> bool {
     match Command::new("docker")
         .arg("version")
@@ -407,6 +416,10 @@ async fn standalone_metrics_include_agent_and_cp() -> anyhow::Result<()> {
 #[tokio::test]
 #[serial]
 async fn standalone_can_run_a_container_via_docker() -> anyhow::Result<()> {
+    if !docker_tests_enabled() {
+        eprintln!("docker tests disabled; set FLEDX_RUN_DOCKER_TESTS=1 to enable");
+        return Ok(());
+    }
     if !docker_available().await {
         eprintln!("docker not available; skipping standalone docker integration test");
         return Ok(());
