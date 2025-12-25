@@ -320,6 +320,7 @@ fn next_backoff_delay(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use reqwest::header::{HeaderMap, HeaderValue};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
@@ -374,5 +375,122 @@ mod tests {
         let err = cache.token().await.unwrap_err();
         assert!(err.to_string().contains("rate limited"));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn session_cache_falls_back_when_refresh_fails() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let exchange_calls = calls.clone();
+        let exchange: ExchangeFn = Arc::new(move || {
+            let exchange_calls = exchange_calls.clone();
+            Box::pin(async move {
+                let call = exchange_calls.fetch_add(1, Ordering::SeqCst);
+                if call == 0 {
+                    Ok(SessionToken {
+                        value: "session-1".to_string(),
+                        expires_at: Utc::now() + chrono::Duration::minutes(1),
+                    })
+                } else {
+                    Err(SessionExchangeError::Failed(anyhow::anyhow!("boom")))
+                }
+            })
+        });
+
+        let cache = SessionTokenCache::new_with_exchange(
+            exchange,
+            "host=test;user=test".to_string(),
+            SessionTokenConfig::default(),
+        );
+        let first = cache.token().await.expect("token");
+        let second = cache.token().await.expect("fallback");
+        let third = cache.token().await.expect("backoff fallback");
+        assert_eq!(first, "session-1");
+        assert_eq!(second, "session-1");
+        assert_eq!(third, "session-1");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn retry_after_from_headers_prefers_retry_after_and_clamps() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("0"));
+        headers.insert("x-ratelimit-reset", HeaderValue::from_static("45"));
+        let delay = retry_after_from_headers(&headers).expect("delay");
+        assert_eq!(delay, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn retry_after_from_headers_uses_x_ratelimit_reset_when_retry_after_invalid() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("nope"));
+        headers.insert("x-ratelimit-reset", HeaderValue::from_static("12"));
+        let delay = retry_after_from_headers(&headers).expect("delay");
+        assert_eq!(delay, Duration::from_secs(12));
+    }
+
+    #[test]
+    fn retry_after_from_headers_returns_none_when_unparseable() {
+        let mut headers = HeaderMap::new();
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("nope"));
+        let delay = retry_after_from_headers(&headers);
+        assert!(delay.is_none());
+    }
+
+    #[test]
+    fn token_needs_refresh_handles_expired_and_refresh_window() {
+        let config = SessionTokenConfig::default();
+        let expired = SessionToken {
+            value: "expired".to_string(),
+            expires_at: Utc::now() - chrono::Duration::minutes(1),
+        };
+        assert!(token_needs_refresh(&expired, &config));
+
+        let near_expiry = SessionToken {
+            value: "near".to_string(),
+            expires_at: Utc::now() + chrono::Duration::minutes(1),
+        };
+        assert!(token_needs_refresh(&near_expiry, &config));
+
+        let far_expiry = SessionToken {
+            value: "far".to_string(),
+            expires_at: Utc::now() + chrono::Duration::minutes(30),
+        };
+        assert!(!token_needs_refresh(&far_expiry, &config));
+    }
+
+    #[test]
+    fn token_needs_refresh_respects_zero_refresh_before() {
+        let config = SessionTokenConfig {
+            refresh_before: Duration::ZERO,
+            ..SessionTokenConfig::default()
+        };
+        let token = SessionToken {
+            value: "valid".to_string(),
+            expires_at: Utc::now() + chrono::Duration::minutes(10),
+        };
+        assert!(!token_needs_refresh(&token, &config));
+    }
+
+    #[test]
+    fn next_backoff_delay_uses_retry_after_minimum() {
+        let state = SessionState::default();
+        let config = SessionTokenConfig::default();
+        let delay = next_backoff_delay(&state, &config, Some(Duration::ZERO));
+        assert_eq!(delay, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn next_backoff_delay_doubles_and_caps() {
+        let state = SessionState {
+            backoff_delay: Some(Duration::from_secs(4)),
+            ..SessionState::default()
+        };
+        let config = SessionTokenConfig {
+            backoff_base: Duration::from_secs(2),
+            backoff_max: Duration::from_secs(5),
+            refresh_before: Duration::from_secs(0),
+        };
+        let delay = next_backoff_delay(&state, &config, None);
+        assert_eq!(delay, Duration::from_secs(5));
     }
 }
