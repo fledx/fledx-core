@@ -385,10 +385,59 @@ mod tests {
     }
 
     #[test]
+    fn redacts_bearer_tokens_case_insensitive() {
+        let redactor = default_redactor();
+        let payload = "authorization: bearer abc123";
+        let redacted = redactor.redact_payload(payload);
+        assert!(redacted.contains("bearer <redacted>"));
+        assert!(!redacted.contains("abc123"));
+    }
+
+    #[test]
+    fn redacts_key_value_pairs_in_text() {
+        let redactor = default_redactor();
+        let payload = "token=abc password: \"hunter2\" color=blue";
+        let redacted = redactor.redact_payload(payload);
+        assert!(redacted.contains("token=<redacted>"));
+        assert!(redacted.contains("password: <redacted>"));
+        assert!(redacted.contains("color=blue"));
+        assert!(!redacted.contains("abc"));
+        assert!(!redacted.contains("hunter2"));
+    }
+
+    #[test]
     fn redacts_private_key_markers() {
         let redactor = default_redactor();
         let payload = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----";
         let redacted = redactor.redact_payload(payload);
         assert_eq!(redacted, "<redacted>");
+    }
+
+    #[test]
+    fn redact_payload_respects_disabled_config() {
+        let config = crate::config::AuditRedactionConfig {
+            enabled: false,
+            ..Default::default()
+        };
+        let redactor = AuditRedactor::new(&config);
+        let payload = "  token=abc  ";
+        let redacted = redactor.redact_payload(payload);
+        assert_eq!(redacted, "token=abc");
+    }
+
+    #[test]
+    fn redact_payload_redacts_value_markers_in_json_strings() {
+        let redactor = default_redactor();
+        let payload = r#"{"note":"BEGIN OPENSSH PRIVATE KEY abc"}"#;
+        let redacted = redactor.redact_payload(payload);
+        let value: Value = serde_json::from_str(&redacted).expect("json");
+        assert_eq!(value["note"], Value::String("<redacted>".to_string()));
+    }
+
+    #[test]
+    fn truncate_payload_returns_trimmed_when_short() {
+        let payload = "  hello world  ";
+        let truncated = truncate_payload(payload);
+        assert_eq!(truncated, "hello world");
     }
 }

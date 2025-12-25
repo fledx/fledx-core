@@ -349,9 +349,59 @@ mod tests {
     }
 
     #[test]
+    fn database_not_null_violation_maps_to_bad_request() {
+        let db_err = FakeDbError::new(Some("23502"), "NOT NULL constraint failed");
+        let err = AppError::from(anyhow::Error::new(SqlxError::Database(Box::new(db_err))));
+        assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        assert_eq!(err.code, "bad_request");
+        assert_eq!(err.message, "missing required field");
+    }
+
+    #[test]
+    fn map_database_error_returns_none_for_unclassified() {
+        let db_err = FakeDbError::new(Some("99999"), "some other error");
+        assert!(map_database_error(&db_err).is_none());
+    }
+
+    #[test]
+    fn io_error_maps_to_service_unavailable() {
+        let io_err = std::io::Error::other("boom");
+        let err = AppError::from(anyhow::Error::new(SqlxError::Io(io_err)));
+        assert_eq!(err.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(err.code, "service_unavailable");
+        assert_eq!(err.message, DB_UNAVAILABLE_MESSAGE);
+    }
+
+    #[test]
+    fn with_headers_includes_header_map() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-test", "value".parse().expect("header value"));
+        let err = AppError::bad_request("oops").with_headers(headers);
+        let stored = err.headers.expect("headers");
+        assert_eq!(
+            stored.get("x-test").and_then(|value| value.to_str().ok()),
+            Some("value")
+        );
+    }
+
+    #[test]
     fn is_unique_violation_detects_database_error() {
         let db_err = FakeDbError::new(Some("23505"), "duplicate key value");
         let err = anyhow::Error::new(SqlxError::Database(Box::new(db_err)));
         assert!(is_unique_violation(&err));
+    }
+
+    #[test]
+    fn is_unique_violation_returns_false_for_non_database_error() {
+        let err = anyhow::Error::new(SqlxError::RowNotFound);
+        assert!(!is_unique_violation(&err));
+    }
+
+    #[test]
+    fn unknown_errors_map_to_internal() {
+        let err = AppError::from(anyhow::anyhow!("boom"));
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.code, "internal_error");
+        assert_eq!(err.message, "internal server error");
     }
 }
