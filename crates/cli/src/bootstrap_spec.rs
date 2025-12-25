@@ -82,3 +82,47 @@ impl BootstrapReleaseSpec {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn core_release_spec_has_expected_defaults() {
+        let spec = BootstrapReleaseSpec::core();
+        assert_eq!(spec.cp_repo, "fledx/fledx-core");
+        assert_eq!(spec.agent_repo, "fledx/fledx-core");
+        assert_eq!(spec.cp_label, "core");
+        assert_eq!(spec.agent_label, "core");
+        assert!(matches!(
+            spec.agent_version_fallback,
+            BootstrapAgentVersionFallback::None
+        ));
+    }
+
+    #[test]
+    fn core_release_spec_does_not_generate_secrets_key() {
+        let spec = BootstrapReleaseSpec::core();
+        assert!(!matches!(
+            spec.cp_secrets_master_key,
+            BootstrapSecretsMasterKey::Generate
+        ));
+    }
+
+    #[test]
+    fn core_archive_names_render_expected() {
+        let spec = BootstrapReleaseSpec::core();
+        let cp = (spec.cp_archive_name)("1.2.3", "x86_64");
+        let agent = (spec.agent_archive_name)("1.2.3", "x86_64");
+        assert_eq!(cp, "fledx-cp-1.2.3-x86_64-linux.tar.gz");
+        assert_eq!(agent, "fledx-agent-1.2.3-x86_64-linux.tar.gz");
+    }
+
+    #[test]
+    fn core_archive_names_are_distinct() {
+        let spec = BootstrapReleaseSpec::core();
+        let cp = (spec.cp_archive_name)("1.2.3", "x86_64");
+        let agent = (spec.agent_archive_name)("1.2.3", "x86_64");
+        assert_ne!(cp, agent);
+    }
+}
