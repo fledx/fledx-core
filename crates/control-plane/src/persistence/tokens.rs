@@ -176,3 +176,166 @@ pub async fn update_node_token_record_hash(
 
     Ok(result.rows_affected())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::{NewNode, NodeStatus, migrations, nodes};
+    use chrono::TimeZone;
+    use std::collections::HashSet;
+
+    async fn setup_db() -> Db {
+        let pool = migrations::init_pool("sqlite::memory:").await.unwrap();
+        migrations::run_migrations(&pool).await.unwrap();
+        pool
+    }
+
+    fn new_node(name: &str) -> NewNode {
+        NewNode {
+            id: Uuid::new_v4(),
+            name: Some(name.into()),
+            token_hash: format!("{name}-token"),
+            arch: None,
+            os: None,
+            public_ip: None,
+            public_host: None,
+            labels: None,
+            capacity: None,
+            last_seen: None,
+            status: NodeStatus::Ready,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_node_token_roundtrip() {
+        let db = setup_db().await;
+        let node = nodes::create_node(&db, new_node("alpha")).await.unwrap();
+        let expires_at = Utc.with_ymd_and_hms(2099, 1, 1, 0, 0, 0).unwrap();
+
+        let record = create_node_token(&db, node.id, "hash-1".to_string(), Some(expires_at))
+            .await
+            .unwrap();
+
+        assert_eq!(record.node_id, node.id);
+        assert_eq!(record.token_hash, "hash-1");
+        assert_eq!(record.expires_at, Some(expires_at));
+        assert!(record.disabled_at.is_none());
+        assert!(record.last_used_at.is_none());
+
+        let fetched = get_node_token(&db, record.id)
+            .await
+            .unwrap()
+            .expect("token");
+        assert_eq!(fetched.id, record.id);
+    }
+
+    #[tokio::test]
+    async fn list_active_node_tokens_filters_expired() {
+        let db = setup_db().await;
+        let node = nodes::create_node(&db, new_node("beta")).await.unwrap();
+        let expired_at = Utc.with_ymd_and_hms(2000, 1, 1, 0, 0, 0).unwrap();
+        let active_at = Utc.with_ymd_and_hms(2100, 1, 1, 0, 0, 0).unwrap();
+
+        let expired = create_node_token(&db, node.id, "expired".into(), Some(expired_at))
+            .await
+            .unwrap();
+        let active = create_node_token(&db, node.id, "active".into(), Some(active_at))
+            .await
+            .unwrap();
+
+        let records = list_active_node_tokens(&db, node.id).await.unwrap();
+        let ids: HashSet<Uuid> = records.iter().map(|record| record.id).collect();
+        assert!(ids.contains(&active.id));
+        assert!(!ids.contains(&expired.id));
+    }
+
+    #[tokio::test]
+    async fn disable_node_token_is_idempotent() {
+        let db = setup_db().await;
+        let node = nodes::create_node(&db, new_node("gamma")).await.unwrap();
+        let record = create_node_token(&db, node.id, "hash".into(), None)
+            .await
+            .unwrap();
+
+        let affected = disable_node_token(&db, record.id).await.unwrap();
+        assert_eq!(affected, 1);
+        let affected_again = disable_node_token(&db, record.id).await.unwrap();
+        assert_eq!(affected_again, 0);
+
+        let records = list_active_node_tokens(&db, node.id).await.unwrap();
+        assert!(!records.iter().any(|entry| entry.id == record.id));
+    }
+
+    #[tokio::test]
+    async fn disable_other_node_tokens_keeps_expected_token() {
+        let db = setup_db().await;
+        let node = nodes::create_node(&db, new_node("delta")).await.unwrap();
+        let first = create_node_token(&db, node.id, "hash-1".into(), None)
+            .await
+            .unwrap();
+        let keep = create_node_token(&db, node.id, "hash-2".into(), None)
+            .await
+            .unwrap();
+
+        let affected = disable_other_node_tokens(&db, node.id, keep.id)
+            .await
+            .unwrap();
+        assert!(affected >= 1);
+
+        let records = list_active_node_tokens(&db, node.id).await.unwrap();
+        let ids: Vec<Uuid> = records.iter().map(|record| record.id).collect();
+        assert_eq!(ids, vec![keep.id]);
+        assert!(!ids.contains(&first.id));
+    }
+
+    #[tokio::test]
+    async fn touch_node_token_last_used_sets_value() {
+        let db = setup_db().await;
+        let node = nodes::create_node(&db, new_node("epsilon")).await.unwrap();
+        let record = create_node_token(&db, node.id, "hash".into(), None)
+            .await
+            .unwrap();
+        assert!(record.last_used_at.is_none());
+
+        let affected = touch_node_token_last_used(&db, record.id).await.unwrap();
+        assert_eq!(affected, 1);
+        let updated = get_node_token(&db, record.id)
+            .await
+            .unwrap()
+            .expect("token");
+        assert!(updated.last_used_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn update_node_token_record_hash_updates_and_touches() {
+        let db = setup_db().await;
+        let node = nodes::create_node(&db, new_node("zeta")).await.unwrap();
+        let record = create_node_token(&db, node.id, "old".into(), None)
+            .await
+            .unwrap();
+
+        let affected = update_node_token_record_hash(&db, record.id, "new-hash".into())
+            .await
+            .unwrap();
+        assert_eq!(affected, 1);
+
+        let updated = get_node_token(&db, record.id)
+            .await
+            .unwrap()
+            .expect("token");
+        assert_eq!(updated.token_hash, "new-hash");
+        assert!(updated.last_used_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn node_tokens_exist_reports_presence() {
+        let db = setup_db().await;
+        let missing_node = Uuid::new_v4();
+        let exists = node_tokens_exist(&db, missing_node).await.unwrap();
+        assert!(!exists);
+
+        let node = nodes::create_node(&db, new_node("eta")).await.unwrap();
+        let exists = node_tokens_exist(&db, node.id).await.unwrap();
+        assert!(exists);
+    }
+}
