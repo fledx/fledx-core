@@ -78,3 +78,59 @@ fn verify_legacy(token: &str, stored_hash: &str) -> bool {
         && expected.as_bytes().ct_eq(stored_hash.as_bytes()).into();
     matches
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_token_has_expected_length_and_charset() {
+        let token = generate_token();
+        assert_eq!(token.len(), 48);
+        assert!(token.chars().all(|ch| ch.is_ascii_alphanumeric()));
+    }
+
+    #[test]
+    fn hash_and_match_token_argon2_round_trip() {
+        let token = "token-123";
+        let pepper = "pepper";
+        let hash = hash_token(token, pepper).expect("hash should succeed");
+
+        let matched = match_token(token, &hash, pepper).expect("match should succeed");
+        assert!(matches!(matched, Some(TokenMatch::Argon2)));
+    }
+
+    #[test]
+    fn match_token_rejects_wrong_token() {
+        let hash = hash_token("token-123", "pepper").expect("hash should succeed");
+        let matched = match_token("token-456", &hash, "pepper").expect("match should succeed");
+
+        assert!(matched.is_none());
+    }
+
+    #[test]
+    fn match_token_rejects_wrong_pepper() {
+        let hash = hash_token("token-123", "pepper").expect("hash should succeed");
+        let matched = match_token("token-123", &hash, "other").expect("match should succeed");
+
+        assert!(matched.is_none());
+    }
+
+    #[test]
+    fn match_token_accepts_legacy_hash() {
+        let token = "legacy-token";
+        let hash = legacy_hash(token);
+
+        let matched = match_token(token, &hash, "pepper").expect("match should succeed");
+        assert!(matches!(matched, Some(TokenMatch::Legacy)));
+    }
+
+    #[test]
+    fn legacy_hash_matches_known_value() {
+        let hash = legacy_hash("token");
+        assert_eq!(
+            hash,
+            "3c469e9d6c5875d37a43f353d4f88e61fcf812c66eee3457465a40b0da4153e0"
+        );
+    }
+}
