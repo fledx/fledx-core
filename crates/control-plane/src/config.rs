@@ -714,13 +714,10 @@ pub fn load() -> anyhow::Result<AppConfig> {
         )?
         .set_default("tunnel.token_header", default_tunnel_token_header())?
         .set_default("database.url", "sqlite://data/control-plane.db")?
-        .set_default("registration.token", "dev-registration-token")?
         .set_default("registration.rate_limit_per_minute", 30)?
-        .set_default("operator.tokens", vec!["dev-operator-token"])?
         .set_default("operator.header_name", "authorization")?
         .set_default("operator.env.warn_on_use", true)?
         .set_default("operator.env.disable_after_first_success", false)?
-        .set_default("tokens.pepper", "dev-token-pepper")?
         .set_default("limits.registration_body_bytes", 16 * 1024u64)?
         .set_default("limits.heartbeat_body_bytes", 64 * 1024u64)?
         .set_default("limits.config_payload_bytes", 128 * 1024u64)?
@@ -796,6 +793,14 @@ pub fn load() -> anyhow::Result<AppConfig> {
     app.ports.validate()?;
     app.volumes.validate()?;
     app.tunnel.validate()?;
+    app.registration.token = app.registration.token.trim().to_string();
+    if app.registration.token.is_empty() {
+        anyhow::bail!("FLEDX_CP_REGISTRATION_TOKEN cannot be empty");
+    }
+    app.tokens.pepper = app.tokens.pepper.trim().to_string();
+    if app.tokens.pepper.is_empty() {
+        anyhow::bail!("FLEDX_CP_TOKENS_PEPPER cannot be empty");
+    }
     Ok(app)
 }
 
@@ -807,7 +812,10 @@ mod tests {
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-    fn with_control_plane_env(vars: &[(&str, &str)], test: impl FnOnce() + panic::UnwindSafe) {
+    fn with_control_plane_env<R>(
+        vars: &[(&str, &str)],
+        test: impl FnOnce() -> R + panic::UnwindSafe,
+    ) -> R {
         let _guard = ENV_LOCK.lock().expect("env mutex poisoned");
         let prefix = format!("{}_", ENV_PREFIX);
 
@@ -839,7 +847,20 @@ mod tests {
             }
         }
 
-        result.unwrap();
+        result.unwrap()
+    }
+
+    fn with_required_control_plane_env<R>(
+        vars: &[(&str, &str)],
+        test: impl FnOnce() -> R + panic::UnwindSafe,
+    ) -> R {
+        let mut merged = vec![
+            ("FLEDX_CP_REGISTRATION_TOKEN", "test-registration-token"),
+            ("FLEDX_CP_OPERATOR_TOKENS", "test-operator-token"),
+            ("FLEDX_CP_TOKENS_PEPPER", "test-token-pepper"),
+        ];
+        merged.extend_from_slice(vars);
+        with_control_plane_env(&merged, test)
     }
 
     #[test]
@@ -865,7 +886,7 @@ mod tests {
 
     #[test]
     fn numeric_and_bool_env_values_still_parse() {
-        with_control_plane_env(
+        with_required_control_plane_env(
             &[
                 ("FLEDX_CP_SERVER_PORT", "9090"),
                 ("FLEDX_CP_REGISTRATION_RATE_LIMIT_PER_MINUTE", "45"),
@@ -885,11 +906,11 @@ mod tests {
 
     #[test]
     fn operator_env_policy_defaults_and_overrides() {
-        let cfg = load().expect("config loads");
+        let cfg = with_required_control_plane_env(&[], || load().expect("config loads"));
         assert!(cfg.operator.env.warn_on_use);
         assert!(!cfg.operator.env.disable_after_first_success);
 
-        with_control_plane_env(
+        with_required_control_plane_env(
             &[
                 ("FLEDX_CP_OPERATOR_ENV_WARN_ON_USE", "false"),
                 ("FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS", "true"),
@@ -904,11 +925,11 @@ mod tests {
 
     #[test]
     fn feature_flags_default_and_env_overrides() {
-        let cfg = load().expect("config loads");
+        let cfg = with_required_control_plane_env(&[], || load().expect("config loads"));
         assert!(cfg.features.enforce_agent_compatibility);
         assert!(!cfg.features.migrations_dry_run_on_start);
 
-        with_control_plane_env(
+        with_required_control_plane_env(
             &[
                 ("FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY", "false"),
                 ("FLEDX_CP_FEATURES_MIGRATIONS_DRY_RUN_ON_START", "true"),
@@ -923,7 +944,7 @@ mod tests {
 
     #[test]
     fn server_tls_defaults_to_disabled() {
-        let cfg = load().expect("config loads");
+        let cfg = with_required_control_plane_env(&[], || load().expect("config loads"));
         assert!(!cfg.server.tls.enabled);
         assert!(cfg.server.tls.cert_path.is_none());
         assert!(cfg.server.tls.key_path.is_none());
@@ -931,7 +952,7 @@ mod tests {
 
     #[test]
     fn server_tls_enables_with_paths() {
-        with_control_plane_env(
+        with_required_control_plane_env(
             &[
                 ("FLEDX_CP_SERVER_TLS_CERT_PATH", "cert.pem"),
                 ("FLEDX_CP_SERVER_TLS_KEY_PATH", "key.pem"),
@@ -947,7 +968,7 @@ mod tests {
 
     #[test]
     fn server_tls_requires_both_paths() {
-        with_control_plane_env(
+        with_required_control_plane_env(
             &[
                 ("FLEDX_CP_SERVER_TLS_ENABLED", "true"),
                 ("FLEDX_CP_SERVER_TLS_CERT_PATH", "cert.pem"),
@@ -957,6 +978,57 @@ mod tests {
                 let msg = err.to_string();
                 assert!(msg.contains("server.tls.cert_path"));
                 assert!(msg.contains("server.tls.key_path"));
+            },
+        );
+    }
+
+    #[test]
+    fn registration_token_trims_and_accepts_value() {
+        with_required_control_plane_env(
+            &[
+                ("FLEDX_CP_REGISTRATION_TOKEN", "  reg-token  "),
+                ("FLEDX_CP_TOKENS_PEPPER", "  pepper-token  "),
+            ],
+            || {
+                let cfg = load().expect("config loads");
+                assert_eq!(cfg.registration.token, "reg-token");
+                assert_eq!(cfg.tokens.pepper, "pepper-token");
+            },
+        );
+    }
+
+    #[test]
+    fn registration_token_rejects_empty_value() {
+        with_control_plane_env(
+            &[
+                ("FLEDX_CP_REGISTRATION_TOKEN", "   "),
+                ("FLEDX_CP_OPERATOR_TOKENS", "test-operator"),
+                ("FLEDX_CP_TOKENS_PEPPER", "test-pepper"),
+            ],
+            || {
+                let err = load().expect_err("config should reject empty registration token");
+                assert!(
+                    err.to_string()
+                        .contains("FLEDX_CP_REGISTRATION_TOKEN cannot be empty")
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn tokens_pepper_rejects_empty_value() {
+        with_control_plane_env(
+            &[
+                ("FLEDX_CP_REGISTRATION_TOKEN", "test-registration"),
+                ("FLEDX_CP_OPERATOR_TOKENS", "test-operator"),
+                ("FLEDX_CP_TOKENS_PEPPER", ""),
+            ],
+            || {
+                let err = load().expect_err("config should reject empty token pepper");
+                assert!(
+                    err.to_string()
+                        .contains("FLEDX_CP_TOKENS_PEPPER cannot be empty")
+                );
             },
         );
     }

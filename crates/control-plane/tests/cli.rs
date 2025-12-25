@@ -12,6 +12,9 @@ async fn migrations_dry_run_cli_leaves_schema_unmodified() {
     let binary = assert_cmd::cargo::cargo_bin!("fledx-cp");
     let mut cmd = Command::new(binary);
     cmd.env("FLEDX_CP_DATABASE_URL", &db_url)
+        .env("FLEDX_CP_REGISTRATION_TOKEN", "test-registration-token")
+        .env("FLEDX_CP_OPERATOR_TOKENS", "test-operator-token")
+        .env("FLEDX_CP_TOKENS_PEPPER", "test-token-pepper")
         .arg("--migrations-dry-run");
     cmd.assert().success();
 

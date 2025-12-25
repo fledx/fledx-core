@@ -16,8 +16,8 @@ in `localStorage` so you do not have to type it again during the next browser se
    ```
 
    The script boots the control-plane on `127.0.0.1:49421` with a demo SQLite database, registers a node, starts the node
-   agent, and deploys `hashicorp/http-echo`. It also wires the demo operator token (`dev-operator-token`) into the
-   control-plane and the CLI so you can paste it into the UI login box without extra steps. Once the script is running,
+   agent, and deploys `hashicorp/http-echo`. It also wires a demo operator token into the control-plane and the CLI so
+   you can paste the token printed by the script into the UI login box without extra steps. Once the script is running,
    point your browser to `http://127.0.0.1:49421/ui`.
 
 2. **Manual control-plane run (for production-style installs).**
@@ -39,10 +39,9 @@ in `localStorage` so you do not have to type it again during the next browser se
 
 ## Authentication & Base Configuration
 
-- **Operator tokens.** The UI requires one of the strings listed in `FLEDX_CP_OPERATOR_TOKENS` (default
-  `dev-operator-token`). You paste the token into the masked input at the top of the page; the UI automatically prefixes
-  it with `Bearer ` if you omit the prefix and persists it inside the browser under the key `fledx-observability-token`
-  for the next session.
+- **Operator tokens.** The UI requires one of the strings listed in `FLEDX_CP_OPERATOR_TOKENS`. You paste the token into
+  the masked input at the top of the page; the UI automatically prefixes it with `Bearer ` if you omit the prefix and
+  persists it inside the browser under the key `fledx-observability-token` for the next session.
 - **Bootstrap-only env tokens.** Tokens from `FLEDX_CP_OPERATOR_TOKENS` are intended for initial bootstrap. The
   control-plane logs a warning whenever an env token is used. Set
   `FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS=true` to automatically disable env tokens after the first
@@ -99,13 +98,13 @@ in `localStorage` so you do not have to type it again during the next browser se
 
   ```bash
   FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:49421 \
-    FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
+    FLEDX_CLI_OPERATOR_TOKEN=example-operator-token \
     cargo run -p cli -- deployments create --name web --image nginx:alpine
   ```
 
   ```bash
   FLEDX_CLI_CONTROL_PLANE_URL=http://localhost:49421 \
-    FLEDX_CLI_OPERATOR_TOKEN=dev-operator-token \
+    FLEDX_CLI_OPERATOR_TOKEN=example-operator-token \
     cargo run -p cli -- deployments stop --id <id>
   ```
 
