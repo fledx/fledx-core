@@ -240,3 +240,59 @@ where
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn metrics_history_aggregates_counts() {
+        let history = MetricsHistory::new(0);
+
+        history
+            .record("GET".to_string(), "/health".to_string(), "200".to_string())
+            .await;
+        history
+            .record("GET".to_string(), "/health".to_string(), "200".to_string())
+            .await;
+        history
+            .record("POST".to_string(), "/deploy".to_string(), "500".to_string())
+            .await;
+
+        let counts = history.aggregate().await;
+        assert_eq!(
+            counts.get(&("GET".to_string(), "/health".to_string(), "200".to_string())),
+            Some(&2.0)
+        );
+        assert_eq!(
+            counts.get(&("POST".to_string(), "/deploy".to_string(), "500".to_string())),
+            Some(&1.0)
+        );
+    }
+
+    #[tokio::test]
+    async fn metrics_history_prunes_outside_window() {
+        let history = MetricsHistory::new(1);
+
+        history
+            .record("GET".to_string(), "/old".to_string(), "200".to_string())
+            .await;
+        {
+            let mut inner = history.inner.lock().await;
+            if let Some(front) = inner.events.front_mut() {
+                front.timestamp = Instant::now() - Duration::from_secs(2);
+            }
+        }
+        history
+            .record("GET".to_string(), "/new".to_string(), "200".to_string())
+            .await;
+
+        let counts = history.aggregate().await;
+        assert_eq!(counts.len(), 1);
+        assert_eq!(
+            counts.get(&("GET".to_string(), "/new".to_string(), "200".to_string())),
+            Some(&1.0)
+        );
+    }
+}
