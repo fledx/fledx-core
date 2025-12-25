@@ -551,6 +551,27 @@ mod tests {
         out
     }
 
+    fn drain_http_request(stream: &mut std::net::TcpStream) {
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+        let mut buf = [0u8; 1024];
+        let mut received = Vec::new();
+        loop {
+            match stream.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => {
+                    received.extend_from_slice(&buf[..n]);
+                    if received.windows(4).any(|chunk| chunk == b"\r\n\r\n") {
+                        break;
+                    }
+                    if received.len() > 8192 {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
     #[test]
     fn release_api_url_defaults_to_latest() {
         let url = release_api_url("fledx/fledx-core", None);
@@ -831,9 +852,11 @@ mod tests {
         let headers = headers.to_string();
         thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
+                drain_http_request(&mut stream);
                 let response = format!("HTTP/1.1 {status}\r\n{headers}\r\n\r\n");
                 let _ = stream.write_all(response.as_bytes());
                 let _ = stream.write_all(&body);
+                let _ = stream.flush();
             }
         });
         addr
@@ -849,10 +872,13 @@ mod tests {
         let headers = headers.to_string();
         thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
+                drain_http_request(&mut stream);
                 let response = format!("HTTP/1.1 200 OK\r\n{headers}\r\n\r\n");
                 let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
                 thread::sleep(delay);
                 let _ = stream.write_all(&body);
+                let _ = stream.flush();
             }
         });
         addr
