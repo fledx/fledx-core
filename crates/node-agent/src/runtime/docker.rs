@@ -74,36 +74,10 @@ impl ContainerRuntime for DockerRuntime {
 
         let container_name = spec
             .name
+            .clone()
             .unwrap_or_else(|| format!("fledx-agent-{}", Uuid::new_v4()));
-        let env = format_env(&spec.env);
-
-        let (port_bindings, exposed_ports) = build_ports(&spec.ports);
-        let binds = build_mounts(&spec.mounts);
-
-        let host_config = HostConfig {
-            port_bindings,
-            binds,
-            ..Default::default()
-        };
-
-        let container_config = ContainerCreateBody {
-            image: Some(spec.image.clone()),
-            env,
-            exposed_ports,
-            host_config: Some(host_config),
-            cmd: spec.command.clone(),
-            labels: if spec.labels.is_empty() {
-                None
-            } else {
-                Some(spec.labels.into_iter().collect())
-            },
-            ..Default::default()
-        };
-
-        let create_opts = CreateContainerOptions {
-            name: Some(container_name.clone()),
-            platform: String::new(),
-        };
+        let (create_opts, container_config) =
+            build_container_create_request(&spec, &container_name);
 
         let created = self
             .docker
@@ -331,6 +305,43 @@ impl ContainerRuntime for DockerRuntime {
             blk_write_bytes,
         })
     }
+}
+
+fn build_container_create_request(
+    spec: &ContainerSpec,
+    container_name: &str,
+) -> (CreateContainerOptions, ContainerCreateBody) {
+    let env = format_env(&spec.env);
+
+    let (port_bindings, exposed_ports) = build_ports(&spec.ports);
+    let binds = build_mounts(&spec.mounts);
+
+    let host_config = HostConfig {
+        port_bindings,
+        binds,
+        ..Default::default()
+    };
+
+    let container_config = ContainerCreateBody {
+        image: Some(spec.image.clone()),
+        env,
+        exposed_ports,
+        host_config: Some(host_config),
+        cmd: spec.command.clone(),
+        labels: if spec.labels.is_empty() {
+            None
+        } else {
+            Some(spec.labels.iter().cloned().collect())
+        },
+        ..Default::default()
+    };
+
+    let create_opts = CreateContainerOptions {
+        name: Some(container_name.to_string()),
+        platform: String::new(),
+    };
+
+    (create_opts, container_config)
 }
 
 fn map_connection_or<F>(err: DockerError, context: &'static str, wrap: F) -> ContainerRuntimeError
@@ -567,6 +578,7 @@ fn parse_host_port_token(token: &str) -> Option<(Option<String>, u16)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::FileMount;
 
     #[test]
     fn detects_port_conflict_from_docker_error() {
@@ -823,5 +835,131 @@ mod tests {
         };
         assert!(map_port_conflict(&err, &ports).is_none());
         assert!(map_port_conflict(&err, &[]).is_none());
+    }
+
+    #[test]
+    fn build_container_create_request_populates_config() {
+        let mut spec = ContainerSpec::new("busybox:1.36");
+        spec.env.push(("KEY".into(), "VALUE".into()));
+        spec.labels.push(("role".into(), "edge".into()));
+        spec.command = Some(vec!["/bin/sh".into(), "-c".into(), "echo hi".into()]);
+        spec.ports.push(PortMapping {
+            container_port: 8080,
+            host_port: 18080,
+            protocol: PortProtocol::Tcp,
+            host_ip: Some("127.0.0.1".into()),
+        });
+        spec.mounts.push(FileMount {
+            host_path: "/host/data".into(),
+            container_path: "/data".into(),
+            readonly: true,
+        });
+
+        let (opts, config) = build_container_create_request(&spec, "agent-1");
+        assert_eq!(opts.name.as_deref(), Some("agent-1"));
+        assert_eq!(opts.platform, "");
+        assert_eq!(config.image.as_deref(), Some("busybox:1.36"));
+        assert_eq!(config.env.unwrap(), vec!["KEY=VALUE".to_string()]);
+        assert_eq!(config.cmd, spec.command);
+
+        let labels = config.labels.expect("labels");
+        assert_eq!(labels.get("role").map(String::as_str), Some("edge"));
+
+        let host_config = config.host_config.expect("host config");
+        let port_bindings = host_config.port_bindings.expect("port bindings");
+        let binding = port_bindings
+            .get("8080/tcp")
+            .and_then(|entry| entry.as_ref())
+            .and_then(|entries| entries.first())
+            .expect("binding");
+        assert_eq!(binding.host_ip.as_deref(), Some("127.0.0.1"));
+        assert_eq!(binding.host_port.as_deref(), Some("18080"));
+
+        let binds = host_config.binds.expect("binds");
+        assert!(binds.contains(&"/host/data:/data:ro".to_string()));
+    }
+
+    #[test]
+    fn build_container_create_request_omits_empty_fields() {
+        let spec = ContainerSpec::new("busybox:latest");
+        let (_opts, config) = build_container_create_request(&spec, "agent-2");
+
+        assert!(config.env.is_none());
+        assert!(config.labels.is_none());
+        let host_config = config.host_config.expect("host config");
+        assert!(host_config.port_bindings.is_none());
+        assert!(host_config.binds.is_none());
+    }
+
+    #[test]
+    fn map_start_error_falls_back_to_start_error() {
+        let ports = vec![PortMapping {
+            container_port: 80,
+            host_port: 8080,
+            protocol: PortProtocol::Tcp,
+            host_ip: Some("0.0.0.0".into()),
+        }];
+        let err = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "unexpected failure".into(),
+        };
+        match map_start_error(err, "id-7", &ports) {
+            ContainerRuntimeError::StartContainer { id, .. } => assert_eq!(id, "id-7"),
+            other => panic!("expected start error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_docker_error_flags_connection_errors() {
+        let err = DockerError::IOError {
+            err: std::io::Error::other("io"),
+        };
+        match map_docker_error(err, "id-8", "inspect", |id, source| {
+            ContainerRuntimeError::InspectContainer {
+                id,
+                source: source.into(),
+            }
+        }) {
+            ContainerRuntimeError::Connection { context, .. } => assert_eq!(context, "inspect"),
+            other => panic!("expected connection error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_port_conflict_falls_back_when_mapping_mismatch() {
+        let ports = vec![
+            PortMapping {
+                container_port: 80,
+                host_port: 8080,
+                protocol: PortProtocol::Tcp,
+                host_ip: Some("0.0.0.0".into()),
+            },
+            PortMapping {
+                container_port: 53,
+                host_port: 5353,
+                protocol: PortProtocol::Udp,
+                host_ip: Some("127.0.0.1".into()),
+            },
+        ];
+
+        let err = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "Bind for 127.0.0.1:8080 failed: port is already allocated".into(),
+        };
+        let conflict = map_port_conflict(&err, &ports).expect("conflict");
+        assert_eq!(conflict.host_port, 8080);
+        assert_eq!(conflict.host_ip.as_deref(), Some("0.0.0.0"));
+    }
+
+    #[test]
+    fn parse_host_port_token_handles_trailing_colon_and_noise() {
+        assert_eq!(
+            parse_host_port_token("0.0.0.0:8080:"),
+            Some((Some("0.0.0.0".into()), 8080))
+        );
+        assert_eq!(
+            parse_host_port_token("listen://127.0.0.1:5353"),
+            Some((Some("://127.0.0.1".into()), 5353))
+        );
     }
 }
