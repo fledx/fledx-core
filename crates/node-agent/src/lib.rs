@@ -89,3 +89,90 @@ fn build_agent_headers() -> anyhow::Result<HeaderMap> {
 
     Ok(headers)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::base_config;
+    use uuid::Uuid;
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let mut path = std::env::temp_dir();
+        path.push(format!("node-agent-{}-{}", name, Uuid::new_v4()));
+        path
+    }
+
+    #[test]
+    fn validate_control_plane_url_accepts_https() {
+        let mut cfg = base_config();
+        cfg.control_plane_url = "https://control.example".into();
+        cfg.allow_insecure_http = false;
+
+        validate_control_plane_url(&cfg).expect("https should be allowed");
+    }
+
+    #[test]
+    fn validate_control_plane_url_allows_http_when_insecure_enabled() {
+        let mut cfg = base_config();
+        cfg.control_plane_url = "http://control.example".into();
+        cfg.allow_insecure_http = true;
+
+        validate_control_plane_url(&cfg).expect("http allowed when insecure flag is set");
+    }
+
+    #[test]
+    fn validate_control_plane_url_rejects_http_when_disallowed() {
+        let mut cfg = base_config();
+        cfg.control_plane_url = "http://control.example".into();
+        cfg.allow_insecure_http = false;
+
+        let err = validate_control_plane_url(&cfg).expect_err("http should be rejected");
+        assert!(err
+            .to_string()
+            .contains("insecure control-plane URL not allowed"));
+    }
+
+    #[test]
+    fn validate_control_plane_url_rejects_unknown_scheme() {
+        let mut cfg = base_config();
+        cfg.control_plane_url = "ftp://control.example".into();
+
+        let err = validate_control_plane_url(&cfg).expect_err("unsupported scheme");
+        assert!(err.to_string().contains("unsupported URL scheme"));
+    }
+
+    #[test]
+    fn build_client_allows_insecure_tls_toggle() {
+        let mut cfg = base_config();
+        cfg.tls_insecure_skip_verify = true;
+
+        build_client(&cfg).expect("client should build");
+    }
+
+    #[test]
+    fn build_client_errors_on_missing_ca_file() {
+        let mut cfg = base_config();
+        cfg.ca_cert_path = Some("/no/such/ca.pem".into());
+
+        let err = build_client(&cfg).expect_err("missing CA file");
+        assert!(err.to_string().contains("failed to read ca_cert_path"));
+    }
+
+    #[test]
+    fn build_client_errors_on_invalid_ca_file() {
+        let mut cfg = base_config();
+        let path = temp_path("bad-ca.pem");
+        let invalid_pem = b"-----BEGIN CERTIFICATE-----\n%%%%\n-----END CERTIFICATE-----\n";
+        std::fs::write(&path, invalid_pem).expect("write temp file");
+        cfg.ca_cert_path = Some(path.to_string_lossy().to_string());
+
+        let err = build_client(&cfg).expect_err("invalid CA file");
+        let message = err.to_string();
+        assert!(
+            !message.contains("failed to read ca_cert_path"),
+            "expected parse error, got: {message}"
+        );
+
+        let _ = std::fs::remove_file(path);
+    }
+}

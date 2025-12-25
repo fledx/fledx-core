@@ -718,6 +718,196 @@ mod tests {
     use chrono::TimeZone;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    #[test]
+    fn managed_deployment_resets_on_new_generation() {
+        let mut deployment = ManagedDeployment::new(1);
+        deployment.state = InstanceState::Failed;
+        deployment.message = Some("oops".into());
+        deployment.endpoints.push("http://example".into());
+        deployment.ports = Some(Vec::new());
+        deployment.liveness_probe_state.consecutive_failures = 2;
+        deployment.failed_probe = Some(ProbeRole::Liveness);
+
+        deployment.reset_for_generation(2);
+
+        assert_eq!(deployment.generation, 2);
+        assert_eq!(deployment.state, InstanceState::Failed);
+        assert!(deployment.message.is_none());
+        assert!(deployment.endpoints.is_empty());
+        assert!(deployment.ports.is_none());
+        assert!(deployment.failed_probe.is_none());
+        assert_eq!(deployment.liveness_probe_state.consecutive_failures, 0);
+    }
+
+    #[test]
+    fn mark_state_updates_last_started_at() {
+        let mut deployment = ManagedDeployment::new(1);
+        deployment.mark_state(Some("c1".into()), InstanceState::Running, None);
+        assert!(deployment.last_started_at.is_some());
+
+        deployment.mark_state(
+            Some("c1".into()),
+            InstanceState::Failed,
+            Some("boom".into()),
+        );
+        assert!(deployment.last_started_at.is_none());
+        assert_eq!(deployment.message.as_deref(), Some("boom"));
+    }
+
+    #[test]
+    fn mark_running_clears_failure_state() {
+        let mut deployment = ManagedDeployment::new(1);
+        deployment.consecutive_failures = 3;
+        deployment.backoff_until = Some(Utc::now());
+        deployment.failed_probe = Some(ProbeRole::Readiness);
+        deployment.mark_running(Some("c2".into()));
+
+        assert_eq!(deployment.consecutive_failures, 0);
+        assert!(deployment.backoff_until.is_none());
+        assert!(deployment.failed_probe.is_none());
+        assert_eq!(deployment.state, InstanceState::Running);
+    }
+
+    #[test]
+    fn apply_failure_backoff_sets_failed_state() {
+        let cfg = base_config();
+        let mut deployment = ManagedDeployment::new(1);
+        apply_failure_backoff(
+            &cfg,
+            &mut deployment,
+            Some("c3".into()),
+            Some("fail".into()),
+        );
+
+        assert_eq!(deployment.state, InstanceState::Failed);
+        assert!(deployment.backoff_until.is_some());
+        assert_eq!(deployment.message.as_deref(), Some("fail"));
+    }
+
+    #[test]
+    fn backoff_remaining_handles_past_and_future() {
+        let mut deployment = ManagedDeployment::new(1);
+        deployment.backoff_until = Some(Utc::now() - chrono::Duration::seconds(5));
+        assert!(backoff_remaining(&deployment).is_none());
+
+        deployment.backoff_until = Some(Utc::now() + chrono::Duration::seconds(5));
+        assert!(backoff_remaining(&deployment).is_some());
+    }
+
+    #[tokio::test]
+    async fn record_runtime_error_updates_state_on_connection_error() {
+        let runtime: DynContainerRuntime = Arc::new(crate::test_support::MockRuntime::default());
+        let runtime_for_factory = runtime.clone();
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let factory: RuntimeFactory = Arc::new(move || Ok(runtime_for_factory.clone()));
+        let state = new_state(cfg, client, factory, Some(runtime.clone()));
+
+        let err = ContainerRuntimeError::Connection {
+            context: "test",
+            source: anyhow::anyhow!("down"),
+        };
+        record_runtime_error(&state, &err).await;
+
+        let guard = state.lock().await;
+        assert!(guard.runtime.is_none());
+        assert_eq!(guard.runtime_backoff_attempts, 1);
+        assert!(guard.runtime_backoff_until.is_some());
+        assert!(guard.needs_adoption);
+    }
+
+    #[tokio::test]
+    async fn record_runtime_error_skips_non_connection_errors() {
+        let runtime: DynContainerRuntime = Arc::new(crate::test_support::MockRuntime::default());
+        let runtime_for_factory = runtime.clone();
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let factory: RuntimeFactory = Arc::new(move || Ok(runtime_for_factory.clone()));
+        let state = new_state(cfg, client, factory, Some(runtime.clone()));
+
+        let err = ContainerRuntimeError::StartContainer {
+            id: "id-1".into(),
+            source: anyhow::anyhow!("boom"),
+        };
+        record_runtime_error(&state, &err).await;
+
+        let guard = state.lock().await;
+        assert!(guard.runtime.is_some());
+        assert_eq!(guard.runtime_backoff_attempts, 0);
+    }
+
+    #[test]
+    fn request_context_updates_from_headers() {
+        let mut ctx = RequestContext::default();
+        let first = ctx.ensure();
+        assert!(!first.is_empty());
+        assert_eq!(ctx.ensure(), first);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(REQUEST_ID_HEADER, HeaderValue::from_static("req-123"));
+        let updated = ctx.update_from_headers(&headers);
+        assert_eq!(updated, "req-123");
+        assert_eq!(ctx.current.as_deref(), Some("req-123"));
+    }
+
+    #[test]
+    fn request_id_from_headers_prefers_traceparent() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            TRACEPARENT_HEADER,
+            HeaderValue::from_static("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"),
+        );
+        headers.insert(REQUEST_ID_HEADER, HeaderValue::from_static("req-1"));
+
+        let id = request_id_from_headers(&headers).expect("ok");
+        assert_eq!(id, Some("4bf92f3577b34da6a3ce929d0e0e4736".to_string()));
+    }
+
+    #[test]
+    fn request_id_from_headers_falls_back_to_request_id() {
+        let mut headers = HeaderMap::new();
+        headers.insert(TRACEPARENT_HEADER, HeaderValue::from_static("bad-trace"));
+        headers.insert(REQUEST_ID_HEADER, HeaderValue::from_static("req-2"));
+
+        let id = request_id_from_headers(&headers).expect("ok");
+        assert_eq!(id, Some("req-2".to_string()));
+    }
+
+    #[test]
+    fn request_id_from_headers_reports_invalid_request_id() {
+        let mut headers = HeaderMap::new();
+        let too_long = "a".repeat(129);
+        headers.insert(REQUEST_ID_HEADER, HeaderValue::from_str(&too_long).unwrap());
+
+        let err = request_id_from_headers(&headers).expect_err("invalid");
+        assert_eq!(err, "x-request-id:too_long");
+    }
+
+    #[test]
+    fn normalize_request_id_rejects_invalid_chars() {
+        let value = HeaderValue::from_static("hello world");
+        let err = normalize_request_id(&value).expect_err("invalid");
+        assert_eq!(err, "x-request-id:invalid_chars");
+    }
+
+    #[test]
+    fn parse_traceparent_rejects_all_zero_trace_id() {
+        let value =
+            HeaderValue::from_static("00-00000000000000000000000000000000-0000000000000000-01");
+        assert!(parse_traceparent_trace_id(&value).is_none());
+    }
+
+    #[test]
+    fn backoff_with_jitter_stays_within_bounds() {
+        let base = Duration::from_millis(100);
+        let max = Duration::from_millis(400);
+        let backoff = backoff_with_jitter(base, max, 2);
+        let expected = base * 2;
+        let jitter_max = expected / 2;
+        assert!(backoff >= expected);
+        assert!(backoff <= expected + jitter_max);
+    }
+
     #[tokio::test]
     async fn reconnects_to_docker_after_errors() {
         let runtime: DynContainerRuntime = Arc::new(crate::test_support::MockRuntime::default());

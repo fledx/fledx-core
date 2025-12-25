@@ -393,6 +393,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_label_rejects_empty_key_or_value() {
+        let err = parse_label("=value").expect_err("empty key");
+        assert!(err.to_string().contains("key is empty"));
+
+        let err = parse_label("key=").expect_err("empty value");
+        assert!(err.to_string().contains("value is empty"));
+    }
+
+    #[test]
+    fn parse_labels_returns_none_when_empty() {
+        let labels = parse_labels(&[]).expect("empty labels");
+        assert!(labels.is_none());
+    }
+
+    #[test]
     fn parse_labels_rejects_duplicate_keys() {
         let err = parse_labels(&["a=1".to_string(), "a=2".to_string()]).expect_err("should fail");
         let msg = err.to_string();
@@ -449,7 +464,7 @@ mod tests {
         assert_eq!(host, "control-plane.example.com");
     }
 
-    fn spawn_http_server(response: &'static str) -> std::net::SocketAddr {
+    fn spawn_http_server(response: String) -> std::net::SocketAddr {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
         let addr = listener.local_addr().expect("addr");
         std::thread::spawn(move || {
@@ -465,7 +480,7 @@ mod tests {
     #[tokio::test]
     async fn fetch_control_plane_health_rejects_non_success_status() {
         let addr = spawn_http_server(
-            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nerror",
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nerror".to_string(),
         );
         let client = reqwest::Client::new();
         let base_url = format!("http://{addr}");
@@ -475,5 +490,169 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("status 500"), "{msg}");
         assert!(msg.contains("error"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn fetch_control_plane_health_rejects_invalid_json() {
+        let response =
+            "HTTP/1.1 200 OK\r\nContent-Length: 6\r\nContent-Type: application/json\r\n\r\nnotjson";
+        let addr = spawn_http_server(response.to_string());
+        let client = reqwest::Client::new();
+        let base_url = format!("http://{addr}");
+        let err = fetch_control_plane_health(&client, &base_url)
+            .await
+            .expect_err("invalid json");
+        assert!(err
+            .to_string()
+            .contains("failed to parse control-plane health response"));
+    }
+
+    #[tokio::test]
+    async fn fetch_control_plane_version_prefers_control_plane_version() {
+        let body = "{\"control_plane_version\":\"1.2.3\",\"tunnel_statuses\":[]}";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let addr = spawn_http_server(response);
+        let client = reqwest::Client::new();
+        let base_url = format!("http://{addr}");
+        let version = fetch_control_plane_version(&client, &base_url)
+            .await
+            .expect("version");
+        assert_eq!(version, "1.2.3");
+    }
+
+    #[tokio::test]
+    async fn fetch_control_plane_version_falls_back_to_version() {
+        let body = "{\"version\":\"2.0.1\",\"tunnel_statuses\":[]}";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let addr = spawn_http_server(response);
+        let client = reqwest::Client::new();
+        let base_url = format!("http://{addr}");
+        let version = fetch_control_plane_version(&client, &base_url)
+            .await
+            .expect("version");
+        assert_eq!(version, "2.0.1");
+    }
+
+    #[tokio::test]
+    async fn fetch_control_plane_version_errors_when_missing_fields() {
+        let body = "{\"tunnel_statuses\":[]}";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let addr = spawn_http_server(response);
+        let client = reqwest::Client::new();
+        let base_url = format!("http://{addr}");
+        let err = fetch_control_plane_version(&client, &base_url)
+            .await
+            .expect_err("missing version");
+        assert!(err.to_string().contains("missing version fields"));
+    }
+
+    #[tokio::test]
+    async fn wait_for_http_ok_succeeds_when_healthy() {
+        let addr = spawn_http_server("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok".to_string());
+        let client = reqwest::Client::new();
+        let url = format!("http://{addr}/health");
+        wait_for_http_ok(&client, &url, Duration::from_secs(1))
+            .await
+            .expect("wait ok");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wait_for_http_ok_times_out() {
+        let addr = spawn_http_server(
+            "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 5\r\n\r\nerror".to_string(),
+        );
+        let client = reqwest::Client::new();
+        let url = format!("http://{addr}/health");
+        let handle =
+            tokio::spawn(
+                async move { wait_for_http_ok(&client, &url, Duration::from_secs(1)).await },
+            );
+        tokio::time::advance(Duration::from_secs(3)).await;
+        let err = handle.await.unwrap().expect_err("should timeout");
+        assert!(err
+            .to_string()
+            .contains("timed out waiting for control-plane health"));
+    }
+
+    #[tokio::test]
+    async fn wait_for_node_tunnel_connected_succeeds() {
+        let node_id = uuid::Uuid::new_v4();
+        let body = format!(
+            "{{\"tunnel_statuses\":[{{\"node_id\":\"{}\",\"status\":\"connected\"}}]}}",
+            node_id
+        );
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let addr = spawn_http_server(response);
+        let client = reqwest::Client::new();
+        let base_url = format!("http://{addr}");
+        wait_for_node_tunnel_connected(&client, &base_url, node_id, Duration::from_secs(1))
+            .await
+            .expect("connected");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn wait_for_node_tunnel_connected_times_out() {
+        let node_id = uuid::Uuid::new_v4();
+        let body = format!(
+            "{{\"tunnel_statuses\":[{{\"node_id\":\"{}\",\"status\":\"connecting\"}}]}}",
+            node_id
+        );
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let addr = spawn_http_server(response);
+        let client = reqwest::Client::new();
+        let base_url = format!("http://{addr}");
+        let handle = tokio::spawn(async move {
+            wait_for_node_tunnel_connected(&client, &base_url, node_id, Duration::from_secs(1))
+                .await
+        });
+        tokio::time::advance(Duration::from_secs(3)).await;
+        let err = handle.await.unwrap().expect_err("timeout");
+        assert!(err
+            .to_string()
+            .contains("timed out waiting for agent tunnel connection"));
+    }
+
+    #[tokio::test]
+    async fn register_node_requires_tunnel_endpoint() {
+        let body = "{\"node_id\":\"00000000-0000-0000-0000-000000000042\",\"node_token\":\"t\"}";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let addr = spawn_http_server(response);
+        let client = reqwest::Client::new();
+        let inputs = RegisterNodeInputs {
+            name: "node",
+            arch: "x86_64",
+            os: "linux",
+            labels: None,
+            capacity: None,
+            agent_version: "1.0.0",
+        };
+        let err = register_node(&client, &format!("http://{addr}"), "token", inputs)
+            .await
+            .expect_err("missing tunnel");
+        assert!(err.to_string().contains("did not return a tunnel endpoint"));
     }
 }

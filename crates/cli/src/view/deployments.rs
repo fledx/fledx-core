@@ -194,6 +194,24 @@ mod tests {
     use common::api::{DeploymentStatus, DeploymentSummary, DesiredState};
     use std::collections::HashMap;
 
+    fn base_deployment(id: Uuid) -> DeploymentSummary {
+        DeploymentSummary {
+            deployment_id: id,
+            name: "app".to_string(),
+            image: "image-not-shown".to_string(),
+            replicas: 1,
+            desired_state: DesiredState::Running,
+            status: DeploymentStatus::Running,
+            assigned_node_id: None,
+            assignments: Vec::new(),
+            generation: 1,
+            tunnel_only: false,
+            placement: None,
+            volumes: None,
+            last_reported: None,
+        }
+    }
+
     #[test]
     fn renders_deployments_table_includes_status_and_assignment() {
         let deployment_id = Uuid::from_u128(1);
@@ -263,5 +281,46 @@ mod tests {
         assert!(output.contains("r0="));
         assert!(output.contains("r1="));
         assert!(output.contains("running"));
+    }
+
+    #[test]
+    fn renders_deployments_table_narrow_omits_wide_columns() {
+        let deployments = vec![base_deployment(Uuid::from_u128(10))];
+        let output = render_deployments_table(&deployments, &HashMap::new(), false, false, false);
+        assert!(!output.contains("ASSIGNMENTS"));
+        assert!(!output.contains("IMAGE"));
+        assert!(!output.contains("image-not-shown"));
+    }
+
+    #[test]
+    fn format_assignments_returns_assigned_node_when_empty() {
+        let node_id = Uuid::from_u128(42);
+        let formatted = format_assignments(&[], Some(node_id), true);
+        assert_eq!(formatted, format_optional_uuid(Some(node_id), true));
+    }
+
+    #[test]
+    fn format_assignments_returns_dash_when_empty_and_no_node() {
+        let formatted = format_assignments(&[], None, true);
+        assert_eq!(formatted, "-");
+    }
+
+    #[test]
+    fn deployment_table_constraints_wide_increases_columns() {
+        let narrow = deployment_table_constraints(false);
+        let wide = deployment_table_constraints(true);
+        assert!(wide.len() > narrow.len());
+    }
+
+    #[test]
+    fn deployment_table_rows_len_matches_deployments() {
+        let deployments = vec![
+            base_deployment(Uuid::from_u128(1)),
+            base_deployment(Uuid::from_u128(2)),
+        ];
+        let narrow_rows = deployment_table_rows(&deployments, &HashMap::new(), false, false, false);
+        let wide_rows = deployment_table_rows(&deployments, &HashMap::new(), true, false, false);
+        assert_eq!(narrow_rows.len(), deployments.len());
+        assert_eq!(wide_rows.len(), deployments.len());
     }
 }

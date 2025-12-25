@@ -161,3 +161,141 @@ fn trimmed_non_empty(value: Option<&str>) -> Option<String> {
         Some(trimmed.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::base_config;
+    use std::collections::HashMap;
+
+    fn base_desired() -> api::DeploymentDesired {
+        api::DeploymentDesired {
+            deployment_id: uuid::Uuid::new_v4(),
+            name: "app".into(),
+            replica_number: 0,
+            image: "nginx:latest".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: None,
+            requires_public_ip: false,
+            tunnel_only: false,
+            placement: None,
+            volumes: None,
+            health: None,
+            desired_state: api::DesiredState::Running,
+            replica_generation: None,
+            generation: 1,
+        }
+    }
+
+    #[test]
+    fn trimmed_non_empty_filters_whitespace() {
+        assert_eq!(trimmed_non_empty(Some("  ")), None);
+        assert_eq!(trimmed_non_empty(None), None);
+        assert_eq!(trimmed_non_empty(Some(" ok ")), Some("ok".to_string()));
+    }
+
+    #[test]
+    fn compute_exposed_endpoints_honors_host_precedence() {
+        let mut cfg = base_config();
+        cfg.public_host = Some("edge.example.com".into());
+        let mut desired = base_desired();
+        desired.ports = Some(vec![api::PortMapping {
+            container_port: 80,
+            host_port: Some(8080),
+            protocol: "tcp".into(),
+            host_ip: Some("127.0.0.1".into()),
+            expose: true,
+            endpoint: None,
+        }]);
+
+        let endpoints = compute_exposed_endpoints(&desired, &cfg).expect("endpoints");
+        assert_eq!(endpoints, vec!["edge.example.com:8080".to_string()]);
+
+        cfg.public_host = None;
+        cfg.public_ip = Some("203.0.113.10".into());
+        let endpoints = compute_exposed_endpoints(&desired, &cfg).expect("endpoints");
+        assert_eq!(endpoints, vec!["203.0.113.10:8080".to_string()]);
+    }
+
+    #[test]
+    fn compute_exposed_endpoints_errors_without_host_port() {
+        let cfg = base_config();
+        let mut desired = base_desired();
+        desired.ports = Some(vec![api::PortMapping {
+            container_port: 80,
+            host_port: None,
+            protocol: "tcp".into(),
+            host_ip: None,
+            expose: true,
+            endpoint: None,
+        }]);
+
+        let err = compute_exposed_endpoints(&desired, &cfg).unwrap_err();
+        assert!(err.to_string().contains("requires a host_port binding"));
+    }
+
+    #[test]
+    fn to_runtime_port_defaults_host_and_protocol() {
+        let port = api::PortMapping {
+            container_port: 443,
+            host_port: None,
+            protocol: "udp".into(),
+            host_ip: None,
+            expose: false,
+            endpoint: None,
+        };
+        let runtime = to_runtime_port(&port);
+        assert_eq!(runtime.container_port, 443);
+        assert_eq!(runtime.host_port, 443);
+        assert_eq!(runtime.protocol, PortProtocol::Udp);
+    }
+
+    #[test]
+    fn to_container_spec_applies_secret_env_and_labels() {
+        let mut cfg = base_config();
+        cfg.secrets_prefix = "FLEDX_SECRET_".into();
+
+        std::env::set_var("FLEDX_SECRET_API_KEY", "secret");
+        let mut desired = base_desired();
+        desired.env = Some(HashMap::from([("API_KEY".into(), "plain".into())]));
+        desired.secret_env = Some(vec![api::SecretEnv {
+            name: "API_KEY".into(),
+            secret: "API_KEY".into(),
+            optional: false,
+        }]);
+        desired.replica_generation = Some(5);
+
+        let endpoints = vec!["10.0.0.1:8080".to_string()];
+        let spec =
+            to_container_spec(&desired, "container-1", &cfg, &endpoints).expect("container spec");
+        let env = spec.env.iter().find(|(k, _)| k == "API_KEY").unwrap();
+        assert_eq!(env.1, "secret");
+        assert!(spec
+            .labels
+            .iter()
+            .any(|(k, v)| k == ENDPOINTS_LABEL && v.contains("10.0.0.1:8080")));
+        assert!(spec
+            .labels
+            .iter()
+            .any(|(k, v)| k == "fledx.generation" && v == "5"));
+    }
+
+    #[test]
+    fn to_container_spec_errors_when_secret_missing() {
+        let cfg = base_config();
+        std::env::remove_var("FLEDX_SECRET_MISSING");
+        let mut desired = base_desired();
+        desired.secret_env = Some(vec![api::SecretEnv {
+            name: "API_KEY".into(),
+            secret: "MISSING".into(),
+            optional: false,
+        }]);
+
+        let err = to_container_spec(&desired, "container-1", &cfg, &[]).expect_err("should fail");
+        assert!(err.to_string().contains("required secret MISSING"));
+    }
+}

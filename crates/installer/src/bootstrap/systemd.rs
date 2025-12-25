@@ -1298,7 +1298,68 @@ pub fn systemd_quote_env_value(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::ENV_LOCK;
     use super::*;
+    use std::env;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    #[cfg(unix)]
+    fn make_executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms).expect("set perms");
+    }
+
+    #[cfg(not(unix))]
+    fn make_executable(_path: &Path) {}
+
+    struct EnvVarGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: String) -> Self {
+            let prev = env::var(key).ok();
+            env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(value) => env::set_var(self.key, value),
+                None => env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn write_script(dir: &Path, name: &str, body: &str) -> PathBuf {
+        let path = dir.join(name);
+        let script = format!("#!/bin/sh\n{body}\n");
+        fs::write(&path, script).expect("write script");
+        make_executable(&path);
+        path
+    }
+
+    fn with_fake_commands<F, R>(scripts: &[(&str, &str)], f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let dir = tempdir().expect("tempdir");
+        for (name, body) in scripts {
+            let _ = write_script(dir.path(), name, body);
+        }
+        let old_path = env::var("PATH").unwrap_or_default();
+        let _path_guard =
+            EnvVarGuard::set("PATH", format!("{}:{}", dir.path().display(), old_path));
+        f()
+    }
 
     #[test]
     fn systemd_quote_unit_value_escapes_percent() {
@@ -1512,5 +1573,291 @@ authorization: bearer qwerty
         );
         assert!(script.contains("systemctl enable --now fledx-agent"));
         assert!(script.contains("systemctl restart fledx-agent"));
+    }
+
+    #[test]
+    fn render_cp_install_script_includes_tls_section() {
+        let settings = ControlPlaneInstallSettings {
+            bin_dir: PathBuf::from("/usr/local/bin"),
+            config_dir: PathBuf::from("/etc/fledx"),
+            data_dir: PathBuf::from("/var/lib/fledx"),
+            service_user: "fledx-cp".to_string(),
+            sudo_interactive: false,
+        };
+        let tls_install = "install -d -o root -g root /etc/fledx/tls\n";
+        let script =
+            render_cp_install_script(&settings, "/tmp/fledx-bootstrap-cp.ABCDEF", tls_install);
+        assert!(script.contains(tls_install));
+        assert!(script.contains("install -m 0644"));
+    }
+
+    #[test]
+    fn render_agent_install_script_includes_ca_install() {
+        let settings = AgentInstallSettings {
+            config_dir: PathBuf::from("/etc/fledx"),
+            data_dir: PathBuf::from("/var/lib/fledx"),
+            service_user: "fledx-agent".to_string(),
+            sudo_interactive: false,
+            add_to_docker_socket_group: true,
+        };
+        let script = render_agent_install_script(
+            &settings,
+            "/tmp/fledx-bootstrap-agent.ABCDEF",
+            Path::new("/usr/local/bin/fledx-agent"),
+            "install -m 0644 /tmp/ca.pem /etc/fledx/ca.pem\n",
+        );
+        assert!(script.contains("ADD_DOCKER_SOCKET_GROUP=1"));
+        assert!(script.contains("install -m 0644 /tmp/ca.pem /etc/fledx/ca.pem"));
+    }
+
+    #[test]
+    fn systemd_state_local_reports_active_failed_and_inactive() {
+        const SYSTEMCTL: &str = r#"
+case "$1" in
+  is-active)
+    if [ "$2" = "--quiet" ]; then
+      exit "${FAKE_SYSTEMCTL_IS_ACTIVE_QUIET_EXIT:-3}"
+    fi
+    printf "%s" "${FAKE_SYSTEMCTL_IS_ACTIVE_OUTPUT:-inactive}"
+    exit "${FAKE_SYSTEMCTL_IS_ACTIVE_EXIT:-3}"
+    ;;
+  is-failed)
+    exit "${FAKE_SYSTEMCTL_IS_FAILED_EXIT:-3}"
+    ;;
+esac
+exit 3
+"#;
+
+        with_fake_commands(&[("systemctl", SYSTEMCTL)], || {
+            let _active_guard = EnvVarGuard::set("FAKE_SYSTEMCTL_IS_ACTIVE_QUIET_EXIT", "0".into());
+            let state = systemd_state_local("fledx-agent").expect("active");
+            assert_eq!(state, "active");
+        });
+
+        with_fake_commands(&[("systemctl", SYSTEMCTL)], || {
+            let _active_guard = EnvVarGuard::set("FAKE_SYSTEMCTL_IS_ACTIVE_QUIET_EXIT", "3".into());
+            let _failed_guard = EnvVarGuard::set("FAKE_SYSTEMCTL_IS_FAILED_EXIT", "0".into());
+            let state = systemd_state_local("fledx-agent").expect("failed");
+            assert_eq!(state, "failed");
+        });
+
+        with_fake_commands(&[("systemctl", SYSTEMCTL)], || {
+            let _active_guard = EnvVarGuard::set("FAKE_SYSTEMCTL_IS_ACTIVE_QUIET_EXIT", "3".into());
+            let _failed_guard = EnvVarGuard::set("FAKE_SYSTEMCTL_IS_FAILED_EXIT", "3".into());
+            let _output_guard =
+                EnvVarGuard::set("FAKE_SYSTEMCTL_IS_ACTIVE_OUTPUT", "inactive\n".into());
+            let state = systemd_state_local("fledx-agent").expect("inactive");
+            assert_eq!(state, "inactive");
+        });
+    }
+
+    #[test]
+    fn systemd_status_and_journal_local_format_output() {
+        const SYSTEMCTL: &str = r#"
+if [ "$1" = "status" ]; then
+  printf "%s" "${FAKE_SYSTEMCTL_STATUS_OUT:-}"
+  printf "%s" "${FAKE_SYSTEMCTL_STATUS_ERR:-}" 1>&2
+  exit "${FAKE_SYSTEMCTL_STATUS_EXIT:-0}"
+fi
+exit 0
+"#;
+        const SUDO: &str = r#"
+cat >/dev/null
+printf "%s" "${FAKE_SUDO_STDOUT:-}"
+printf "%s" "${FAKE_SUDO_STDERR:-}" 1>&2
+exit "${FAKE_SUDO_EXIT:-0}"
+"#;
+
+        with_fake_commands(&[("systemctl", SYSTEMCTL), ("sudo", SUDO)], || {
+            let _status_out = EnvVarGuard::set("FAKE_SYSTEMCTL_STATUS_OUT", "status ok".into());
+            let _status_err = EnvVarGuard::set("FAKE_SYSTEMCTL_STATUS_ERR", "warn".into());
+            let _status_exit = EnvVarGuard::set("FAKE_SYSTEMCTL_STATUS_EXIT", "1".into());
+            let status = systemd_status_local("fledx-cp").expect("status");
+            assert!(status.contains("exit status: 1"));
+            assert!(status.contains("status ok"));
+            assert!(status.contains("warn"));
+
+            let _sudo_out = EnvVarGuard::set("FAKE_SUDO_STDOUT", "journal ok".into());
+            let _sudo_exit = EnvVarGuard::set("FAKE_SUDO_EXIT", "0".into());
+            let journal = systemd_journal_local("fledx-cp").expect("journal");
+            assert!(journal.contains("journal ok"));
+        });
+    }
+
+    #[test]
+    fn systemd_journal_local_skips_when_sudo_not_permitted() {
+        const SUDO: &str = r#"
+printf "%s" "sudo: a password is required" 1>&2
+exit 1
+"#;
+        with_fake_commands(&[("sudo", SUDO)], || {
+            let journal = systemd_journal_local("fledx-cp").expect("journal");
+            assert!(journal.contains("skipped (sudo -n not permitted)"));
+        });
+    }
+
+    #[test]
+    fn systemd_debug_bundle_local_redacts_sensitive_data() {
+        const SYSTEMCTL: &str = r#"
+case "$1" in
+  is-active)
+    exit 0
+    ;;
+  status)
+    printf "%s" "FLEDX_CP_REGISTRATION_TOKEN=secret\nauthorization: Bearer token\n"
+    exit 0
+    ;;
+esac
+exit 0
+"#;
+        const SUDO: &str = r#"
+printf "%s" "authorization: bearer secret\n"
+exit 0
+"#;
+        with_fake_commands(&[("systemctl", SYSTEMCTL), ("sudo", SUDO)], || {
+            let bundle = systemd_debug_bundle_local("fledx-cp");
+            assert!(bundle.contains("systemctl is-active:"));
+            assert!(bundle.contains("<redacted>"));
+            assert!(!bundle.contains("secret"));
+        });
+    }
+
+    #[test]
+    fn validate_linux_username_accepts_valid_and_rejects_invalid() {
+        validate_linux_username("fledx_agent").expect("valid");
+        let err = validate_linux_username("1bad").expect_err("invalid");
+        assert!(err.to_string().contains("must start"));
+    }
+
+    #[test]
+    fn install_cp_local_with_tls_uses_sudo_commands() {
+        const SUDO: &str = r#"
+cat >/dev/null
+exit 0
+"#;
+        const ID: &str = r#"
+exit "${FAKE_ID_EXIT:-1}"
+"#;
+        with_fake_commands(&[("sudo", SUDO), ("id", ID)], || {
+            let _id_exit = EnvVarGuard::set("FAKE_ID_EXIT", "1".into());
+            let dir = tempdir().expect("tempdir");
+            let bin = dir.path().join("fledx-cp");
+            fs::write(&bin, "bin").expect("write bin");
+
+            let settings = ControlPlaneInstallSettings {
+                bin_dir: dir.path().join("bin"),
+                config_dir: dir.path().join("etc"),
+                data_dir: dir.path().join("data"),
+                service_user: "svcuser".to_string(),
+                sudo_interactive: false,
+            };
+            let tls = ControlPlaneTlsAssets {
+                ca_cert_pem: "ca".to_string(),
+                cert_pem: "cert".to_string(),
+                key_pem: "key".to_string(),
+                ca_cert_path: dir.path().join("tls/ca.pem"),
+                cert_path: dir.path().join("tls/cert.pem"),
+                key_path: dir.path().join("tls/key.pem"),
+            };
+            install_cp_local_with_tls(&bin, "ENV=1\n", "UNIT", &settings, Some(&tls))
+                .expect("install");
+        });
+    }
+
+    #[test]
+    fn install_cp_ssh_with_tls_uses_fake_ssh() {
+        const SSH: &str = r#"
+cat >/dev/null
+if [ -n "$FAKE_SSH_STDOUT" ]; then printf "%s" "$FAKE_SSH_STDOUT"; fi
+if [ -n "$FAKE_SSH_STDERR" ]; then printf "%s" "$FAKE_SSH_STDERR" 1>&2; fi
+exit "${FAKE_SSH_EXIT:-0}"
+"#;
+        with_fake_commands(&[("ssh", SSH)], || {
+            let _stdout_guard =
+                EnvVarGuard::set("FAKE_SSH_STDOUT", "/tmp/fledx-bootstrap-cp.ABCDEF\n".into());
+            let _exit_guard = EnvVarGuard::set("FAKE_SSH_EXIT", "0".into());
+            let ssh = SshTarget::from_user_at_host("example.com", None, 22, None);
+            let dir = tempdir().expect("tempdir");
+            let bin = dir.path().join("fledx-cp");
+            fs::write(&bin, "bin").expect("write bin");
+
+            let settings = ControlPlaneInstallSettings {
+                bin_dir: dir.path().join("bin"),
+                config_dir: dir.path().join("etc"),
+                data_dir: dir.path().join("data"),
+                service_user: "svcuser".to_string(),
+                sudo_interactive: false,
+            };
+            let tls = ControlPlaneTlsAssets {
+                ca_cert_pem: "ca".to_string(),
+                cert_pem: "cert".to_string(),
+                key_pem: "key".to_string(),
+                ca_cert_path: dir.path().join("tls/ca.pem"),
+                cert_path: dir.path().join("tls/cert.pem"),
+                key_path: dir.path().join("tls/key.pem"),
+            };
+
+            install_cp_ssh_with_tls(&ssh, &bin, "ENV=1\n", "UNIT", &settings, Some(&tls))
+                .expect("install");
+        });
+    }
+
+    #[test]
+    fn install_agent_ssh_with_ca_uses_fake_ssh() {
+        const SSH: &str = r#"
+cat >/dev/null
+if [ -n "$FAKE_SSH_STDOUT" ]; then printf "%s" "$FAKE_SSH_STDOUT"; fi
+if [ -n "$FAKE_SSH_STDERR" ]; then printf "%s" "$FAKE_SSH_STDERR" 1>&2; fi
+exit "${FAKE_SSH_EXIT:-0}"
+"#;
+        with_fake_commands(&[("ssh", SSH)], || {
+            let _stdout_guard = EnvVarGuard::set(
+                "FAKE_SSH_STDOUT",
+                "/tmp/fledx-bootstrap-agent.ABCDEF\n".into(),
+            );
+            let _exit_guard = EnvVarGuard::set("FAKE_SSH_EXIT", "0".into());
+            let ssh = SshTarget::from_user_at_host("example.com", None, 22, None);
+            let dir = tempdir().expect("tempdir");
+            let bin = dir.path().join("fledx-agent");
+            fs::write(&bin, "bin").expect("write bin");
+
+            let settings = AgentInstallSettings {
+                config_dir: dir.path().join("etc"),
+                data_dir: dir.path().join("data"),
+                service_user: "svcuser".to_string(),
+                sudo_interactive: false,
+                add_to_docker_socket_group: false,
+            };
+            let ca = AgentCaCert {
+                cert_pem: "ca".to_string(),
+                cert_path: dir.path().join("tls/ca.pem"),
+            };
+
+            install_agent_ssh_with_ca(
+                &ssh,
+                &bin,
+                "ENV=1\n",
+                "UNIT",
+                &settings,
+                Path::new("/usr/local/bin/fledx-agent"),
+                Some(&ca),
+            )
+            .expect("install");
+        });
+    }
+
+    #[test]
+    fn sudo_run_cmd_reports_noninteractive_failure() {
+        const SUDO: &str = r#"
+printf "%s" "sudo: a password is required" 1>&2
+exit 1
+"#;
+        with_fake_commands(&[("sudo", SUDO)], || {
+            let err = sudo_run_cmd(SudoMode::root(false), "true", vec![OsString::from("arg")])
+                .expect_err("should fail");
+            assert!(err
+                .to_string()
+                .contains("sudo failed in non-interactive mode"));
+        });
     }
 }

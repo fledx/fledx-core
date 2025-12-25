@@ -122,4 +122,90 @@ mod tests {
         assert!(line.contains("deployment"));
         assert!(line.contains("success"));
     }
+
+    #[test]
+    fn render_audit_logs_table_prefers_operator_token_id_over_hash() {
+        let token_id = Uuid::from_u128(1);
+        let entry = AuditLogEntry {
+            id: Uuid::new_v4(),
+            action: "node.register".into(),
+            resource_type: "node".into(),
+            resource_id: None,
+            operator_token_id: Some(token_id),
+            operator_token_hash: Some("hash-abc".into()),
+            operator_role: None,
+            operator_scopes: None,
+            request_id: None,
+            status: "success".into(),
+            payload: None,
+            created_at: Utc::now(),
+        };
+
+        let output = render_audit_logs_table(&[entry]);
+        assert!(output.contains(&format_uuid(token_id, true)));
+        assert!(!output.contains("hash-abc"));
+    }
+
+    #[test]
+    fn render_audit_logs_table_uses_hash_when_id_missing() {
+        let entry = AuditLogEntry {
+            id: Uuid::new_v4(),
+            action: "node.register".into(),
+            resource_type: "node".into(),
+            resource_id: None,
+            operator_token_id: None,
+            operator_token_hash: Some("hash-xyz".into()),
+            operator_role: None,
+            operator_scopes: None,
+            request_id: None,
+            status: "success".into(),
+            payload: None,
+            created_at: Utc::now(),
+        };
+
+        let output = render_audit_logs_table(&[entry]);
+        assert!(output.contains("hash-xyz"));
+    }
+
+    #[test]
+    fn format_log_entry_line_handles_missing_request_id() {
+        let entry = AuditLogEntry {
+            id: Uuid::new_v4(),
+            action: "deployment.delete".into(),
+            resource_type: "deployment".into(),
+            resource_id: None,
+            operator_token_id: None,
+            operator_token_hash: None,
+            operator_role: None,
+            operator_scopes: None,
+            request_id: None,
+            status: "success".into(),
+            payload: None,
+            created_at: Utc::now(),
+        };
+
+        let line = format_log_entry_line(&entry);
+        assert!(line.contains("request_id=-"));
+    }
+
+    #[test]
+    fn format_log_entry_line_redacts_resource_when_id_present() {
+        let entry = AuditLogEntry {
+            id: Uuid::new_v4(),
+            action: "deployment.delete".into(),
+            resource_type: "deployment".into(),
+            resource_id: Some(Uuid::new_v4()),
+            operator_token_id: None,
+            operator_token_hash: None,
+            operator_role: None,
+            operator_scopes: None,
+            request_id: None,
+            status: "success".into(),
+            payload: None,
+            created_at: Utc::now(),
+        };
+
+        let line = format_log_entry_line(&entry);
+        assert!(line.contains("deployment redacted"));
+    }
 }

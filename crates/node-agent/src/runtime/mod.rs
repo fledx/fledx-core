@@ -213,3 +213,51 @@ impl ContainerRuntimeError {
 }
 
 pub use docker::DockerRuntime;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_spec_new_sets_defaults() {
+        let spec = ContainerSpec::new("nginx:latest");
+        assert_eq!(spec.image, "nginx:latest");
+        assert!(spec.name.is_none());
+        assert!(spec.env.is_empty());
+        assert!(spec.ports.is_empty());
+        assert!(spec.command.is_none());
+        assert!(spec.labels.is_empty());
+        assert!(spec.mounts.is_empty());
+    }
+
+    #[test]
+    fn port_protocol_formats_as_expected() {
+        assert_eq!(PortProtocol::Tcp.as_str(), "tcp");
+        assert_eq!(PortProtocol::Udp.as_str(), "udp");
+        assert_eq!(PortProtocol::Tcp.to_string(), "tcp");
+        assert_eq!(PortProtocol::Udp.to_string(), "udp");
+    }
+
+    #[test]
+    fn port_mapping_tcp_sets_protocol_and_ports() {
+        let mapping = PortMapping::tcp(80, 8080);
+        assert_eq!(mapping.container_port, 80);
+        assert_eq!(mapping.host_port, 8080);
+        assert_eq!(mapping.protocol, PortProtocol::Tcp);
+        assert!(mapping.host_ip.is_none());
+    }
+
+    #[test]
+    fn runtime_error_connection_classification() {
+        let err = ContainerRuntimeError::Connection {
+            context: "docker",
+            source: anyhow::anyhow!("boom"),
+        };
+        assert!(err.is_connection_error());
+
+        let err = ContainerRuntimeError::NotFound {
+            id: "missing".into(),
+        };
+        assert!(!err.is_connection_error());
+    }
+}

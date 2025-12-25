@@ -4582,6 +4582,172 @@ mod tests {
                     && body.contains(&deployment_id.to_string())
             );
         }
+
+        #[tokio::test]
+        async fn update_and_delete_deployment_flow() {
+            let state = setup_state().await;
+            let node_id = Uuid::new_v4();
+            let node = db::NewNode {
+                id: node_id,
+                name: Some("node".into()),
+                token_hash: "h".into(),
+                arch: None,
+                os: None,
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+                last_seen: Some(Utc::now()),
+                status: db::NodeStatus::Ready,
+            };
+            node_store::create_node(&state.db, node).await.unwrap();
+
+            let spec = api::DeploymentSpec {
+                name: Some("web".into()),
+                image: "nginx:latest".into(),
+                replicas: Some(1),
+                command: None,
+                env: None,
+                secret_env: None,
+                secret_files: None,
+                ports: None,
+                requires_public_ip: false,
+                tunnel_only: false,
+                constraints: None,
+                placement: None,
+                desired_state: None,
+                volumes: None,
+                health: None,
+            };
+
+            let app = build_router(state.clone()).with_state(state.clone());
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/api/v1/deployments")
+                        .header("authorization", "Bearer op-token")
+                        .header(axum::http::header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(serde_json::to_vec(&spec).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let created: api::DeploymentCreateResponse = serde_json::from_slice(&body).unwrap();
+
+            let update = api::DeploymentUpdate {
+                name: None,
+                image: None,
+                replicas: None,
+                command: None,
+                env: None,
+                secret_env: None,
+                secret_files: None,
+                ports: None,
+                requires_public_ip: None,
+                tunnel_only: None,
+                constraints: None,
+                placement: None,
+                desired_state: Some(api::DesiredState::Stopped),
+                volumes: None,
+                health: None,
+            };
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("PATCH")
+                        .uri(format!("/api/v1/deployments/{}", created.deployment_id))
+                        .header("authorization", "Bearer op-token")
+                        .header(axum::http::header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(serde_json::to_vec(&update).unwrap()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let updated: api::DeploymentStatusResponse = serde_json::from_slice(&body).unwrap();
+            assert_eq!(updated.deployment_id, created.deployment_id);
+            assert_eq!(updated.desired_state, api::DesiredState::Stopped);
+
+            let response = app
+                .clone()
+                .oneshot(operator_request(&format!(
+                    "/api/v1/deployments/{}",
+                    created.deployment_id
+                )))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("DELETE")
+                        .uri(format!("/api/v1/deployments/{}", created.deployment_id))
+                        .header("authorization", "Bearer op-token")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NO_CONTENT);
+        }
+
+        #[test]
+        fn assignments_changed_detects_updates() {
+            let node_id = Uuid::new_v4();
+            let current = vec![db::DeploymentAssignmentRecord {
+                deployment_id: Uuid::new_v4(),
+                replica_number: 0,
+                node_id,
+                ports: None,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            }];
+            let next = vec![db::NewDeploymentAssignment {
+                replica_number: 0,
+                node_id,
+                ports: Some(vec![db::PortMapping {
+                    container_port: 80,
+                    host_port: Some(8080),
+                    protocol: "tcp".into(),
+                    host_ip: None,
+                    expose: false,
+                    endpoint: None,
+                }]),
+            }];
+            assert!(assignments_changed(&current, &next));
+        }
+
+        #[test]
+        fn deployment_ports_for_storage_respects_replicas() {
+            let assignments = vec![db::NewDeploymentAssignment {
+                replica_number: 0,
+                node_id: Uuid::new_v4(),
+                ports: Some(vec![db::PortMapping {
+                    container_port: 80,
+                    host_port: Some(8080),
+                    protocol: "tcp".into(),
+                    host_ip: None,
+                    expose: false,
+                    endpoint: None,
+                }]),
+            }];
+            let ports = deployment_ports_for_storage(1, &assignments, None);
+            assert!(ports.is_some());
+            let ports = deployment_ports_for_storage(2, &assignments, None);
+            assert!(ports.is_none());
+        }
     }
 
     mod metrics {
@@ -5292,6 +5458,452 @@ mod tests {
                 .unwrap();
             let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
             assert!(err.error.contains("metrics samples"));
+        }
+
+        #[tokio::test]
+        async fn rotate_node_token_creates_token() {
+            let state = setup_state().await;
+            let node_id = Uuid::new_v4();
+            let node = db::NewNode {
+                id: node_id,
+                name: Some("node".into()),
+                token_hash: "h".into(),
+                arch: None,
+                os: None,
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+                last_seen: Some(Utc::now()),
+                status: db::NodeStatus::Ready,
+            };
+            node_store::create_node(&state.db, node).await.unwrap();
+
+            let request = services::tokens::RotateNodeTokenRequest {
+                node_id,
+                expires_at: Some(Utc::now() + ChronoDuration::hours(1)),
+                disable_existing: true,
+            };
+            let token = services::tokens::rotate_node_token(&state, request)
+                .await
+                .unwrap();
+            assert!(!token.token.is_empty());
+            assert!(token.expires_at.is_some());
+        }
+
+        #[tokio::test]
+        async fn rotate_node_token_rejects_expired_timestamp() {
+            let state = setup_state().await;
+            let node_id = Uuid::new_v4();
+            let node = db::NewNode {
+                id: node_id,
+                name: Some("node".into()),
+                token_hash: "h".into(),
+                arch: None,
+                os: None,
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+                last_seen: Some(Utc::now()),
+                status: db::NodeStatus::Ready,
+            };
+            node_store::create_node(&state.db, node).await.unwrap();
+
+            let request = services::tokens::RotateNodeTokenRequest {
+                node_id,
+                expires_at: Some(Utc::now() - ChronoDuration::seconds(1)),
+                disable_existing: false,
+            };
+            let err = services::tokens::rotate_node_token(&state, request)
+                .await
+                .expect_err("should reject past expiry");
+            assert!(err.message.contains("expires_at"));
+        }
+    }
+
+    mod configs {
+        use super::common::{operator_request, setup_state};
+        use super::*;
+
+        fn operator_json_request<T: Serialize>(method: &str, uri: &str, body: &T) -> Request<Body> {
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("authorization", "Bearer op-token")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(body).unwrap()))
+                .unwrap()
+        }
+
+        fn operator_request_with_method(method: &str, uri: &str) -> Request<Body> {
+            Request::builder()
+                .method(method)
+                .uri(uri)
+                .header("authorization", "Bearer op-token")
+                .body(Body::empty())
+                .unwrap()
+        }
+
+        #[tokio::test]
+        async fn create_list_get_update_delete_config_flow() {
+            let state = setup_state().await;
+            let app = build_router(state.clone()).with_state(state.clone());
+
+            let create = api::ConfigCreateRequest {
+                name: "app-config".into(),
+                version: Some(1),
+                entries: vec![api::ConfigEntry {
+                    key: "DATABASE_URL".into(),
+                    value: Some("postgres://app:secret@db:5432/app".into()),
+                    secret_ref: None,
+                }],
+                files: vec![api::ConfigFile {
+                    path: "/etc/app/config.yaml".into(),
+                    file_ref: "config-blobs/app-v1".into(),
+                }],
+            };
+
+            let response = app
+                .clone()
+                .oneshot(operator_json_request("POST", "/api/v1/configs", &create))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let created: api::ConfigResponse = serde_json::from_slice(&body).unwrap();
+            let config_id = created.metadata.config_id;
+
+            let response = app
+                .clone()
+                .oneshot(operator_request("/api/v1/configs?limit=10&offset=0"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let page: api::ConfigSummaryPage = serde_json::from_slice(&body).unwrap();
+            assert_eq!(page.items.len(), 1);
+            assert_eq!(page.items[0].metadata.name, "app-config");
+
+            let response = app
+                .clone()
+                .oneshot(operator_request(&format!("/api/v1/configs/{config_id}")))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let fetched: api::ConfigResponse = serde_json::from_slice(&body).unwrap();
+            assert_eq!(fetched.metadata.name, "app-config");
+            assert_eq!(fetched.entries.len(), 1);
+
+            let update = api::ConfigUpdateRequest {
+                name: Some("app-config-v2".into()),
+                version: Some(2),
+                entries: Some(vec![api::ConfigEntry {
+                    key: "API_KEY".into(),
+                    value: Some("secret".into()),
+                    secret_ref: None,
+                }]),
+                files: Some(vec![api::ConfigFile {
+                    path: "/etc/app/config.yaml".into(),
+                    file_ref: "config-blobs/app-v2".into(),
+                }]),
+            };
+            let response = app
+                .clone()
+                .oneshot(operator_json_request(
+                    "PUT",
+                    &format!("/api/v1/configs/{config_id}"),
+                    &update,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let updated: api::ConfigResponse = serde_json::from_slice(&body).unwrap();
+            assert_eq!(updated.metadata.name, "app-config-v2");
+            assert_eq!(updated.metadata.version, 2);
+
+            let response = app
+                .clone()
+                .oneshot(operator_request_with_method(
+                    "DELETE",
+                    &format!("/api/v1/configs/{config_id}"),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let metadata: api::ConfigMetadata = serde_json::from_slice(&body).unwrap();
+            assert_eq!(metadata.config_id, config_id);
+        }
+
+        #[tokio::test]
+        async fn create_rejects_duplicate_name() {
+            let state = setup_state().await;
+            let app = build_router(state.clone()).with_state(state.clone());
+
+            let create = api::ConfigCreateRequest {
+                name: "dup-config".into(),
+                version: Some(1),
+                entries: vec![api::ConfigEntry {
+                    key: "KEY".into(),
+                    value: Some("value".into()),
+                    secret_ref: None,
+                }],
+                files: Vec::new(),
+            };
+
+            let response = app
+                .clone()
+                .oneshot(operator_json_request("POST", "/api/v1/configs", &create))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+
+            let response = app
+                .clone()
+                .oneshot(operator_json_request("POST", "/api/v1/configs", &create))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+            assert!(err.error.contains("config name already exists"));
+        }
+
+        #[tokio::test]
+        async fn update_rejects_non_increasing_version() {
+            let state = setup_state().await;
+            let app = build_router(state.clone()).with_state(state.clone());
+
+            let create = api::ConfigCreateRequest {
+                name: "versioned".into(),
+                version: Some(2),
+                entries: vec![api::ConfigEntry {
+                    key: "KEY".into(),
+                    value: Some("value".into()),
+                    secret_ref: None,
+                }],
+                files: Vec::new(),
+            };
+
+            let response = app
+                .clone()
+                .oneshot(operator_json_request("POST", "/api/v1/configs", &create))
+                .await
+                .unwrap();
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let created: api::ConfigResponse = serde_json::from_slice(&body).unwrap();
+
+            let update = api::ConfigUpdateRequest {
+                name: None,
+                version: Some(2),
+                entries: None,
+                files: None,
+            };
+            let response = app
+                .clone()
+                .oneshot(operator_json_request(
+                    "PUT",
+                    &format!("/api/v1/configs/{}", created.metadata.config_id),
+                    &update,
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let err: ErrorResponse = serde_json::from_slice(&body).unwrap();
+            assert!(err.error.contains("version must be greater"));
+        }
+
+        #[tokio::test]
+        async fn attach_detach_and_node_configs_roundtrip() {
+            let state = setup_state().await;
+            let app = build_router(state.clone()).with_state(state.clone());
+
+            let create = api::ConfigCreateRequest {
+                name: "attach-config".into(),
+                version: Some(1),
+                entries: vec![api::ConfigEntry {
+                    key: "KEY".into(),
+                    value: Some("value".into()),
+                    secret_ref: None,
+                }],
+                files: vec![api::ConfigFile {
+                    path: "/etc/app/config.yaml".into(),
+                    file_ref: "config-blobs/app-v1".into(),
+                }],
+            };
+
+            let response = app
+                .clone()
+                .oneshot(operator_json_request("POST", "/api/v1/configs", &create))
+                .await
+                .unwrap();
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let created: api::ConfigResponse = serde_json::from_slice(&body).unwrap();
+            let config_id = created.metadata.config_id;
+
+            let node_token = "node-token";
+            let token_hash = crate::tokens::hash_token(node_token, &state.token_pepper).unwrap();
+            let node_id = Uuid::new_v4();
+            let node = db::NewNode {
+                id: node_id,
+                name: Some("node".into()),
+                token_hash,
+                arch: None,
+                os: None,
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+                last_seen: Some(Utc::now()),
+                status: db::NodeStatus::Ready,
+            };
+            node_store::create_node(&state.db, node).await.unwrap();
+
+            let deployment_id = Uuid::new_v4();
+            let deployment = db::NewDeployment {
+                id: deployment_id,
+                name: "dep".into(),
+                image: "img:1".into(),
+                replicas: 1,
+                command: None,
+                env: None,
+                secret_env: None,
+                secret_files: None,
+                volumes: None,
+                ports: None,
+                requires_public_ip: false,
+                tunnel_only: false,
+                constraints: None,
+                placement: None,
+                health: None,
+                desired_state: db::DesiredState::Running,
+                assigned_node_id: Some(node_id),
+                status: db::DeploymentStatus::Running,
+                generation: 1,
+                assignments: vec![db::NewDeploymentAssignment {
+                    replica_number: 0,
+                    node_id,
+                    ports: None,
+                }],
+            };
+            deployment_store::create_deployment(&state.db, deployment)
+                .await
+                .unwrap();
+
+            let response = app
+                .clone()
+                .oneshot(operator_request_with_method(
+                    "POST",
+                    &format!("/api/v1/configs/{config_id}/deployments/{deployment_id}"),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let attachment: api::ConfigAttachmentResponse = serde_json::from_slice(&body).unwrap();
+            assert!(attachment.attached);
+            assert_eq!(attachment.deployment_id, Some(deployment_id));
+
+            let response = app
+                .clone()
+                .oneshot(operator_request_with_method(
+                    "POST",
+                    &format!("/api/v1/configs/{config_id}/nodes/{node_id}"),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::CREATED);
+
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri(format!("/api/v1/nodes/{node_id}/configs"))
+                        .header("authorization", format!("Bearer {node_token}"))
+                        .header("x-agent-version", crate::version::VERSION)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let (parts, body) = response.into_parts();
+            let etag = parts
+                .headers
+                .get(ETAG)
+                .and_then(|value| value.to_str().ok())
+                .unwrap()
+                .to_string();
+            let body = body::to_bytes(body, usize::MAX).await.unwrap();
+            let payload: api::NodeConfigResponse = serde_json::from_slice(&body).unwrap();
+            assert_eq!(payload.configs.len(), 1);
+            assert_eq!(payload.configs[0].metadata.config_id, config_id);
+
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("GET")
+                        .uri(format!("/api/v1/nodes/{node_id}/configs"))
+                        .header("authorization", format!("Bearer {node_token}"))
+                        .header("x-agent-version", crate::version::VERSION)
+                        .header(IF_NONE_MATCH, etag)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+            let response = app
+                .clone()
+                .oneshot(operator_request_with_method(
+                    "DELETE",
+                    &format!("/api/v1/configs/{config_id}/deployments/{deployment_id}"),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let body = body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let attachment: api::ConfigAttachmentResponse = serde_json::from_slice(&body).unwrap();
+            assert!(!attachment.attached);
+
+            let response = app
+                .clone()
+                .oneshot(operator_request_with_method(
+                    "DELETE",
+                    &format!("/api/v1/configs/{config_id}/nodes/{node_id}"),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
         }
     }
 

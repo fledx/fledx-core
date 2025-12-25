@@ -1138,6 +1138,11 @@ mod tests {
     use super::*;
     use ::common::api::{self as common_api, DeploymentStatus};
     use std::collections::HashMap;
+    use std::collections::VecDeque;
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex};
+    use std::thread;
 
     #[test]
     fn apply_expose_flags_marks_specified_ports() {
@@ -1581,5 +1586,429 @@ mod tests {
         assert!(lines
             .iter()
             .any(|line| line.contains(&format!("assigned_node_id: {node_id}"))));
+    }
+
+    fn spawn_json_server(body: String) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0_u8; 4096];
+                let _ = stream.read(&mut buf);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        addr
+    }
+
+    fn read_request(stream: &mut TcpStream) {
+        let mut buf = Vec::new();
+        let mut chunk = [0_u8; 1024];
+        let mut header_end = None;
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if header_end.is_none() {
+                        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                            header_end = Some(pos + 4);
+                            break;
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+
+        let Some(header_end) = header_end else {
+            return;
+        };
+        let headers = String::from_utf8_lossy(&buf[..header_end]);
+        let content_length = headers
+            .lines()
+            .find_map(|line| line.strip_prefix("Content-Length: "))
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        let mut body_received = buf.len().saturating_sub(header_end);
+        while body_received < content_length {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => body_received += n,
+                Err(_) => break,
+            }
+        }
+    }
+
+    fn spawn_sequence_server(responses: Vec<String>) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let responses = Arc::new(Mutex::new(VecDeque::from(responses)));
+        let responses_thread = responses.clone();
+        thread::spawn(move || {
+            while let Ok((mut stream, _)) = listener.accept() {
+                read_request(&mut stream);
+                let response = responses_thread
+                    .lock()
+                    .expect("lock")
+                    .pop_front()
+                    .unwrap_or_default();
+                let _ = stream.write_all(response.as_bytes());
+                if responses_thread.lock().expect("lock").is_empty() {
+                    break;
+                }
+            }
+        });
+        addr
+    }
+
+    fn json_response(body: &str) -> String {
+        format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+    }
+
+    fn empty_response() -> String {
+        "HTTP/1.1 204 No Content\r\ncontent-length: 0\r\nconnection: close\r\n\r\n".to_string()
+    }
+
+    fn deployment_status_response(deployment_id: Uuid) -> DeploymentStatusResponse {
+        let now = Utc::now();
+        DeploymentStatusResponse {
+            deployment_id,
+            name: "demo".into(),
+            image: "nginx:latest".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: None,
+            requires_public_ip: false,
+            constraints: None,
+            placement: None,
+            volumes: None,
+            health: None,
+            desired_state: DesiredState::Running,
+            status: DeploymentStatus::Running,
+            assigned_node_id: None,
+            assignments: Vec::new(),
+            generation: 1,
+            tunnel_only: false,
+            last_reported: None,
+            instance: None,
+            usage_summary: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
+    #[tokio::test]
+    async fn handle_deploy_create_posts_and_fetches_status() {
+        let deployment_id = Uuid::new_v4();
+        let create = DeploymentCreateResponse {
+            deployment_id,
+            assigned_node_id: Uuid::new_v4(),
+            assigned_node_ids: Vec::new(),
+            unplaced_replicas: 0,
+            generation: 1,
+        };
+        let status = deployment_status_response(deployment_id);
+        let addr = spawn_sequence_server(vec![
+            json_response(&serde_json::to_string(&create).expect("serialize create")),
+            json_response(&serde_json::to_string(&status).expect("serialize status")),
+        ]);
+        let ctx = CommandContext::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization".into(),
+            Some("token".into()),
+        );
+        let args = DeployCreateArgs {
+            name: Some("demo".into()),
+            image: "nginx:latest".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: Vec::new(),
+            secret_env_optional: Vec::new(),
+            secret_files: Vec::new(),
+            secret_files_optional: Vec::new(),
+            desired_state: crate::args::DesiredStateArg::Running,
+            ports: vec![PortMapping {
+                container_port: 80,
+                host_port: Some(8080),
+                protocol: "tcp".into(),
+                host_ip: None,
+                expose: false,
+                endpoint: None,
+            }],
+            expose_ports: vec![80],
+            affinity_nodes: Vec::new(),
+            affinity_labels: None,
+            anti_affinity_nodes: Vec::new(),
+            anti_affinity_labels: None,
+            spread: false,
+            volumes: Vec::new(),
+            health: HealthSpecArgs::default(),
+            require_arch: None,
+            require_os: None,
+            require_labels: None,
+            require_cpu_millis: None,
+            require_memory_bytes: None,
+        };
+        handle_deploy_create(&ctx, args).await.expect("create");
+    }
+
+    #[tokio::test]
+    async fn handle_deploy_update_rejects_empty_payload() {
+        let ctx = CommandContext::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9".into(),
+            "authorization".into(),
+            Some("token".into()),
+        );
+        let args = DeployUpdateArgs {
+            deployment_id: Uuid::new_v4(),
+            name: None,
+            image: None,
+            replicas: None,
+            command: None,
+            clear_command: false,
+            env: None,
+            clear_env: false,
+            secret_env: Vec::new(),
+            secret_env_optional: Vec::new(),
+            clear_secret_env: false,
+            secret_files: Vec::new(),
+            secret_files_optional: Vec::new(),
+            clear_secret_files: false,
+            desired_state: None,
+            ports: Vec::new(),
+            expose_ports: Vec::new(),
+            clear_ports: false,
+            affinity_nodes: Vec::new(),
+            affinity_labels: None,
+            anti_affinity_nodes: Vec::new(),
+            anti_affinity_labels: None,
+            spread: false,
+            require_arch: None,
+            require_os: None,
+            require_labels: None,
+            require_cpu_millis: None,
+            require_memory_bytes: None,
+            clear_constraints: false,
+            clear_placement: false,
+            volumes: Vec::new(),
+            clear_volumes: false,
+            health: crate::args::HealthUpdateArgs {
+                spec: HealthSpecArgs::default(),
+                clear_health: false,
+            },
+        };
+        let err = handle_deploy_update(&ctx, args).await.unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("provide at least one field to update"));
+    }
+
+    #[tokio::test]
+    async fn handle_deploy_update_sends_patch() {
+        let deployment_id = Uuid::new_v4();
+        let status = deployment_status_response(deployment_id);
+        let addr = spawn_sequence_server(vec![json_response(
+            &serde_json::to_string(&status).expect("serialize status"),
+        )]);
+        let ctx = CommandContext::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization".into(),
+            Some("token".into()),
+        );
+        let args = DeployUpdateArgs {
+            deployment_id,
+            name: None,
+            image: Some("nginx:latest".into()),
+            replicas: None,
+            command: None,
+            clear_command: false,
+            env: None,
+            clear_env: false,
+            secret_env: Vec::new(),
+            secret_env_optional: Vec::new(),
+            clear_secret_env: false,
+            secret_files: Vec::new(),
+            secret_files_optional: Vec::new(),
+            clear_secret_files: false,
+            desired_state: None,
+            ports: Vec::new(),
+            expose_ports: Vec::new(),
+            clear_ports: false,
+            affinity_nodes: Vec::new(),
+            affinity_labels: None,
+            anti_affinity_nodes: Vec::new(),
+            anti_affinity_labels: None,
+            spread: false,
+            require_arch: None,
+            require_os: None,
+            require_labels: None,
+            require_cpu_millis: None,
+            require_memory_bytes: None,
+            clear_constraints: false,
+            clear_placement: false,
+            volumes: Vec::new(),
+            clear_volumes: false,
+            health: crate::args::HealthUpdateArgs {
+                spec: HealthSpecArgs::default(),
+                clear_health: false,
+            },
+        };
+        handle_deploy_update(&ctx, args).await.expect("update");
+    }
+
+    #[tokio::test]
+    async fn handle_deploy_stop_sends_patch() {
+        let deployment_id = Uuid::new_v4();
+        let status = deployment_status_response(deployment_id);
+        let addr = spawn_sequence_server(vec![json_response(
+            &serde_json::to_string(&status).expect("serialize status"),
+        )]);
+        let ctx = CommandContext::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization".into(),
+            Some("token".into()),
+        );
+        handle_deploy_stop(&ctx, DeployStopArgs { deployment_id })
+            .await
+            .expect("stop");
+    }
+
+    #[tokio::test]
+    async fn handle_deploy_status_outputs_json() {
+        let deployment_id = Uuid::new_v4();
+        let status = deployment_status_response(deployment_id);
+        let addr = spawn_sequence_server(vec![json_response(
+            &serde_json::to_string(&status).expect("serialize status"),
+        )]);
+        let ctx = CommandContext::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization".into(),
+            Some("token".into()),
+        );
+        handle_deploy_status(
+            &ctx,
+            DeployStatusArgs {
+                deployment_id,
+                json: true,
+            },
+        )
+        .await
+        .expect("status");
+    }
+
+    #[tokio::test]
+    async fn handle_deploy_delete_sends_delete() {
+        let deployment_id = Uuid::new_v4();
+        let addr = spawn_sequence_server(vec![empty_response()]);
+        let ctx = CommandContext::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization".into(),
+            Some("token".into()),
+        );
+        handle_deploy_delete(&ctx, DeployDeleteArgs { deployment_id })
+            .await
+            .expect("delete");
+    }
+
+    #[tokio::test]
+    async fn fetch_deployments_page_rejects_invalid_limit() {
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9",
+            "authorization",
+            "token",
+        );
+        let err = fetch_deployments_page(&api, 0, 0, None).await.unwrap_err();
+        assert!(err.to_string().contains("limit must be between"));
+    }
+
+    #[tokio::test]
+    async fn list_deployments_fetches_and_displays_page() {
+        let page = Page {
+            limit: 10,
+            offset: 0,
+            items: vec![DeploymentSummary {
+                deployment_id: Uuid::from_u128(1),
+                name: "app".into(),
+                image: "nginx:latest".into(),
+                replicas: 1,
+                desired_state: DesiredState::Running,
+                status: DeploymentStatus::Running,
+                assigned_node_id: None,
+                assignments: Vec::new(),
+                generation: 1,
+                tunnel_only: false,
+                placement: None,
+                volumes: None,
+                last_reported: None,
+            }],
+        };
+        let body = serde_json::to_string(&page).expect("serialize");
+        let addr = spawn_json_server(body);
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let args = crate::args::DeploymentListArgs {
+            limit: 10,
+            offset: 0,
+            status: None,
+            output: crate::args::OutputFormatArgs {
+                json: false,
+                yaml: false,
+            },
+            wide: false,
+        };
+        list_deployments(&api, args).await.expect("list");
+    }
+
+    #[test]
+    fn display_deployment_page_emits_json_and_yaml() {
+        let page = Page {
+            limit: 1,
+            offset: 0,
+            items: vec![DeploymentSummary {
+                deployment_id: Uuid::from_u128(1),
+                name: "app".into(),
+                image: "nginx:latest".into(),
+                replicas: 1,
+                desired_state: DesiredState::Running,
+                status: DeploymentStatus::Running,
+                assigned_node_id: None,
+                assignments: Vec::new(),
+                generation: 1,
+                tunnel_only: false,
+                placement: None,
+                volumes: None,
+                last_reported: None,
+            }],
+        };
+        let configs: HashMap<Uuid, Vec<AttachedConfigInfo>> = HashMap::new();
+        display_deployment_page(&page, &configs, OutputMode::Json, false, true, false)
+            .expect("json");
+        display_deployment_page(&page, &configs, OutputMode::Yaml, false, true, false)
+            .expect("yaml");
     }
 }

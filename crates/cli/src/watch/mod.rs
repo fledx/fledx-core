@@ -417,6 +417,37 @@ mod tests {
 
     use ::common::api::{DesiredState, InstanceStatusResponse};
 
+    fn base_status(deployment_id: Uuid) -> DeploymentStatusResponse {
+        let now = Utc::now();
+        DeploymentStatusResponse {
+            deployment_id,
+            name: "watch".into(),
+            image: "registry/nginx".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: None,
+            requires_public_ip: false,
+            constraints: None,
+            placement: None,
+            volumes: None,
+            health: None,
+            desired_state: DesiredState::Running,
+            status: DeploymentStatus::Deploying,
+            assigned_node_id: None,
+            assignments: Vec::new(),
+            generation: 1,
+            tunnel_only: false,
+            last_reported: Some(now),
+            instance: None,
+            usage_summary: None,
+            created_at: now,
+            updated_at: now,
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn watch_loop_reports_updates_and_backoff() {
         enum WatchOutcome {
@@ -601,5 +632,129 @@ mod tests {
         assert!(output_lines[1].starts_with("watch error"));
         assert!(output_lines[2].contains("msg=progressing"));
         assert!(output_lines[3].contains("status=running"));
+    }
+
+    #[test]
+    fn format_assignment_summary_prefers_assignments() {
+        let deployment_id = Uuid::new_v4();
+        let mut status = base_status(deployment_id);
+        let node_a = Uuid::new_v4();
+        let node_b = Uuid::new_v4();
+        status.assignments = vec![
+            ::common::api::ReplicaAssignment {
+                replica_number: 1,
+                node_id: node_b,
+            },
+            ::common::api::ReplicaAssignment {
+                replica_number: 0,
+                node_id: node_a,
+            },
+        ];
+        let summary = format_assignment_summary(&status);
+        assert!(summary.contains("r0="));
+        assert!(summary.contains("r1="));
+    }
+
+    #[test]
+    fn format_assignment_summary_falls_back_to_assigned_node() {
+        let deployment_id = Uuid::new_v4();
+        let mut status = base_status(deployment_id);
+        let node_id = Uuid::new_v4();
+        status.assigned_node_id = Some(node_id);
+        let summary = format_assignment_summary(&status);
+        assert_eq!(summary, format_optional_uuid(Some(node_id), true));
+    }
+
+    #[test]
+    fn format_watch_event_line_includes_instance_details() {
+        let deployment_id = Uuid::new_v4();
+        let now = Utc::now();
+        let instance = InstanceStatusResponse {
+            deployment_id,
+            replica_number: 0,
+            container_id: None,
+            state: InstanceState::Running,
+            message: Some("ready".to_string()),
+            restart_count: 2,
+            generation: 1,
+            last_updated: now,
+            last_seen: now,
+            endpoints: Vec::new(),
+            health: None,
+            metrics: Vec::new(),
+        };
+        let mut status = base_status(deployment_id);
+        status.instance = Some(instance);
+        let line = format_watch_event_line(&status);
+        assert!(line.contains("generation=1"));
+        assert!(line.contains("status=deploying"));
+        assert!(line.contains("instance=running/gen=1"));
+        assert!(line.contains("restarts=2"));
+        assert!(line.contains("msg=ready"));
+    }
+
+    #[test]
+    fn deployment_watch_timestamp_prefers_instance_last_seen() {
+        let deployment_id = Uuid::new_v4();
+        let now = Utc::now();
+        let instance = InstanceStatusResponse {
+            deployment_id,
+            replica_number: 0,
+            container_id: None,
+            state: InstanceState::Running,
+            message: None,
+            restart_count: 0,
+            generation: 1,
+            last_updated: now - chrono::Duration::seconds(10),
+            last_seen: now,
+            endpoints: Vec::new(),
+            health: None,
+            metrics: Vec::new(),
+        };
+        let mut status = base_status(deployment_id);
+        status.last_reported = Some(now - chrono::Duration::seconds(60));
+        status.instance = Some(instance);
+        assert_eq!(deployment_watch_timestamp(&status), now);
+    }
+
+    #[test]
+    fn format_instance_state_maps_variants() {
+        assert_eq!(format_instance_state(InstanceState::Running), "running");
+        assert_eq!(format_instance_state(InstanceState::Pending), "pending");
+        assert_eq!(format_instance_state(InstanceState::Stopped), "stopped");
+        assert_eq!(format_instance_state(InstanceState::Failed), "failed");
+        assert_eq!(format_instance_state(InstanceState::Unknown), "unknown");
+    }
+
+    #[test]
+    fn should_colorize_requires_watch_and_color() {
+        let args = StatusArgs {
+            node_limit: 10,
+            node_offset: 0,
+            node_status: None,
+            deploy_limit: 10,
+            deploy_offset: 0,
+            deploy_status: None,
+            json: false,
+            wide: false,
+            watch: false,
+            watch_interval: 2,
+            nodes_only: false,
+            deploys_only: false,
+            no_color: false,
+        };
+        assert!(!should_colorize(&args));
+        let mut args = args.clone();
+        args.watch = true;
+        args.no_color = true;
+        assert!(!should_colorize(&args));
+    }
+
+    #[test]
+    fn is_terminal_deployment_status_detects_final_states() {
+        assert!(is_terminal_deployment_status(DeploymentStatus::Running));
+        assert!(is_terminal_deployment_status(DeploymentStatus::Stopped));
+        assert!(is_terminal_deployment_status(DeploymentStatus::Failed));
+        assert!(!is_terminal_deployment_status(DeploymentStatus::Deploying));
     }
 }

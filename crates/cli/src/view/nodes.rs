@@ -136,6 +136,21 @@ mod tests {
     use super::*;
     use chrono::TimeZone;
 
+    fn base_node(node_id: Uuid) -> NodeSummary {
+        NodeSummary {
+            node_id,
+            name: None,
+            status: common::api::NodeStatus::Ready,
+            last_seen: None,
+            arch: None,
+            os: None,
+            public_ip: None,
+            public_host: None,
+            labels: None,
+            capacity: None,
+        }
+    }
+
     #[test]
     fn renders_nodes_table_includes_labels_and_capacity() {
         let mut labels = HashMap::new();
@@ -184,5 +199,37 @@ mod tests {
         let output = render_nodes_table(&nodes, &HashMap::new(), false, true, true);
         assert!(output.contains(&node_id.simple().to_string()[..8]));
         assert!(!output.contains(&node_id.to_string()));
+    }
+
+    #[test]
+    fn renders_nodes_table_narrow_omits_labels_and_capacity() {
+        let mut labels = HashMap::new();
+        labels.insert("region".to_string(), "eu-west".to_string());
+        let mut node = base_node(Uuid::from_u128(1));
+        node.labels = Some(labels);
+        node.capacity = Some(common::api::CapacityHints {
+            cpu_millis: Some(500),
+            memory_bytes: Some(256 * 1024 * 1024),
+        });
+
+        let output = render_nodes_table(&[node], &HashMap::new(), false, false, false);
+        assert!(!output.contains("region=eu-west"));
+        assert!(!output.contains("cpu=500m"));
+    }
+
+    #[test]
+    fn node_table_constraints_wide_increases_columns() {
+        let narrow = node_table_constraints(false);
+        let wide = node_table_constraints(true);
+        assert!(wide.len() > narrow.len());
+    }
+
+    #[test]
+    fn node_table_rows_len_matches_nodes() {
+        let nodes = vec![base_node(Uuid::from_u128(1)), base_node(Uuid::from_u128(2))];
+        let narrow_rows = node_table_rows(&nodes, &HashMap::new(), false, false, false);
+        let wide_rows = node_table_rows(&nodes, &HashMap::new(), true, false, false);
+        assert_eq!(narrow_rows.len(), nodes.len());
+        assert_eq!(wide_rows.len(), nodes.len());
     }
 }

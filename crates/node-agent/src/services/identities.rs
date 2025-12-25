@@ -262,4 +262,75 @@ mod tests {
             "stale bundle should be pruned"
         );
     }
+
+    #[test]
+    fn persist_returns_false_when_unchanged() {
+        let mut cfg = base_config();
+        let dir = tempfile::tempdir().unwrap();
+        cfg.service_identity_dir = dir.path().to_string_lossy().to_string();
+
+        let bundle = ServiceIdentityBundle {
+            identity: "svc".into(),
+            cert_pem: "CERT".into(),
+            key_pem: "KEY".into(),
+            ca_pem: Some("CA".into()),
+            expires_at: None,
+            rotate_after: None,
+        };
+
+        let changed = persist_bundles(&cfg, std::slice::from_ref(&bundle)).expect("persist");
+        assert!(changed);
+
+        let changed_again = persist_bundles(&cfg, &[bundle]).expect("persist again");
+        assert!(!changed_again);
+    }
+
+    #[test]
+    fn sanitize_replaces_invalid_chars_and_trims() {
+        assert_eq!(sanitize("service://tenant/app"), "service-tenant-app");
+        assert_eq!(sanitize("!!!"), "identity");
+
+        let long = "a".repeat(200);
+        let sanitized = sanitize(&long);
+        assert!(sanitized.len() <= 80);
+    }
+
+    #[test]
+    fn write_if_changed_detects_updates() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("file.txt");
+
+        let first = write_if_changed(&path, b"one", 0o644).expect("write");
+        assert!(first);
+        let second = write_if_changed(&path, b"one", 0o644).expect("rewrite");
+        assert!(!second);
+        let third = write_if_changed(&path, b"two", 0o644).expect("update");
+        assert!(third);
+    }
+
+    #[test]
+    fn earliest_rotation_picks_min_timestamp() {
+        let now = Utc::now();
+        let bundles = vec![
+            ServiceIdentityBundle {
+                identity: "a".into(),
+                cert_pem: "C".into(),
+                key_pem: "K".into(),
+                ca_pem: None,
+                expires_at: None,
+                rotate_after: Some(now + chrono::Duration::seconds(30)),
+            },
+            ServiceIdentityBundle {
+                identity: "b".into(),
+                cert_pem: "C".into(),
+                key_pem: "K".into(),
+                ca_pem: None,
+                expires_at: None,
+                rotate_after: Some(now + chrono::Duration::seconds(10)),
+            },
+        ];
+
+        let earliest = earliest_rotation(&bundles).expect("rotation");
+        assert!(earliest <= now + chrono::Duration::seconds(10));
+    }
 }

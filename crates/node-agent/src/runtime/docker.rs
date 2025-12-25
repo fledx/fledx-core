@@ -538,6 +538,9 @@ fn parse_host_port_token(token: &str) -> Option<(Option<String>, u16)> {
     }
 
     let mut parts: Vec<&str> = cleaned.split(':').collect();
+    while parts.last().is_some_and(|part| part.is_empty()) {
+        parts.pop();
+    }
     if parts.is_empty() {
         return None;
     }
@@ -591,5 +594,234 @@ mod tests {
         assert_eq!(details.host_port, 8080);
         assert_eq!(details.protocol, PortProtocol::Tcp);
         assert_eq!(details.host_ip.as_deref(), Some("0.0.0.0"));
+    }
+
+    #[test]
+    fn map_connection_or_wraps_connection_errors() {
+        let err = DockerError::RequestTimeoutError;
+        let mapped = map_connection_or(err, "pull_image", |source| {
+            ContainerRuntimeError::PullImage {
+                image: "img".into(),
+                source: source.into(),
+            }
+        });
+        match mapped {
+            ContainerRuntimeError::Connection { context, .. } => {
+                assert_eq!(context, "pull_image");
+            }
+            other => panic!("expected connection error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_docker_error_handles_not_found_and_other() {
+        let not_found = DockerError::DockerResponseServerError {
+            status_code: 404,
+            message: "missing".into(),
+        };
+        let mapped = map_docker_error(not_found, "id-1", "inspect", |id, source| {
+            ContainerRuntimeError::InspectContainer {
+                id,
+                source: source.into(),
+            }
+        });
+        match mapped {
+            ContainerRuntimeError::NotFound { id } => assert_eq!(id, "id-1"),
+            other => panic!("expected not found, got {other:?}"),
+        }
+
+        let other = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "boom".into(),
+        };
+        let mapped = map_docker_error(other, "id-2", "inspect", |id, source| {
+            ContainerRuntimeError::InspectContainer {
+                id,
+                source: source.into(),
+            }
+        });
+        match mapped {
+            ContainerRuntimeError::InspectContainer { id, .. } => assert_eq!(id, "id-2"),
+            other => panic!("expected inspect error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_start_error_reports_port_conflict_and_connection() {
+        let ports = vec![PortMapping {
+            container_port: 80,
+            host_port: 8080,
+            protocol: PortProtocol::Tcp,
+            host_ip: Some("127.0.0.1".into()),
+        }];
+        let conflict = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "Bind for 127.0.0.1:8080 failed: port is already allocated".into(),
+        };
+        match map_start_error(conflict, "id-3", &ports) {
+            ContainerRuntimeError::PortConflict { host_port, .. } => assert_eq!(host_port, 8080),
+            other => panic!("expected port conflict, got {other:?}"),
+        }
+
+        let conn = DockerError::RequestTimeoutError;
+        match map_start_error(conn, "id-4", &ports) {
+            ContainerRuntimeError::Connection { context, .. } => {
+                assert_eq!(context, "start_container");
+            }
+            other => panic!("expected connection error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_exec_error_distinguishes_connection() {
+        let conn = DockerError::RequestTimeoutError;
+        match map_exec_error(conn, "id-5") {
+            ContainerRuntimeError::Connection { context, .. } => {
+                assert_eq!(context, "exec_command");
+            }
+            other => panic!("expected connection error, got {other:?}"),
+        }
+
+        let other = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "boom".into(),
+        };
+        match map_exec_error(other, "id-6") {
+            ContainerRuntimeError::Exec { id, .. } => assert_eq!(id, "id-6"),
+            other => panic!("expected exec error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn extract_host_binding_parses_ip_port_and_protocol() {
+        let msg = "Bind for 0.0.0.0:8080 failed: address already in use";
+        let binding = extract_host_binding(msg).expect("binding");
+        assert_eq!(binding.0.as_deref(), Some("0.0.0.0"));
+        assert_eq!(binding.1, 8080);
+        assert_eq!(binding.2, None);
+
+        let msg =
+            "Ports are not available: listen udp 127.0.0.1:5353: bind: address already in use";
+        let binding = extract_host_binding(msg).expect("binding");
+        assert_eq!(binding.0.as_deref(), Some("127.0.0.1"));
+        assert_eq!(binding.1, 5353);
+        assert_eq!(binding.2, Some(PortProtocol::Udp));
+    }
+
+    #[test]
+    fn parse_host_port_token_handles_ip_and_port() {
+        assert_eq!(
+            parse_host_port_token("0.0.0.0:8080"),
+            Some((Some("0.0.0.0".into()), 8080))
+        );
+        assert_eq!(parse_host_port_token(":9090"), Some((None, 9090)));
+        assert_eq!(parse_host_port_token("8080"), Some((None, 8080)));
+        assert_eq!(parse_host_port_token("bad"), None);
+    }
+
+    #[test]
+    fn find_matching_mapping_honors_protocol_and_ip() {
+        let ports = vec![
+            PortMapping {
+                container_port: 80,
+                host_port: 8080,
+                protocol: PortProtocol::Tcp,
+                host_ip: Some("0.0.0.0".into()),
+            },
+            PortMapping {
+                container_port: 53,
+                host_port: 5353,
+                protocol: PortProtocol::Udp,
+                host_ip: Some("127.0.0.1".into()),
+            },
+        ];
+
+        let found = find_matching_mapping(&ports, Some("127.0.0.1"), 5353, Some(PortProtocol::Udp))
+            .expect("match");
+        assert_eq!(found.host_port, 5353);
+        assert_eq!(found.protocol, PortProtocol::Udp);
+
+        let not_found = find_matching_mapping(&ports, Some("1.2.3.4"), 8080, None);
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn is_not_found_and_not_modified_detection() {
+        let not_found = DockerError::DockerResponseServerError {
+            status_code: 404,
+            message: "missing".into(),
+        };
+        assert!(is_not_found(&not_found));
+        assert!(!is_not_modified(&not_found));
+
+        let not_modified = DockerError::DockerResponseServerError {
+            status_code: 304,
+            message: "unchanged".into(),
+        };
+        assert!(is_not_modified(&not_modified));
+        assert!(!is_not_found(&not_modified));
+    }
+
+    #[test]
+    fn is_connection_error_flags_expected_variants() {
+        let io_err = DockerError::IOError {
+            err: std::io::Error::other("io"),
+        };
+        assert!(is_connection_error(&io_err));
+
+        let timeout = DockerError::RequestTimeoutError;
+        assert!(is_connection_error(&timeout));
+
+        let socket = DockerError::SocketNotFoundError("sock".into());
+        assert!(is_connection_error(&socket));
+
+        let other = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "boom".into(),
+        };
+        assert!(!is_connection_error(&other));
+    }
+
+    #[test]
+    fn map_port_conflict_parses_or_falls_back_to_first_mapping() {
+        let ports = vec![
+            PortMapping {
+                container_port: 80,
+                host_port: 8080,
+                protocol: PortProtocol::Tcp,
+                host_ip: Some("0.0.0.0".into()),
+            },
+            PortMapping {
+                container_port: 53,
+                host_port: 5353,
+                protocol: PortProtocol::Udp,
+                host_ip: Some("127.0.0.1".into()),
+            },
+        ];
+
+        let err = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message:
+                "Ports are not available: listen udp 127.0.0.1:5353: bind: address already in use"
+                    .into(),
+        };
+        let conflict = map_port_conflict(&err, &ports).expect("conflict");
+        assert_eq!(conflict.host_port, 5353);
+        assert_eq!(conflict.protocol, PortProtocol::Udp);
+        assert_eq!(conflict.host_ip.as_deref(), Some("127.0.0.1"));
+
+        let err = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "port is already allocated".into(),
+        };
+        let conflict = map_port_conflict(&err, &ports).expect("fallback");
+        assert_eq!(conflict.host_port, 8080);
+
+        let err = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "something else".into(),
+        };
+        assert!(map_port_conflict(&err, &ports).is_none());
+        assert!(map_port_conflict(&err, &[]).is_none());
     }
 }

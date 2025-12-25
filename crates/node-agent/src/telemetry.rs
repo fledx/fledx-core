@@ -340,4 +340,87 @@ mod tests {
             "block I/O gauges missing or mismatched: {rendered}"
         );
     }
+
+    #[test]
+    fn compatibility_and_tunnel_metrics_are_recorded() {
+        let handle = init_metrics_recorder();
+
+        record_compatibility_status(Some("boom"));
+        record_tunnel_connection("success");
+        record_tunnel_request("success", Duration::from_millis(12));
+        record_managed_deployments(3);
+
+        let rendered = handle.render();
+        assert!(
+            rendered
+                .contains("node_agent_compatibility_status{status=\"error\",last_error=\"boom\"}")
+                || rendered.contains("node_agent_compatibility_status"),
+            "compatibility gauge missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("node_agent_tunnel_connect_total{result=\"success\"")
+                || rendered.contains("node_agent_tunnel_connect_total"),
+            "tunnel connect counter missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("node_agent_tunnel_requests_total{result=\"success\"")
+                || rendered.contains("node_agent_tunnel_requests_total"),
+            "tunnel request counter missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("node_agent_managed_deployments")
+                || rendered.contains("node_agent_managed_deployments "),
+            "managed deployments gauge missing: {rendered}"
+        );
+    }
+
+    #[test]
+    fn miscellaneous_metrics_emit_expected_series() {
+        let handle = init_metrics_recorder();
+
+        record_container_start("deploy", "ok");
+        record_reconcile_result("ok");
+        record_reconcile_duration("ok", Duration::from_millis(5));
+        record_reconcile_queue_len(2);
+        record_config_fetch("ok");
+        record_config_apply("ok");
+        record_identity_refresh("ok");
+
+        let rendered = handle.render();
+        assert!(
+            rendered.contains("node_agent_container_starts_total")
+                || rendered.contains("node_agent_container_starts_total{"),
+            "container start counter missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("node_agent_reconcile_duration_ms")
+                || rendered.contains("node_agent_reconcile_duration_ms{"),
+            "reconcile duration histogram missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("node_agent_reconcile_queue_len"),
+            "reconcile queue gauge missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("node_agent_config_fetch_total")
+                || rendered.contains("node_agent_config_apply_total"),
+            "config counters missing: {rendered}"
+        );
+        assert!(
+            rendered.contains("node_agent_identity_refresh_total"),
+            "identity refresh counter missing: {rendered}"
+        );
+    }
+
+    #[test]
+    fn compatibility_status_ok_path_records_ok_gauge() {
+        let handle = init_metrics_recorder();
+        record_compatibility_status(None);
+        let rendered = handle.render();
+        assert!(
+            rendered.contains("node_agent_compatibility_status{status=\"ok\"")
+                || rendered.contains("node_agent_compatibility_status"),
+            "compatibility ok gauge missing: {rendered}"
+        );
+    }
 }

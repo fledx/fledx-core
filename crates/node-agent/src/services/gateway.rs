@@ -317,6 +317,7 @@ async fn check_admin(client: &Client, admin_port: u16) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::test_support::{base_config, state_with_runtime_and_config, MockRuntime};
+    use std::fs;
 
     #[tokio::test]
     async fn starts_envoy_when_enabled() -> anyhow::Result<()> {
@@ -356,5 +357,92 @@ mod tests {
         assert_eq!(runtime.start_calls(), 1);
 
         Ok(())
+    }
+
+    #[test]
+    fn gateway_enabled_respects_config() {
+        let mut cfg = base_config();
+        cfg.gateway.enabled = false;
+        cfg.public_ip = None;
+        cfg.public_host = None;
+        assert!(!gateway_enabled(&cfg));
+
+        cfg.gateway.enabled = true;
+        assert!(gateway_enabled(&cfg));
+
+        cfg.gateway.enabled = false;
+        cfg.public_ip = Some("203.0.113.10".into());
+        assert!(gateway_enabled(&cfg));
+
+        cfg.public_ip = None;
+        cfg.public_host = Some("example.com".into());
+        assert!(gateway_enabled(&cfg));
+    }
+
+    #[test]
+    fn build_spec_includes_mounts_ports_and_labels() {
+        let mut cfg = base_config();
+        cfg.gateway.enabled = true;
+        cfg.gateway.envoy_image = Some("envoyproxy/envoy:v1".into());
+        cfg.gateway.admin_port = 19000;
+        cfg.gateway.listener_port = 19001;
+        let spec = build_spec(&cfg, "/tmp/envoy.yaml").expect("spec");
+
+        assert_eq!(spec.name.as_deref(), Some("fledx-gateway"));
+        assert!(spec.mounts.iter().any(
+            |m| m.host_path == "/tmp/envoy.yaml" && m.container_path == "/etc/envoy/envoy.yaml"
+        ));
+        assert!(spec
+            .ports
+            .iter()
+            .any(|p| p.container_port == 19000 && p.host_port == 19000));
+        assert!(spec
+            .ports
+            .iter()
+            .any(|p| p.container_port == 19001 && p.host_port == 19001));
+        assert!(spec
+            .labels
+            .iter()
+            .any(|(k, v)| k == "fledx.gateway" && v == "true"));
+    }
+
+    #[test]
+    fn write_bootstrap_uses_control_plane_host() {
+        let mut cfg = base_config();
+        cfg.gateway.enabled = true;
+        cfg.gateway.envoy_image = Some("envoyproxy/envoy:v1".into());
+        cfg.gateway.admin_port = 19002;
+        cfg.gateway.xds_port = 18000;
+        cfg.gateway.xds_host = None;
+        cfg.control_plane_url = "https://cp.example.com:8443".into();
+
+        let tmp = tempfile::tempdir().expect("tmp");
+        cfg.volume_data_dir = tmp.path().to_string_lossy().to_string();
+
+        let path = write_bootstrap(&cfg).expect("bootstrap");
+        let content = fs::read_to_string(path).expect("read");
+        assert!(content.contains("address: cp.example.com"));
+        assert!(content.contains("port_value: 18000"));
+        assert!(content.contains("port_value: 19002"));
+    }
+
+    #[test]
+    fn hash_file_changes_with_content() {
+        let tmp = tempfile::tempdir().expect("tmp");
+        let path = tmp.path().join("file.txt");
+        fs::write(&path, "a").expect("write");
+        let first = hash_file(&path.to_string_lossy()).expect("hash");
+        fs::write(&path, "b").expect("write");
+        let second = hash_file(&path.to_string_lossy()).expect("hash");
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn control_plane_host_parses_valid_urls() {
+        assert_eq!(
+            control_plane_host("https://example.com:1234"),
+            Some("example.com".into())
+        );
+        assert_eq!(control_plane_host("not a url"), None);
     }
 }

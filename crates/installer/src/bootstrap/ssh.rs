@@ -617,7 +617,69 @@ Raw output: {:?}",
 
 #[cfg(test)]
 mod tests {
+    use super::super::ENV_LOCK;
     use super::*;
+    use std::env;
+    use std::fs;
+    use std::path::Path;
+    use tempfile::tempdir;
+
+    #[cfg(unix)]
+    fn make_executable(path: &Path) {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(path).expect("metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms).expect("set perms");
+    }
+
+    #[cfg(not(unix))]
+    fn make_executable(_path: &Path) {}
+
+    struct EnvVarGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: String) -> Self {
+            let prev = env::var(key).ok();
+            env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(value) => env::set_var(self.key, value),
+                None => env::remove_var(self.key),
+            }
+        }
+    }
+
+    fn with_fake_ssh<F, R>(stdout: &str, stderr: &str, exit_code: i32, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _lock = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
+        let dir = tempdir().expect("tempdir");
+        let script = "\
+cat >/dev/null\n\
+if [ -n \"$FAKE_SSH_STDOUT\" ]; then printf \"%s\" \"$FAKE_SSH_STDOUT\"; fi\n\
+if [ -n \"$FAKE_SSH_STDERR\" ]; then printf \"%s\" \"$FAKE_SSH_STDERR\" 1>&2; fi\n\
+exit ${FAKE_SSH_EXIT:-0}\n";
+        let ssh_path = dir.path().join("ssh");
+        fs::write(&ssh_path, format!("#!/bin/sh\n{script}")).expect("write ssh");
+        make_executable(&ssh_path);
+
+        let old_path = env::var("PATH").unwrap_or_default();
+        let _path_guard =
+            EnvVarGuard::set("PATH", format!("{}:{}", dir.path().display(), old_path));
+        let _stdout_guard = EnvVarGuard::set("FAKE_SSH_STDOUT", stdout.to_string());
+        let _stderr_guard = EnvVarGuard::set("FAKE_SSH_STDERR", stderr.to_string());
+        let _exit_guard = EnvVarGuard::set("FAKE_SSH_EXIT", exit_code.to_string());
+        f()
+    }
 
     #[test]
     fn ssh_target_parses_user_at_host() {
@@ -785,5 +847,116 @@ mod tests {
         let err = render_upload_command(&PathBuf::from("/")).expect_err("should fail");
         let msg = err.to_string();
         assert!(msg.contains("missing parent directory"), "{msg}");
+    }
+
+    #[test]
+    fn run_output_returns_trimmed_stdout_in_batch_mode() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let out = with_fake_ssh("hello\n", "", 0, || target.run_output("echo hi"));
+        assert_eq!(out.expect("stdout"), "hello");
+    }
+
+    #[test]
+    fn run_output_reports_host_key_failure() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let err = with_fake_ssh("", "Host key verification failed.", 255, || {
+            target.run_output("echo hi")
+        })
+        .expect_err("should fail");
+        assert!(err.to_string().contains("ssh host key verification failed"));
+    }
+
+    #[test]
+    fn run_command_reports_noninteractive_sudo_failure() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let err = with_fake_ssh("", "sudo: a password is required", 1, || {
+            target.run_command(SudoMode::root(false), "true", &[])
+        })
+        .expect_err("should fail");
+        assert!(err
+            .to_string()
+            .contains("sudo failed in non-interactive mode"));
+    }
+
+    #[test]
+    fn upload_file_succeeds_with_fake_ssh() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let dir = tempdir().expect("tempdir");
+        let local = dir.path().join("payload.bin");
+        fs::write(&local, "payload").expect("write");
+        with_fake_ssh("", "", 0, || {
+            target
+                .upload_file(&local, Path::new("/tmp/remote.bin"))
+                .expect("upload");
+        });
+    }
+
+    #[test]
+    fn run_capture_command_returns_stdout_and_status() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let output = with_fake_ssh("ok", "warn", 7, || {
+            target.run_capture_command("echo", &[OsString::from("hi")])
+        })
+        .expect("capture");
+        assert_eq!(output.stdout, "ok");
+        assert_eq!(output.stderr, "warn");
+        assert!(!output.status.success());
+    }
+
+    #[test]
+    fn mktemp_dir_rejects_invalid_prefixes() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let err = target.mktemp_dir("").expect_err("empty prefix");
+        assert!(err.to_string().contains("must not be empty"));
+
+        let err = target
+            .mktemp_dir("bad prefix")
+            .expect_err("whitespace prefix");
+        assert!(err.to_string().contains("must not contain whitespace"));
+    }
+
+    #[test]
+    fn mktemp_dir_returns_remote_path() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let dir = with_fake_ssh("/tmp/fledx-bootstrap-agent.ABCDEF\n", "", 0, || {
+            target.mktemp_dir("fledx-bootstrap-agent")
+        })
+        .expect("mktemp");
+        assert_eq!(dir, "/tmp/fledx-bootstrap-agent.ABCDEF");
+    }
+
+    #[test]
+    fn run_reports_noninteractive_sudo_failure() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let err = with_fake_ssh("", "sudo: a password is required", 1, || {
+            target.run(SudoMode::root(false), "true")
+        })
+        .expect_err("should fail");
+        assert!(err
+            .to_string()
+            .contains("sudo failed in non-interactive mode"));
+    }
+
+    #[test]
+    fn run_command_reports_host_key_failure() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let err = with_fake_ssh("", "Host key verification failed.", 255, || {
+            target.run_command(SudoMode::root(false), "true", &[])
+        })
+        .expect_err("should fail");
+        assert!(err.to_string().contains("ssh host key verification failed"));
+    }
+
+    #[test]
+    fn upload_file_reports_host_key_failure() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        let dir = tempdir().expect("tempdir");
+        let local = dir.path().join("payload.bin");
+        fs::write(&local, "payload").expect("write");
+        let err = with_fake_ssh("", "Host key verification failed.", 255, || {
+            target.upload_file(&local, Path::new("/tmp/remote.bin"))
+        })
+        .expect_err("should fail");
+        assert!(err.to_string().contains("ssh host key verification failed"));
     }
 }

@@ -109,3 +109,115 @@ async fn list_usage_rollups(
     display_usage_page(&page, args.output.mode(), &filters)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+
+    fn spawn_json_server(body: String) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0_u8; 4096];
+                let _ = stream.read(&mut buf);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        addr
+    }
+
+    #[test]
+    fn validate_usage_args_requires_deployment_or_node() {
+        let args = UsageListArgs {
+            deployment_id: None,
+            node_id: None,
+            replica_number: None,
+            limit: 10,
+            offset: 0,
+            range: chrono::Duration::minutes(5),
+            output: crate::args::OutputFormatArgs {
+                json: false,
+                yaml: false,
+            },
+        };
+        let err = validate_usage_args(&args).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("--deployment or --node is required"));
+    }
+
+    #[test]
+    fn usage_filter_label_includes_filters() {
+        let args = UsageListArgs {
+            deployment_id: Some(uuid::Uuid::from_u128(42)),
+            node_id: Some(uuid::Uuid::from_u128(7)),
+            replica_number: Some(2),
+            limit: 10,
+            offset: 0,
+            range: chrono::Duration::minutes(5),
+            output: crate::args::OutputFormatArgs {
+                json: false,
+                yaml: false,
+            },
+        };
+        let label = usage_filter_label(&args);
+        assert!(label.contains("deployment="));
+        assert!(label.contains("node="));
+        assert!(label.contains("replica=2"));
+        assert!(label.contains("range=300s"));
+    }
+
+    #[tokio::test]
+    async fn list_usage_rollups_renders_table() {
+        let ts = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        let rollup = api::UsageRollup {
+            deployment_id: uuid::Uuid::from_u128(1),
+            node_id: uuid::Uuid::from_u128(2),
+            replica_number: 0,
+            bucket_start: ts,
+            samples: 1,
+            avg_cpu_percent: 1.2,
+            avg_memory_bytes: 1024,
+            avg_network_rx_bytes: 2048,
+            avg_network_tx_bytes: 4096,
+            avg_blk_read_bytes: Some(0),
+            avg_blk_write_bytes: Some(0),
+        };
+        let page = api::Page {
+            limit: 10,
+            offset: 0,
+            items: vec![rollup],
+        };
+        let body = serde_json::to_string(&page).expect("serialize");
+        let addr = spawn_json_server(body);
+        let api = crate::api::OperatorApi::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let args = UsageListArgs {
+            deployment_id: Some(uuid::Uuid::from_u128(1)),
+            node_id: None,
+            replica_number: None,
+            limit: 10,
+            offset: 0,
+            range: chrono::Duration::minutes(5),
+            output: crate::args::OutputFormatArgs {
+                json: false,
+                yaml: false,
+            },
+        };
+        list_usage_rollups(&api, args).await.expect("usage list");
+    }
+}

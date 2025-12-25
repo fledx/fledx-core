@@ -202,6 +202,7 @@ pub fn render_summary(
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use ratatui::{backend::TestBackend, Terminal};
     use uuid::Uuid;
 
     #[test]
@@ -405,6 +406,107 @@ mod tests {
         let deploys_only = render_summary(&summary, false, false, true);
         assert!(!deploys_only.contains("Nodes:"));
         assert!(deploys_only.contains("Deployments:"));
+    }
+
+    fn base_status_output() -> StatusOutput {
+        let nodes = Page {
+            limit: 1,
+            offset: 0,
+            items: vec![NodeSummary {
+                node_id: Uuid::from_u128(10),
+                name: Some("edge-1".into()),
+                status: common::api::NodeStatus::Ready,
+                last_seen: None,
+                arch: None,
+                os: None,
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+            }],
+        };
+        let deployments = Page {
+            limit: 1,
+            offset: 0,
+            items: vec![DeploymentSummary {
+                deployment_id: Uuid::from_u128(20),
+                name: "api".into(),
+                image: "nginx".into(),
+                replicas: 1,
+                desired_state: common::api::DesiredState::Running,
+                status: common::api::DeploymentStatus::Running,
+                assigned_node_id: None,
+                assignments: vec![],
+                generation: 1,
+                tunnel_only: false,
+                placement: None,
+                volumes: None,
+                last_reported: None,
+            }],
+        };
+        let summary = compute_summary(&nodes.items, &deployments.items);
+        StatusOutput {
+            summary,
+            nodes,
+            deployments,
+            attachments: ConfigAttachmentLookup::default(),
+        }
+    }
+
+    #[test]
+    fn render_status_view_respects_include_flags() {
+        let output = base_status_output();
+        let nodes_only = render_status_view(&output, false, false, false, true, false);
+        assert!(nodes_only.contains("Nodes:"));
+        assert!(!nodes_only.contains("Deployments:"));
+
+        let deploys_only = render_status_view(&output, false, false, false, false, true);
+        assert!(!deploys_only.contains("Nodes:"));
+        assert!(deploys_only.contains("Deployments:"));
+    }
+
+    #[test]
+    fn status_cell_applies_color_when_provided() {
+        let plain = status_cell("ok", None);
+        let colored = status_cell("ok", Some(Color::Red));
+        assert_eq!(plain, Cell::from("ok".to_string()));
+        assert_eq!(
+            colored,
+            Cell::from("ok".to_string()).style(Style::default().fg(Color::Red))
+        );
+    }
+
+    #[test]
+    fn render_status_frame_renders_error_banner() {
+        let output = base_status_output();
+        let backend = TestBackend::new(80, 6);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal
+            .draw(|f| {
+                render_status_frame(
+                    f,
+                    &output,
+                    StatusRenderFlags {
+                        include_nodes: false,
+                        include_deploys: false,
+                        wide: false,
+                        colorize: false,
+                        short_ids: false,
+                    },
+                    Some("boom"),
+                );
+            })
+            .expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let mut content = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                content.push_str(buffer[(x, y)].symbol());
+            }
+            content.push('\n');
+        }
+        assert!(content.contains("Error: boom"));
     }
 }
 

@@ -514,6 +514,42 @@ pub fn release_signing_keys_status() -> anyhow::Result<ReleaseSigningKeysStatus>
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Mutex, OnceLock};
+    use std::thread;
+    use std::time::Duration;
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn compiled_keys_available() -> bool {
+        RELEASE_SIGNING_PUBKEYS_ED25519_COMPILED
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .is_some()
+    }
+
+    fn hex_encode(bytes: &[u8]) -> String {
+        bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    }
+
+    fn with_release_keys_env<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
+        let _guard = env_lock().lock().expect("env lock");
+        let original = std::env::var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV).ok();
+        match value {
+            Some(value) => std::env::set_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV, value),
+            None => std::env::remove_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV),
+        }
+        let out = f();
+        match original {
+            Some(value) => std::env::set_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV, value),
+            None => std::env::remove_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV),
+        }
+        out
+    }
 
     #[test]
     fn release_api_url_defaults_to_latest() {
@@ -625,5 +661,319 @@ mod tests {
             parse_ed25519_pubkey_entry("-----BEGIN PUBLIC KEY-----").expect_err("should fail");
         let msg = err.to_string();
         assert!(msg.contains("PEM public keys are not supported"), "{msg}");
+    }
+
+    #[test]
+    fn parse_ed25519_pubkey_entry_rejects_empty() {
+        let err = parse_ed25519_pubkey_entry("   ").expect_err("empty");
+        assert!(err.to_string().contains("empty entry"));
+    }
+
+    #[test]
+    fn parse_hex_n_rejects_invalid_length() {
+        let err = parse_hex_n::<4>("abc").expect_err("invalid length");
+        assert!(err.to_string().contains("invalid hex length"));
+    }
+
+    #[test]
+    fn parse_hex_n_rejects_invalid_character() {
+        let err = parse_hex_n::<2>("zzzz").expect_err("invalid char");
+        assert!(err.to_string().contains("invalid hex character"));
+    }
+
+    #[test]
+    fn parse_ssh_ed25519_pubkey_rejects_wrong_type() {
+        let err = parse_ssh_ed25519_pubkey("ssh-rsa AAAA").expect_err("wrong type");
+        assert!(err.to_string().contains("expected ssh-ed25519"));
+    }
+
+    #[test]
+    fn parse_ssh_ed25519_pubkey_rejects_missing_base64() {
+        let err = parse_ssh_ed25519_pubkey("ssh-ed25519").expect_err("missing");
+        assert!(err.to_string().contains("missing base64"));
+    }
+
+    #[test]
+    fn parse_ssh_ed25519_pubkey_rejects_invalid_base64() {
+        let err = parse_ssh_ed25519_pubkey("ssh-ed25519 !!!").expect_err("invalid");
+        assert!(err.to_string().contains("invalid ssh-ed25519 base64 data"));
+    }
+
+    #[test]
+    fn load_release_signing_keys_uses_environment() {
+        if compiled_keys_available() {
+            return;
+        }
+        let signing_key = SigningKey::from_bytes(&[9u8; 32]);
+        let key_hex = hex_encode(&signing_key.verifying_key().to_bytes());
+        let (keys, info) = with_release_keys_env(Some(&key_hex), || {
+            load_release_signing_keys_ed25519().expect("load keys")
+        });
+        assert_eq!(keys.len(), 1);
+        assert_eq!(info.source, ReleaseSigningKeysSource::Environment);
+        assert!(info.env_present);
+    }
+
+    #[test]
+    fn verify_signed_sha256_errors_when_keys_missing() {
+        if compiled_keys_available() {
+            return;
+        }
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("asset.tar.gz");
+        let sha_file = dir.path().join("asset.tar.gz.sha256");
+        let sig_file = dir.path().join("asset.tar.gz.sha256.sig");
+        std::fs::write(&archive, b"archive").expect("archive");
+        std::fs::write(&sha_file, b"deadbeef  asset.tar.gz\n").expect("sha");
+        std::fs::write(&sig_file, b"sig").expect("sig");
+
+        let err = with_release_keys_env(None, || {
+            verify_signed_sha256(
+                "fledx/fledx-core",
+                "v1.0.0",
+                "asset.tar.gz",
+                &archive,
+                &sha_file,
+                &sig_file,
+            )
+            .expect_err("should fail without keys")
+        });
+        assert!(err
+            .to_string()
+            .contains("no trusted ed25519 release signing keys"));
+    }
+
+    #[test]
+    fn verify_signed_sha256_rejects_invalid_signature_length() {
+        if compiled_keys_available() {
+            return;
+        }
+        let signing_key = SigningKey::from_bytes(&[3u8; 32]);
+        let key_hex = hex_encode(&signing_key.verifying_key().to_bytes());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("asset.tar.gz");
+        let sha_file = dir.path().join("asset.tar.gz.sha256");
+        let sig_file = dir.path().join("asset.tar.gz.sha256.sig");
+        std::fs::write(&archive, b"archive").expect("archive");
+        std::fs::write(&sha_file, b"deadbeef  asset.tar.gz\n").expect("sha");
+        std::fs::write(&sig_file, b"short").expect("sig");
+
+        let err = with_release_keys_env(Some(&key_hex), || {
+            verify_signed_sha256(
+                "fledx/fledx-core",
+                "v1.0.0",
+                "asset.tar.gz",
+                &archive,
+                &sha_file,
+                &sig_file,
+            )
+            .expect_err("invalid signature length")
+        });
+        assert!(err.to_string().contains("invalid ed25519 signature length"));
+    }
+
+    #[test]
+    fn verify_signed_sha256_rejects_signature_mismatch() {
+        if compiled_keys_available() {
+            return;
+        }
+        let signing_key = SigningKey::from_bytes(&[4u8; 32]);
+        let key_hex = hex_encode(&signing_key.verifying_key().to_bytes());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let archive = dir.path().join("asset.tar.gz");
+        let sha_file = dir.path().join("asset.tar.gz.sha256");
+        let sig_file = dir.path().join("asset.tar.gz.sha256.sig");
+        std::fs::write(&archive, b"archive").expect("archive");
+        std::fs::write(&sha_file, b"expected").expect("sha");
+        let signature = signing_key.sign(b"different");
+        std::fs::write(&sig_file, signature.to_bytes()).expect("sig");
+
+        let err = with_release_keys_env(Some(&key_hex), || {
+            verify_signed_sha256(
+                "fledx/fledx-core",
+                "v1.0.0",
+                "asset.tar.gz",
+                &archive,
+                &sha_file,
+                &sig_file,
+            )
+            .expect_err("signature mismatch")
+        });
+        assert!(err.to_string().contains("signature verification failed"));
+    }
+
+    fn spawn_http_server(body: &'static [u8]) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0_u8; 1024];
+                let _ = stream.read(&mut buf);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.write_all(body);
+            }
+        });
+        addr
+    }
+
+    fn spawn_http_server_with_response(
+        status: &str,
+        headers: &str,
+        body: Vec<u8>,
+    ) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let status = status.to_string();
+        let headers = headers.to_string();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let response = format!("HTTP/1.1 {status}\r\n{headers}\r\n\r\n");
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.write_all(&body);
+            }
+        });
+        addr
+    }
+
+    fn spawn_http_server_with_delay(
+        headers: &str,
+        delay: Duration,
+        body: Vec<u8>,
+    ) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let headers = headers.to_string();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let response = format!("HTTP/1.1 200 OK\r\n{headers}\r\n\r\n");
+                let _ = stream.write_all(response.as_bytes());
+                thread::sleep(delay);
+                let _ = stream.write_all(&body);
+            }
+        });
+        addr
+    }
+
+    #[test]
+    fn normalize_version_trims_prefix_and_whitespace() {
+        assert_eq!(normalize_version(" v1.2.3 "), "1.2.3");
+        assert_eq!(normalize_version("1.2.3"), "1.2.3");
+    }
+
+    #[test]
+    fn describe_release_signing_keys_source_mentions_env_override() {
+        let info = ReleaseSigningKeysInfo {
+            source: ReleaseSigningKeysSource::Compiled,
+            env_present: true,
+        };
+        let msg = describe_release_signing_keys_source(info);
+        assert!(msg.contains("ignored"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn send_with_timeout_returns_response() {
+        let addr = spawn_http_server_with_response(
+            "200 OK",
+            "Content-Length: 2\r\nConnection: close",
+            b"ok".to_vec(),
+        );
+        let client = reqwest::Client::builder()
+            .http1_only()
+            .build()
+            .expect("client");
+        let url = format!("http://{addr}/hello");
+        let res = send_with_timeout(client.get(&url), Duration::from_secs(5), &url)
+            .await
+            .expect("response");
+        assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn send_with_timeout_reports_connection_failure() {
+        let client = reqwest::Client::new();
+        let url = "http://127.0.0.1:1/unreachable";
+        let err = send_with_timeout(client.get(url), Duration::from_secs(1), url)
+            .await
+            .expect_err("should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("request failed") || msg.contains("request timed out"),
+            "{msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn read_bytes_with_timeout_times_out() {
+        let body = b"delayed".to_vec();
+        let addr = spawn_http_server_with_delay(
+            "Content-Length: 7\r\nConnection: close",
+            Duration::from_millis(200),
+            body,
+        );
+        let client = reqwest::Client::builder()
+            .http1_only()
+            .build()
+            .expect("client");
+        let url = format!("http://{addr}/delayed");
+        let res = send_with_timeout(client.get(&url), Duration::from_secs(5), &url)
+            .await
+            .expect("response");
+        let err = read_bytes_with_timeout(res, Duration::from_millis(50), &url)
+            .await
+            .expect_err("should fail");
+        assert!(err.to_string().contains("reading response body timed out"));
+    }
+
+    #[tokio::test]
+    async fn download_asset_writes_response_body() {
+        let addr = spawn_http_server(b"payload");
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".into(),
+            assets: vec![GitHubAsset {
+                name: "asset.tar.gz".into(),
+                browser_download_url: format!("http://{addr}/asset"),
+            }],
+        };
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("asset.tar.gz");
+        download_asset(
+            &reqwest::Client::builder()
+                .http1_only()
+                .build()
+                .expect("client"),
+            "fledx/fledx-core",
+            &release,
+            "asset.tar.gz",
+            &dest,
+        )
+        .await
+        .expect("download");
+        let content = fs::read(&dest).expect("read");
+        assert_eq!(content, b"payload");
+    }
+
+    #[tokio::test]
+    async fn download_asset_errors_when_missing() {
+        let release = GitHubRelease {
+            tag_name: "v1.0.0".into(),
+            assets: Vec::new(),
+        };
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("asset.tar.gz");
+        let err = download_asset(
+            &reqwest::Client::new(),
+            "fledx/fledx-core",
+            &release,
+            "missing.tar.gz",
+            &dest,
+        )
+        .await
+        .expect_err("missing asset");
+        assert!(err.to_string().contains("release asset not found"));
     }
 }

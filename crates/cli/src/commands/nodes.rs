@@ -200,6 +200,9 @@ async fn status_nodes(api: &OperatorApi, args: NodeStatusArgs) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
 
     #[test]
     fn sort_nodes_by_name_then_id() {
@@ -276,5 +279,96 @@ mod tests {
         };
         let configs = HashMap::new();
         assert!(display_node_page(&page, &configs, OutputMode::Json, false, false, false).is_ok());
+    }
+
+    fn spawn_json_server(body: String) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0_u8; 4096];
+                let _ = stream.read(&mut buf);
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn fetch_nodes_page_rejects_invalid_limit() {
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            "http://127.0.0.1:9",
+            "authorization",
+            "token",
+        );
+        let err = fetch_nodes_page(&api, 0, 0, None).await.unwrap_err();
+        assert!(err.to_string().contains("limit must be between"));
+    }
+
+    #[tokio::test]
+    async fn list_nodes_fetches_and_displays_page() {
+        let page = Page {
+            limit: 10,
+            offset: 0,
+            items: vec![api::NodeSummary {
+                node_id: Uuid::from_u128(1),
+                name: Some("edge-1".into()),
+                status: api::NodeStatus::Ready,
+                last_seen: None,
+                arch: Some("x86_64".into()),
+                os: Some("linux".into()),
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+            }],
+        };
+        let body = serde_json::to_string(&page).expect("serialize");
+        let addr = spawn_json_server(body);
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let args = NodeListArgs {
+            limit: 10,
+            offset: 0,
+            status: None,
+            output: crate::args::OutputFormatArgs {
+                json: false,
+                yaml: false,
+            },
+            wide: false,
+        };
+        list_nodes(&api, args).await.expect("list");
+    }
+
+    #[test]
+    fn display_node_page_outputs_yaml() {
+        let page = Page {
+            limit: 1,
+            offset: 0,
+            items: vec![api::NodeSummary {
+                node_id: Uuid::from_u128(1),
+                name: Some("edge-1".into()),
+                status: api::NodeStatus::Ready,
+                last_seen: None,
+                arch: Some("x86_64".into()),
+                os: Some("linux".into()),
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+            }],
+        };
+        let configs = HashMap::new();
+        assert!(display_node_page(&page, &configs, OutputMode::Yaml, false, false, false).is_ok());
     }
 }

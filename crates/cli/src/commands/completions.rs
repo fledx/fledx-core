@@ -21,3 +21,15 @@ pub fn generate_completions(shell: CompletionShell) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generate_completions_for_supported_shells() {
+        generate_completions(CompletionShell::Bash);
+        generate_completions(CompletionShell::Zsh);
+        generate_completions(CompletionShell::Fish);
+    }
+}

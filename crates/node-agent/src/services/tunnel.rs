@@ -791,8 +791,14 @@ impl<T> TunnelIo for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
 mod tests {
     use super::*;
     use crate::test_support::base_config;
-    use bytes::BytesMut;
+    use base64::engine::general_purpose;
+    use bytes::{Bytes, BytesMut};
+    use httpmock::{Method::POST, MockServer};
+    use rcgen::generate_simple_self_signed;
     use reqwest::header::HeaderValue as ReqwestHeaderValue;
+    use std::sync::Once;
+    use tokio::net::TcpListener;
+    use tokio::sync::{mpsc, watch};
 
     fn framed_payload(frame: &TunnelFrame) -> BytesMut {
         let payload = serde_json::to_vec(frame).expect("serialize frame");
@@ -982,5 +988,437 @@ mod tests {
         let err = build_connect_request(&cfg, &endpoint).expect_err("should fail");
         let msg = err.to_string();
         assert!(msg.contains("invalid tunnel token header name"), "{msg}");
+    }
+
+    fn install_crypto_provider() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        });
+    }
+
+    #[test]
+    fn build_tls_config_accepts_custom_ca_and_insecure_flag() {
+        install_crypto_provider();
+        let mut cfg = base_config();
+        let cert = generate_simple_self_signed(["example.com".into()]).expect("cert");
+        let pem = cert.serialize_pem().expect("pem");
+        let tmp = tempfile::NamedTempFile::new().expect("tmp");
+        std::fs::write(tmp.path(), pem).expect("write");
+        cfg.ca_cert_path = Some(tmp.path().to_string_lossy().into_owned());
+        cfg.tls_insecure_skip_verify = true;
+
+        let config = build_tls_config(&cfg).expect("tls config");
+        assert!(Arc::strong_count(&config) >= 1);
+    }
+
+    #[test]
+    fn build_tls_config_rejects_invalid_ca() {
+        install_crypto_provider();
+        let mut cfg = base_config();
+        let tmp = tempfile::NamedTempFile::new().expect("tmp");
+        let invalid = "-----BEGIN CERTIFICATE-----\nnot-base64\n-----END CERTIFICATE-----\n";
+        std::fs::write(tmp.path(), invalid).expect("write");
+        cfg.ca_cert_path = Some(tmp.path().to_string_lossy().into_owned());
+
+        let err = build_tls_config(&cfg).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("parse PEM certificate"), "{msg}");
+    }
+
+    async fn next_response(
+        rx: &mut mpsc::Receiver<TunnelFrame>,
+    ) -> (u16, HashMap<String, String>, Vec<u8>) {
+        match rx.recv().await.expect("frame") {
+            TunnelFrame::ForwardResponse {
+                status,
+                headers,
+                body_b64,
+                ..
+            } => {
+                let body = general_purpose::STANDARD
+                    .decode(body_b64.as_bytes())
+                    .expect("decode body");
+                (status, headers, body)
+            }
+            other => panic!("unexpected frame: {other:?}"),
+        }
+    }
+
+    fn forward_context(
+        routes: Vec<TunnelRoute>,
+    ) -> (Arc<ForwardRequestContext>, mpsc::Receiver<TunnelFrame>) {
+        let (tx, rx) = mpsc::channel(4);
+        let ctx = Arc::new(ForwardRequestContext {
+            frame_tx: tx,
+            route_map: Arc::new(TunnelRouteMap::new(&routes)),
+            http_client: Arc::new(Client::new()),
+        });
+        (ctx, rx)
+    }
+
+    #[tokio::test]
+    async fn handle_forward_request_returns_not_found_when_no_route() {
+        let routes = vec![TunnelRoute {
+            path_prefix: "/api".to_string(),
+            target_host: "localhost".to_string(),
+            target_port: 8080,
+        }];
+        let (ctx, mut rx) = forward_context(routes);
+
+        handle_forward_request(
+            ctx,
+            "req-1".to_string(),
+            "GET".to_string(),
+            "/missing".to_string(),
+            HashMap::new(),
+            "".to_string(),
+        )
+        .await
+        .expect("handler");
+
+        let (status, _headers, body) = next_response(&mut rx).await;
+        assert_eq!(status, 404);
+        assert!(String::from_utf8_lossy(&body).contains("no tunnel route configured"));
+    }
+
+    #[tokio::test]
+    async fn handle_forward_request_rejects_invalid_method() {
+        let routes = vec![TunnelRoute {
+            path_prefix: "/".to_string(),
+            target_host: "localhost".to_string(),
+            target_port: 8080,
+        }];
+        let (ctx, mut rx) = forward_context(routes);
+
+        handle_forward_request(
+            ctx,
+            "req-2".to_string(),
+            "BAD METHOD".to_string(),
+            "/".to_string(),
+            HashMap::new(),
+            "".to_string(),
+        )
+        .await
+        .expect("handler");
+
+        let (status, _headers, body) = next_response(&mut rx).await;
+        assert_eq!(status, 400);
+        assert!(String::from_utf8_lossy(&body).contains("invalid method"));
+    }
+
+    #[tokio::test]
+    async fn handle_forward_request_rejects_invalid_body() {
+        let routes = vec![TunnelRoute {
+            path_prefix: "/".to_string(),
+            target_host: "localhost".to_string(),
+            target_port: 8080,
+        }];
+        let (ctx, mut rx) = forward_context(routes);
+
+        handle_forward_request(
+            ctx,
+            "req-3".to_string(),
+            "GET".to_string(),
+            "/".to_string(),
+            HashMap::new(),
+            "not-base64".to_string(),
+        )
+        .await
+        .expect("handler");
+
+        let (status, _headers, body) = next_response(&mut rx).await;
+        assert_eq!(status, 400);
+        assert!(String::from_utf8_lossy(&body).contains("invalid base64 body"));
+    }
+
+    #[tokio::test]
+    async fn handle_forward_request_forwards_request_and_returns_response() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/echo")
+                    .header("x-test", "1")
+                    .body("payload");
+                then.status(201).header("x-response", "ok").body("reply");
+            })
+            .await;
+
+        let base_uri: Uri = server.url("").parse().expect("uri");
+        let host = base_uri.host().expect("host").to_string();
+        let port = base_uri.port_u16().expect("port");
+
+        let routes = vec![TunnelRoute {
+            path_prefix: "/".to_string(),
+            target_host: host,
+            target_port: port,
+        }];
+        let (ctx, mut rx) = forward_context(routes);
+        let mut headers = HashMap::new();
+        headers.insert("X-Test".to_string(), "1".to_string());
+
+        handle_forward_request(
+            ctx,
+            "req-4".to_string(),
+            "POST".to_string(),
+            "/echo".to_string(),
+            headers,
+            general_purpose::STANDARD.encode("payload"),
+        )
+        .await
+        .expect("handler");
+
+        let (status, response_headers, body) = next_response(&mut rx).await;
+        assert_eq!(status, 201);
+        assert_eq!(
+            response_headers.get("x-response").map(String::as_str),
+            Some("ok")
+        );
+        assert_eq!(body, b"reply");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn connect_transport_non_tls_connects() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let accept_task = tokio::spawn(async move {
+            let _ = listener.accept().await;
+        });
+
+        let cfg = base_config();
+        let endpoint = crate::api::TunnelEndpoint {
+            host: "127.0.0.1".to_string(),
+            port: addr.port(),
+            use_tls: false,
+            connect_timeout_secs: 1,
+            heartbeat_interval_secs: 10,
+            heartbeat_timeout_secs: 30,
+            token_header: "x-token".to_string(),
+        };
+
+        let _transport = connect_transport(&cfg, &endpoint).await.expect("connect");
+        accept_task.await.expect("accept task");
+    }
+
+    async fn h2_stream_pair() -> (
+        SendStream<Bytes>,
+        RecvStream,
+        tokio::task::JoinHandle<()>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let (client_io, server_io) = tokio::io::duplex(1024);
+        let (mut client, client_conn) = h2::client::handshake(client_io).await.expect("client");
+        let client_task = tokio::spawn(async move {
+            let _ = client_conn.await;
+        });
+
+        let mut server = h2::server::handshake(server_io).await.expect("server");
+        let (response_fut, send_stream) = client
+            .send_request(
+                Request::builder()
+                    .method("CONNECT")
+                    .uri("http://example")
+                    .body(())
+                    .expect("request"),
+                false,
+            )
+            .expect("send request");
+        let (request, mut respond) = server.accept().await.expect("accept").expect("stream");
+        let response = http::Response::builder()
+            .status(StatusCode::OK)
+            .body(())
+            .expect("response");
+        respond.send_response(response, false).expect("respond");
+        let server_task = tokio::spawn(async move {
+            while let Some(result) = server.accept().await {
+                if result.is_err() {
+                    break;
+                }
+            }
+        });
+        let _ = response_fut.await;
+
+        (send_stream, request.into_body(), client_task, server_task)
+    }
+
+    #[tokio::test]
+    async fn write_loop_sends_frames_until_channel_closes() {
+        let (send_stream, mut recv_stream, client_task, server_task) = h2_stream_pair().await;
+        let (tx, rx) = mpsc::channel(2);
+        let (_shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
+        let writer =
+            tokio::spawn(async move { write_loop(send_stream, rx, &mut shutdown_rx).await });
+
+        tx.send(TunnelFrame::Heartbeat {
+            sent_at: "2025-01-01T00:00:00Z".to_string(),
+        })
+        .await
+        .expect("send frame");
+        drop(tx);
+
+        let mut buffer = BytesMut::new();
+        let frame = read_next_frame(&mut recv_stream, &mut buffer)
+            .await
+            .expect("read")
+            .expect("frame");
+        assert!(matches!(frame, TunnelFrame::Heartbeat { .. }));
+
+        writer.await.expect("writer").expect("writer ok");
+        client_task.abort();
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn heartbeat_loop_sends_and_times_out() {
+        let (tx, mut rx) = mpsc::channel(2);
+        let heartbeat_state = Arc::new(HeartbeatState::new());
+        let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
+        let handle = tokio::spawn({
+            let heartbeat_state = heartbeat_state.clone();
+            async move {
+                heartbeat_loop(
+                    tx,
+                    Duration::from_millis(5),
+                    Duration::from_secs(60),
+                    heartbeat_state,
+                    &mut shutdown_rx,
+                )
+                .await
+            }
+        });
+
+        let frame = rx.recv().await.expect("frame");
+        assert!(matches!(frame, TunnelFrame::Heartbeat { .. }));
+        shutdown_tx.send(true).expect("shutdown");
+        handle.await.expect("join").expect("ok");
+
+        let (tx, _rx) = mpsc::channel(1);
+        let heartbeat_state = Arc::new(HeartbeatState::new());
+        {
+            let mut guard = heartbeat_state.last_ack.lock().await;
+            *guard = Instant::now() - Duration::from_secs(60);
+        }
+        let (_shutdown_tx, mut shutdown_rx) = watch::channel(false);
+        let err = heartbeat_loop(
+            tx,
+            Duration::from_millis(1),
+            Duration::from_millis(0),
+            heartbeat_state,
+            &mut shutdown_rx,
+        )
+        .await
+        .expect_err("timeout");
+        assert!(err.to_string().contains("heartbeat ack timeout"));
+    }
+
+    #[tokio::test]
+    async fn read_loop_sends_busy_response_when_semaphore_exhausted() {
+        let (mut send_stream, recv_stream, client_task, server_task) = h2_stream_pair().await;
+        let (tx, mut rx) = mpsc::channel(1);
+        let ctx = Arc::new(ForwardRequestContext {
+            frame_tx: tx,
+            route_map: Arc::new(TunnelRouteMap::new(&[])),
+            http_client: Arc::new(Client::new()),
+        });
+        let semaphore = Arc::new(Semaphore::new(0));
+        let heartbeat_state = Arc::new(HeartbeatState::new());
+        let (_shutdown_tx, mut shutdown_rx) = watch::channel(false);
+
+        send_frame(
+            &mut send_stream,
+            TunnelFrame::ForwardRequest {
+                id: "req-busy".to_string(),
+                method: "GET".to_string(),
+                path: "/".to_string(),
+                headers: HashMap::new(),
+                body_b64: "".to_string(),
+            },
+        )
+        .await
+        .expect("send frame");
+        send_stream.send_data(Bytes::new(), true).expect("close");
+
+        let read_task = tokio::spawn(async move {
+            read_loop(
+                recv_stream,
+                BytesMut::new(),
+                ctx,
+                semaphore,
+                heartbeat_state,
+                &mut shutdown_rx,
+            )
+            .await
+        });
+
+        let response = rx.recv().await.expect("response");
+        match response {
+            TunnelFrame::ForwardResponse { status, .. } => assert_eq!(status, 503),
+            other => panic!("unexpected frame: {other:?}"),
+        }
+
+        let _ = read_task.await;
+        client_task.abort();
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn send_frame_round_trips_via_h2() {
+        let (mut send_stream, mut recv_stream, client_task, server_task) = h2_stream_pair().await;
+        let mut buffer = BytesMut::new();
+
+        send_frame(
+            &mut send_stream,
+            TunnelFrame::Heartbeat {
+                sent_at: "2025-01-01T00:00:00Z".to_string(),
+            },
+        )
+        .await
+        .expect("send frame");
+
+        let frame = read_next_frame(&mut recv_stream, &mut buffer)
+            .await
+            .expect("read")
+            .expect("frame");
+        assert!(matches!(frame, TunnelFrame::Heartbeat { .. }));
+
+        client_task.abort();
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn read_next_frame_returns_none_on_clean_close() {
+        let (mut send_stream, mut recv_stream, client_task, server_task) = h2_stream_pair().await;
+        send_stream.send_data(Bytes::new(), true).expect("send");
+
+        let mut buffer = BytesMut::new();
+        let frame = read_next_frame(&mut recv_stream, &mut buffer)
+            .await
+            .expect("read");
+        assert!(frame.is_none());
+
+        client_task.abort();
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn read_next_frame_errors_on_partial_payload() {
+        let (mut send_stream, mut recv_stream, client_task, server_task) = h2_stream_pair().await;
+        send_stream
+            .send_data(Bytes::from_static(&[0, 0, 0, 5]), true)
+            .expect("send");
+
+        let mut buffer = BytesMut::new();
+        let err = read_next_frame(&mut recv_stream, &mut buffer)
+            .await
+            .expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("ended mid-frame"), "{msg}");
+
+        client_task.abort();
+        server_task.abort();
     }
 }

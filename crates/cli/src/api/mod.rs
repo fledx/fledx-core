@@ -312,6 +312,11 @@ pub(crate) fn extract_error_message(body: &str) -> Option<String> {
 mod tests {
     use super::*;
     use reqwest::Client;
+    use serde_json::json;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::sync::{Arc, Mutex};
+    use std::thread;
 
     #[test]
     fn apply_operator_auth_sets_custom_header() {
@@ -370,5 +375,224 @@ mod tests {
             Some("plain text".into())
         );
         assert_eq!(extract_error_message("   "), None);
+    }
+
+    fn spawn_http_server(
+        status_line: String,
+        body: String,
+        headers: Vec<(String, String)>,
+        capture: Option<Arc<Mutex<String>>>,
+    ) -> std::net::SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0_u8; 4096];
+                if let Ok(n) = stream.read(&mut buf) {
+                    if let Some(capture) = capture {
+                        let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                        *capture.lock().expect("lock") = request;
+                    }
+                }
+
+                let mut response = String::new();
+                response.push_str(&status_line);
+                response.push_str("\r\ncontent-type: application/json\r\n");
+                for (key, value) in &headers {
+                    response.push_str(key);
+                    response.push_str(": ");
+                    response.push_str(value);
+                    response.push_str("\r\n");
+                }
+                response.push_str(&format!("content-length: {}\r\n\r\n", body.len()));
+                response.push_str(&body);
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn handle_operator_response_reports_auth_failures() {
+        let body = r#"{"error":"bad token"}"#;
+        let addr = spawn_http_server(
+            "HTTP/1.1 401 Unauthorized".to_string(),
+            body.to_string(),
+            vec![("x-request-id".to_string(), "req-123".to_string())],
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let err = api
+            .get::<serde_json::Value>("/api/v1/test")
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("operator auth failed with 401"), "{msg}");
+        assert!(msg.contains("bad token"), "{msg}");
+        assert!(msg.contains("request_id=req-123"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn handle_operator_response_reports_non_auth_errors() {
+        let addr = spawn_http_server(
+            "HTTP/1.1 500 Internal Server Error".to_string(),
+            "boom".to_string(),
+            Vec::new(),
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let err = api
+            .get::<serde_json::Value>("/api/v1/test")
+            .await
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("control-plane error (status 500"), "{msg}");
+        assert!(msg.contains("boom"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn operator_api_supports_common_methods() {
+        #[derive(serde::Deserialize)]
+        struct OkResponse {
+            ok: bool,
+        }
+
+        let addr = spawn_http_server(
+            "HTTP/1.1 200 OK".to_string(),
+            r#"{"ok":true}"#.to_string(),
+            Vec::new(),
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let response: OkResponse = api.get("/api/v1/check").await.expect("get");
+        assert!(response.ok);
+
+        let addr = spawn_http_server(
+            "HTTP/1.1 200 OK".to_string(),
+            r#"{"ok":true}"#.to_string(),
+            Vec::new(),
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let response: OkResponse = api
+            .post_json("/api/v1/check", &json!({}))
+            .await
+            .expect("post");
+        assert!(response.ok);
+
+        let addr = spawn_http_server(
+            "HTTP/1.1 200 OK".to_string(),
+            r#"{"ok":true}"#.to_string(),
+            Vec::new(),
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let response: OkResponse = api
+            .patch_json("/api/v1/check", &json!({"a":1}))
+            .await
+            .expect("patch");
+        assert!(response.ok);
+
+        let addr = spawn_http_server(
+            "HTTP/1.1 200 OK".to_string(),
+            r#"{"ok":true}"#.to_string(),
+            Vec::new(),
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let response: OkResponse = api
+            .put_json("/api/v1/check", &json!({"a":1}))
+            .await
+            .expect("put");
+        assert!(response.ok);
+
+        let addr = spawn_http_server(
+            "HTTP/1.1 200 OK".to_string(),
+            r#"{"ok":true}"#.to_string(),
+            Vec::new(),
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let response: OkResponse = api.delete("/api/v1/check").await.expect("delete");
+        assert!(response.ok);
+
+        let addr = spawn_http_server(
+            "HTTP/1.1 204 No Content".to_string(),
+            "".to_string(),
+            Vec::new(),
+            None,
+        );
+        let api = OperatorApi::new(
+            Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        api.delete_no_body("/api/v1/check")
+            .await
+            .expect("delete no body");
+    }
+
+    #[tokio::test]
+    async fn register_node_sends_version_and_optional_token() {
+        let captured = Arc::new(Mutex::new(String::new()));
+        let addr = spawn_http_server(
+            "HTTP/1.1 200 OK".to_string(),
+            r#"{"node_id":"00000000-0000-0000-0000-000000000042","node_token":"t","control_plane_version":"1.0.0"}"#.to_string(),
+            Vec::new(),
+            Some(captured.clone()),
+        );
+
+        let payload = json!({"name":"node","arch":"x86_64","os":"linux"});
+        let _ = register_node(
+            &Client::new(),
+            &format!("http://{addr}"),
+            Some("reg-token"),
+            &payload,
+        )
+        .await
+        .expect("register");
+
+        let request = captured.lock().expect("lock").to_lowercase();
+        assert!(request.contains("x-agent-version"), "{request}");
+        assert!(
+            request.contains("authorization: bearer reg-token"),
+            "{request}"
+        );
     }
 }

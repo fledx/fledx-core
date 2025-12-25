@@ -139,3 +139,127 @@ pub fn handle_profiles(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::args::{BootstrapRepoOwnerCommands, BootstrapRepoOwnerSetArgs};
+    use crate::test_support::ENV_LOCK;
+    use tempfile::tempdir;
+
+    fn with_temp_config<F: FnOnce()>(f: F) {
+        let _guard = ENV_LOCK.lock().expect("lock");
+        let dir = tempdir().expect("tempdir");
+        std::env::set_var("XDG_CONFIG_HOME", dir.path());
+        std::env::remove_var("HOME");
+        f();
+    }
+
+    #[test]
+    fn list_profiles_handles_empty_store() {
+        with_temp_config(|| {
+            handle_profiles(None, ProfileCommands::List).expect("list");
+        });
+    }
+
+    #[test]
+    fn set_profile_persists_and_sets_default() {
+        with_temp_config(|| {
+            handle_profiles(
+                None,
+                ProfileCommands::Set(ProfileSetArgs {
+                    name: "prod".into(),
+                    control_plane_url: Some("https://cp.example".into()),
+                    operator_header: Some("authorization".into()),
+                    operator_token: Some("token".into()),
+                    registration_token: Some("reg".into()),
+                    ca_cert_path: Some("/etc/ca.pem".into()),
+                }),
+            )
+            .expect("set");
+
+            let loaded = ProfileStore::load().expect("load");
+            assert_eq!(loaded.default_profile.as_deref(), Some("prod"));
+            assert!(loaded.profiles.contains_key("prod"));
+        });
+    }
+
+    #[test]
+    fn show_profile_errors_without_selection() {
+        with_temp_config(|| {
+            let err = handle_profiles(None, ProfileCommands::Show(ProfileShowArgs { name: None }))
+                .expect_err("should fail");
+            assert!(err.to_string().contains("default_profile is unset"));
+        });
+    }
+
+    #[test]
+    fn set_default_requires_existing_profile() {
+        with_temp_config(|| {
+            let err = handle_profiles(
+                None,
+                ProfileCommands::SetDefault(ProfileSetDefaultArgs {
+                    name: "missing".into(),
+                }),
+            )
+            .expect_err("should fail");
+            assert!(err.to_string().contains("profile 'missing' not found"));
+        });
+    }
+
+    #[test]
+    fn bootstrap_repo_owner_set_and_unset() {
+        with_temp_config(|| {
+            handle_profiles(
+                None,
+                ProfileCommands::BootstrapRepoOwner {
+                    command: BootstrapRepoOwnerCommands::Set(BootstrapRepoOwnerSetArgs {
+                        owner: "acme".into(),
+                    }),
+                },
+            )
+            .expect("set owner");
+
+            let loaded = ProfileStore::load().expect("load");
+            assert_eq!(loaded.bootstrap_repo_owner.as_deref(), Some("acme"));
+
+            handle_profiles(
+                None,
+                ProfileCommands::BootstrapRepoOwner {
+                    command: BootstrapRepoOwnerCommands::Unset,
+                },
+            )
+            .expect("unset owner");
+
+            let loaded = ProfileStore::load().expect("load");
+            assert!(loaded.bootstrap_repo_owner.is_none());
+        });
+    }
+
+    #[test]
+    fn bootstrap_repo_owner_rejects_invalid_values() {
+        with_temp_config(|| {
+            let err = handle_profiles(
+                None,
+                ProfileCommands::BootstrapRepoOwner {
+                    command: BootstrapRepoOwnerCommands::Set(BootstrapRepoOwnerSetArgs {
+                        owner: "  ".into(),
+                    }),
+                },
+            )
+            .expect_err("empty owner");
+            assert!(err.to_string().contains("invalid owner"));
+
+            let err = handle_profiles(
+                None,
+                ProfileCommands::BootstrapRepoOwner {
+                    command: BootstrapRepoOwnerCommands::Set(BootstrapRepoOwnerSetArgs {
+                        owner: "bad/owner".into(),
+                    }),
+                },
+            )
+            .expect_err("slash owner");
+            assert!(err.to_string().contains("must not contain '/'"));
+        });
+    }
+}

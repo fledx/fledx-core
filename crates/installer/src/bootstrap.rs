@@ -5,6 +5,9 @@ use anyhow::Context;
 
 const GITHUB_USER_AGENT: &str = "fledx-installer";
 
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 mod ssh;
 pub use ssh::*;
 
@@ -78,4 +81,42 @@ fn run_capture(mut cmd: Command) -> anyhow::Result<CommandOutput> {
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
         status: output.status,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sh_quote_handles_empty_and_quotes() {
+        assert_eq!(sh_quote(""), "''");
+        assert_eq!(sh_quote("simple"), "'simple'");
+        assert_eq!(sh_quote("we're"), "'we'\"'\"'re'");
+    }
+
+    #[test]
+    fn sh_quote_path_wraps_display() {
+        let path = Path::new("/tmp/with space/file.txt");
+        assert_eq!(sh_quote_path(path), "'/tmp/with space/file.txt'");
+    }
+
+    #[test]
+    fn noninteractive_sudo_failure_detection_matches_expected_patterns() {
+        assert!(looks_like_noninteractive_sudo_failure(
+            "sudo: a password is required"
+        ));
+        assert!(looks_like_noninteractive_sudo_failure(
+            "sudo: no tty present and no askpass program specified"
+        ));
+        assert!(!looks_like_noninteractive_sudo_failure("permission denied"));
+    }
+
+    #[test]
+    fn run_capture_returns_stdout_and_status() {
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c").arg("printf 'hello'; exit 7");
+        let output = run_capture(cmd).expect("run");
+        assert_eq!(output.stdout, "hello");
+        assert!(!output.status.success());
+    }
 }

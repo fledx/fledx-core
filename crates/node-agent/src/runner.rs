@@ -308,3 +308,65 @@ async fn cleanup_managed_containers(state: &state::SharedState) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::ContainerRuntimeError;
+    use crate::test_support::base_config;
+    use std::sync::Arc;
+    use tokio::sync::watch;
+
+    fn dummy_state() -> state::SharedState {
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let factory: RuntimeFactory = Arc::new(|| {
+            Err(ContainerRuntimeError::Connection {
+                context: "test",
+                source: anyhow::anyhow!("down"),
+            })
+        });
+        state::new_state(cfg, client, factory, None)
+    }
+
+    #[test]
+    fn agent_options_defaults() {
+        let opts = AgentOptions::default();
+        assert!(opts.init_tracing);
+        assert!(opts.serve_metrics);
+        assert!(opts.metrics_handle.is_none());
+    }
+
+    #[tokio::test]
+    async fn agent_handle_request_shutdown_sets_signal() {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let handle = AgentHandle {
+            shutdown_tx,
+            shutdown_rx,
+            tasks: Vec::new(),
+            state: dummy_state(),
+            cleanup_on_shutdown: false,
+        };
+
+        handle.request_shutdown();
+        assert!(*handle.shutdown_signal().borrow());
+    }
+
+    #[tokio::test]
+    async fn agent_handle_reports_task_panics() {
+        let (shutdown_tx, shutdown_rx) = watch::channel(false);
+        let task = tokio::spawn(async {
+            panic!("boom");
+        });
+        let handle = AgentHandle {
+            shutdown_tx,
+            shutdown_rx,
+            tasks: vec![task],
+            state: dummy_state(),
+            cleanup_on_shutdown: false,
+        };
+
+        let err = handle.await_termination().await.expect_err("panic");
+        assert!(err.to_string().contains("panicked"));
+    }
+}

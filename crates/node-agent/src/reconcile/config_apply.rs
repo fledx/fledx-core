@@ -165,3 +165,227 @@ fn resolve_config_file_path(
 
     Ok(host_path.to_string_lossy().into_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::runtime::{ContainerSpec, FileMount};
+    use crate::test_support::base_config;
+    use chrono::Utc;
+    use tempfile::tempdir;
+
+    fn config_metadata(name: &str) -> api::ConfigMetadata {
+        api::ConfigMetadata {
+            config_id: Uuid::new_v4(),
+            name: name.to_string(),
+            version: 1,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn config_entry_value(key: &str, value: &str) -> api::ConfigEntry {
+        api::ConfigEntry {
+            key: key.to_string(),
+            value: Some(value.to_string()),
+            secret_ref: None,
+        }
+    }
+
+    fn config_entry_secret(key: &str, secret: &str) -> api::ConfigEntry {
+        api::ConfigEntry {
+            key: key.to_string(),
+            value: None,
+            secret_ref: Some(secret.to_string()),
+        }
+    }
+
+    fn config_file(path: &str, file_ref: &str) -> api::ConfigFile {
+        api::ConfigFile {
+            path: path.to_string(),
+            file_ref: file_ref.to_string(),
+        }
+    }
+
+    #[test]
+    fn ordered_configs_sorts_node_then_deployment() {
+        let node_id = Uuid::new_v4();
+        let deployment_id = Uuid::new_v4();
+        let configs = vec![
+            api::ConfigDesired {
+                metadata: config_metadata("beta"),
+                entries: Vec::new(),
+                files: Vec::new(),
+                attached_deployments: Vec::new(),
+                attached_nodes: vec![node_id],
+                checksum: None,
+            },
+            api::ConfigDesired {
+                metadata: config_metadata("alpha"),
+                entries: Vec::new(),
+                files: Vec::new(),
+                attached_deployments: Vec::new(),
+                attached_nodes: vec![node_id],
+                checksum: None,
+            },
+            api::ConfigDesired {
+                metadata: config_metadata("gamma"),
+                entries: Vec::new(),
+                files: Vec::new(),
+                attached_deployments: vec![deployment_id],
+                attached_nodes: Vec::new(),
+                checksum: None,
+            },
+        ];
+
+        let ordered = ordered_configs(&configs, node_id, deployment_id);
+        let names: Vec<String> = ordered
+            .into_iter()
+            .map(|config| config.metadata.name)
+            .collect();
+        assert_eq!(names, vec!["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn resolve_config_entry_prefers_value() {
+        let entry = config_entry_value("TOKEN", "abc");
+        let value = resolve_config_entry(&entry, "PREFIX_").expect("value");
+        assert_eq!(value, "abc");
+    }
+
+    #[test]
+    fn resolve_config_entry_rejects_missing_value_and_secret() {
+        let entry = api::ConfigEntry {
+            key: "EMPTY".to_string(),
+            value: None,
+            secret_ref: None,
+        };
+        let err = resolve_config_entry(&entry, "PREFIX_").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("missing value or secret_ref"), "{msg}");
+    }
+
+    #[test]
+    fn resolve_config_entry_reads_secret_env() {
+        let secret = format!("SECRET_{}", Uuid::new_v4());
+        let prefix = format!("TEST_SECRET_{}", Uuid::new_v4());
+        let env_key = format!("{prefix}{secret}");
+        std::env::set_var(&env_key, "shh");
+
+        let entry = config_entry_secret("TOKEN", &secret);
+        let value = resolve_config_entry(&entry, &prefix).expect("secret");
+        assert_eq!(value, "shh");
+
+        std::env::remove_var(env_key);
+    }
+
+    #[test]
+    fn resolve_config_entry_rejects_empty_secret_prefix() {
+        let entry = config_entry_secret("TOKEN", "value");
+        let err = resolve_config_entry(&entry, "   ").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("secrets_prefix is empty"), "{msg}");
+    }
+
+    #[test]
+    fn resolve_config_file_path_errors_when_missing_or_not_file() {
+        let tmp = tempdir().expect("temp dir");
+        let mut cfg = base_config();
+        cfg.volume_data_dir = tmp.path().to_string_lossy().into_owned();
+
+        let missing = config_file("/etc/app/config.yaml", "missing");
+        let err = resolve_config_file_path(&cfg, &missing).expect_err("missing");
+        let msg = err.to_string();
+        assert!(msg.contains("failed to read config file"), "{msg}");
+
+        let configs_dir = tmp.path().join("configs");
+        std::fs::create_dir_all(&configs_dir).expect("configs dir");
+        let dir_ref = configs_dir.join("dir-ref");
+        std::fs::create_dir_all(&dir_ref).expect("dir ref");
+
+        let non_file = config_file("/etc/app/dir.yaml", "dir-ref");
+        let err = resolve_config_file_path(&cfg, &non_file).expect_err("not a file");
+        let msg = err.to_string();
+        assert!(msg.contains("is not a file"), "{msg}");
+    }
+
+    #[test]
+    fn apply_configs_to_spec_applies_env_and_mounts() {
+        let tmp = tempdir().expect("temp dir");
+        let mut cfg = base_config();
+        cfg.volume_data_dir = tmp.path().to_string_lossy().into_owned();
+
+        let configs_dir = tmp.path().join("configs");
+        std::fs::create_dir_all(&configs_dir).expect("configs dir");
+        let file_ref = "config-ref";
+        std::fs::write(configs_dir.join(file_ref), "config").expect("write file");
+
+        let node_id = cfg.node_id;
+        let deployment_id = Uuid::new_v4();
+        let config = api::ConfigDesired {
+            metadata: config_metadata("app"),
+            entries: vec![
+                config_entry_value("EXISTING", "old"),
+                config_entry_value("NEW", "value"),
+            ],
+            files: vec![
+                config_file("/etc/app/config.yaml", file_ref),
+                config_file("/etc/app/dup.conf", "ignored-ref"),
+            ],
+            attached_deployments: Vec::new(),
+            attached_nodes: vec![node_id],
+            checksum: None,
+        };
+
+        let ctx = DeploymentContext {
+            cfg,
+            configs: vec![config],
+            config_fingerprint: None,
+        };
+
+        let desired = api::DeploymentDesired {
+            deployment_id,
+            name: "app".to_string(),
+            replica_number: 0,
+            image: "example".to_string(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: None,
+            requires_public_ip: false,
+            tunnel_only: false,
+            placement: None,
+            volumes: None,
+            health: None,
+            desired_state: api::DesiredState::Running,
+            replica_generation: None,
+            generation: 1,
+        };
+
+        let mut spec = ContainerSpec::new("example");
+        spec.env.push(("EXISTING".to_string(), "keep".to_string()));
+        spec.mounts.push(FileMount {
+            host_path: "/tmp/dup".to_string(),
+            container_path: "/etc/app/dup.conf".to_string(),
+            readonly: true,
+        });
+
+        let outcome = apply_configs_to_spec(&mut spec, &ctx, &desired).expect("apply");
+        assert_eq!(outcome.applied, 2);
+        assert_eq!(outcome.skipped, 2);
+
+        let env_value = spec
+            .env
+            .iter()
+            .find(|(key, _)| key == "NEW")
+            .map(|(_, value)| value.as_str());
+        assert_eq!(env_value, Some("value"));
+
+        assert!(spec
+            .mounts
+            .iter()
+            .any(|mount| mount.container_path == "/etc/app/config.yaml"));
+    }
+}

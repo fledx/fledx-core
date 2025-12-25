@@ -101,3 +101,51 @@ impl DeploymentStatusArg {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_format_mode_prefers_json_then_yaml() {
+        let args = OutputFormatArgs {
+            json: true,
+            yaml: false,
+        };
+        assert_eq!(args.mode(), OutputMode::Json);
+
+        let args = OutputFormatArgs {
+            json: false,
+            yaml: true,
+        };
+        assert_eq!(args.mode(), OutputMode::Yaml);
+
+        let args = OutputFormatArgs {
+            json: false,
+            yaml: false,
+        };
+        assert_eq!(args.mode(), OutputMode::Table);
+    }
+
+    #[test]
+    fn desired_state_arg_converts_to_api() {
+        let state: DesiredState = DesiredStateArg::Running.into();
+        assert_eq!(state, DesiredState::Running);
+        let state: DesiredState = DesiredStateArg::Stopped.into();
+        assert_eq!(state, DesiredState::Stopped);
+    }
+
+    #[test]
+    fn status_args_render_expected_strings() {
+        assert_eq!(NodeStatusArg::Ready.as_str(), "ready");
+        assert_eq!(NodeStatusArg::Unreachable.as_str(), "unreachable");
+        assert_eq!(NodeStatusArg::Error.as_str(), "error");
+        assert_eq!(NodeStatusArg::Registering.as_str(), "registering");
+
+        assert_eq!(DeploymentStatusArg::Pending.as_str(), "pending");
+        assert_eq!(DeploymentStatusArg::Deploying.as_str(), "deploying");
+        assert_eq!(DeploymentStatusArg::Running.as_str(), "running");
+        assert_eq!(DeploymentStatusArg::Stopped.as_str(), "stopped");
+        assert_eq!(DeploymentStatusArg::Failed.as_str(), "failed");
+    }
+}
