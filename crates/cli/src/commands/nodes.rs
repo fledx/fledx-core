@@ -200,9 +200,12 @@ async fn status_nodes(api: &OperatorApi, args: NodeStatusArgs) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
     use std::io::{Read, Write};
-    use std::net::TcpListener;
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, Mutex, mpsc};
     use std::thread;
+    use std::time::Duration;
 
     #[test]
     fn sort_nodes_by_name_then_id() {
@@ -299,6 +302,101 @@ mod tests {
         addr
     }
 
+    #[derive(Debug)]
+    struct CapturedRequest {
+        request_line: String,
+        headers: Vec<String>,
+        body: String,
+    }
+
+    fn read_request(stream: &mut TcpStream) -> CapturedRequest {
+        let mut buf = Vec::new();
+        let mut chunk = [0_u8; 1024];
+        let mut header_end = None;
+        loop {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if header_end.is_none()
+                        && let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n")
+                    {
+                        header_end = Some(pos + 4);
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+
+        let header_end = header_end.unwrap_or(buf.len());
+        let header_bytes = &buf[..header_end];
+        let headers_raw = String::from_utf8_lossy(header_bytes);
+        let mut lines = headers_raw.lines();
+        let request_line = lines.next().unwrap_or_default().to_string();
+        let headers: Vec<String> = lines.map(|line| line.to_string()).collect();
+        let content_length = headers
+            .iter()
+            .find_map(|line| {
+                let lower = line.to_ascii_lowercase();
+                lower
+                    .strip_prefix("content-length: ")
+                    .and_then(|value| value.trim().parse::<usize>().ok())
+            })
+            .unwrap_or(0);
+
+        let mut body = buf[header_end..].to_vec();
+        while body.len() < content_length {
+            match stream.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => body.extend_from_slice(&chunk[..n]),
+                Err(_) => break,
+            }
+        }
+        body.truncate(content_length);
+        let body = String::from_utf8_lossy(&body).to_string();
+
+        CapturedRequest {
+            request_line,
+            headers,
+            body,
+        }
+    }
+
+    fn json_response(body: &str) -> String {
+        format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        )
+    }
+
+    fn spawn_sequence_server(
+        responses: Vec<String>,
+    ) -> (std::net::SocketAddr, mpsc::Receiver<CapturedRequest>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let responses = Arc::new(Mutex::new(VecDeque::from(responses)));
+        let responses_thread = responses.clone();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            while let Ok((mut stream, _)) = listener.accept() {
+                let request = read_request(&mut stream);
+                let _ = tx.send(request);
+                let response = responses_thread
+                    .lock()
+                    .expect("lock")
+                    .pop_front()
+                    .unwrap_or_default();
+                let _ = stream.write_all(response.as_bytes());
+                if responses_thread.lock().expect("lock").is_empty() {
+                    break;
+                }
+            }
+        });
+        (addr, rx)
+    }
+
     #[tokio::test]
     async fn fetch_nodes_page_rejects_invalid_limit() {
         let api = OperatorApi::new(
@@ -309,6 +407,110 @@ mod tests {
         );
         let err = fetch_nodes_page(&api, 0, 0, None).await.unwrap_err();
         assert!(err.to_string().contains("limit must be between"));
+    }
+
+    #[tokio::test]
+    async fn fetch_nodes_page_includes_status_query() {
+        let page: Page<api::NodeSummary> = Page {
+            limit: 5,
+            offset: 10,
+            items: Vec::new(),
+        };
+        let body = serde_json::to_string(&page).expect("serialize");
+        let (addr, rx) = spawn_sequence_server(vec![json_response(&body)]);
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+
+        fetch_nodes_page(&api, 5, 10, Some(crate::args::NodeStatusArg::Ready))
+            .await
+            .expect("page");
+
+        let request = rx.recv_timeout(Duration::from_secs(1)).expect("request");
+        assert!(request.request_line.contains("/api/v1/nodes?"));
+        assert!(request.request_line.contains("limit=5"));
+        assert!(request.request_line.contains("offset=10"));
+        assert!(request.request_line.contains("status=ready"));
+    }
+
+    #[tokio::test]
+    async fn handle_node_register_sends_payload_and_token() {
+        let response = api::RegistrationResponse {
+            node_id: Uuid::from_u128(1),
+            node_token: "node-token".into(),
+            tunnel: None,
+        };
+        let body = serde_json::to_string(&response).expect("serialize");
+        let (addr, rx) = spawn_sequence_server(vec![json_response(&body)]);
+
+        handle_node_register(
+            &reqwest::Client::new(),
+            &format!("http://{addr}"),
+            Some("reg-token".into()),
+            NodeRegisterArgs {
+                name: Some("edge-1".into()),
+                arch: Some("x86_64".into()),
+                os: Some("linux".into()),
+                labels: Some(vec![("region".into(), "us-east".into())]),
+                capacity_cpu_millis: Some(250),
+                capacity_memory_bytes: Some(1024),
+            },
+        )
+        .await
+        .expect("register");
+
+        let request = rx.recv_timeout(Duration::from_secs(1)).expect("request");
+        assert!(
+            request
+                .request_line
+                .starts_with("POST /api/v1/nodes/register ")
+        );
+        let authorization = request
+            .headers
+            .iter()
+            .find(|line| line.to_ascii_lowercase().starts_with("authorization:"))
+            .cloned()
+            .unwrap_or_default();
+        assert!(authorization.contains("Bearer reg-token"));
+
+        let payload: serde_json::Value = serde_json::from_str(&request.body).expect("payload");
+        assert_eq!(
+            payload.get("name").and_then(|value| value.as_str()),
+            Some("edge-1")
+        );
+        assert_eq!(
+            payload.get("arch").and_then(|value| value.as_str()),
+            Some("x86_64")
+        );
+        assert_eq!(
+            payload.get("os").and_then(|value| value.as_str()),
+            Some("linux")
+        );
+        let labels = payload
+            .get("labels")
+            .and_then(|value| value.as_object())
+            .expect("labels");
+        assert_eq!(
+            labels.get("region").and_then(|value| value.as_str()),
+            Some("us-east")
+        );
+        let capacity = payload
+            .get("capacity")
+            .and_then(|value| value.as_object())
+            .expect("capacity");
+        assert_eq!(
+            capacity.get("cpu_millis").and_then(|value| value.as_u64()),
+            Some(250)
+        );
+        assert_eq!(
+            capacity
+                .get("memory_bytes")
+                .and_then(|value| value.as_u64()),
+            Some(1024)
+        );
     }
 
     #[tokio::test]
@@ -348,6 +550,62 @@ mod tests {
             wide: false,
         };
         list_nodes(&api, args).await.expect("list");
+    }
+
+    #[tokio::test]
+    async fn status_nodes_fetches_config_page() {
+        let nodes_page = Page {
+            limit: 10,
+            offset: 0,
+            items: vec![api::NodeSummary {
+                node_id: Uuid::from_u128(1),
+                name: Some("edge-1".into()),
+                status: api::NodeStatus::Ready,
+                last_seen: None,
+                arch: Some("x86_64".into()),
+                os: Some("linux".into()),
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+            }],
+        };
+        let configs_page = common::api::ConfigSummaryPage {
+            limit: crate::args::MAX_PAGE_LIMIT,
+            offset: 0,
+            items: Vec::new(),
+        };
+        let node_body = serde_json::to_string(&nodes_page).expect("serialize nodes");
+        let config_body = serde_json::to_string(&configs_page).expect("serialize configs");
+        let (addr, rx) =
+            spawn_sequence_server(vec![json_response(&node_body), json_response(&config_body)]);
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+        let args = NodeStatusArgs {
+            limit: 10,
+            offset: 0,
+            status: None,
+            output: crate::args::OutputFormatArgs {
+                json: false,
+                yaml: false,
+            },
+            wide: false,
+        };
+
+        status_nodes(&api, args).await.expect("status");
+
+        let request = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("nodes request");
+        assert!(request.request_line.contains("/api/v1/nodes?"));
+        let request = rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("configs request");
+        assert!(request.request_line.contains("/api/v1/configs?"));
     }
 
     #[test]

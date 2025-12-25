@@ -166,6 +166,22 @@ mod tests {
     }
 
     #[test]
+    fn list_profiles_includes_defaults_and_owner() {
+        with_temp_config(|| {
+            let mut store = ProfileStore {
+                default_profile: Some("prod".into()),
+                bootstrap_repo_owner: Some("acme".into()),
+                ..Default::default()
+            };
+            store.profiles.insert("prod".into(), Profile::default());
+            store.profiles.insert("staging".into(), Profile::default());
+            store.save().expect("save");
+
+            handle_profiles(None, ProfileCommands::List).expect("list");
+        });
+    }
+
+    #[test]
     fn set_profile_persists_and_sets_default() {
         with_temp_config(|| {
             handle_profiles(
@@ -188,11 +204,80 @@ mod tests {
     }
 
     #[test]
+    fn set_profile_preserves_existing_fields() {
+        with_temp_config(|| {
+            let mut store = ProfileStore {
+                default_profile: Some("prod".into()),
+                ..Default::default()
+            };
+            store.profiles.insert(
+                "prod".into(),
+                Profile {
+                    control_plane_url: Some("https://cp.example".into()),
+                    operator_header: Some("authorization".into()),
+                    operator_token: Some("old-token".into()),
+                    registration_token: Some("reg".into()),
+                    ca_cert_path: Some("/etc/old.pem".into()),
+                },
+            );
+            store.save().expect("save");
+
+            handle_profiles(
+                None,
+                ProfileCommands::Set(ProfileSetArgs {
+                    name: "prod".into(),
+                    control_plane_url: None,
+                    operator_header: None,
+                    operator_token: Some("new-token".into()),
+                    registration_token: None,
+                    ca_cert_path: None,
+                }),
+            )
+            .expect("set");
+
+            let loaded = ProfileStore::load().expect("load");
+            let profile = loaded.profiles.get("prod").expect("profile");
+            assert_eq!(
+                profile.control_plane_url.as_deref(),
+                Some("https://cp.example")
+            );
+            assert_eq!(profile.operator_header.as_deref(), Some("authorization"));
+            assert_eq!(profile.operator_token.as_deref(), Some("new-token"));
+            assert_eq!(profile.registration_token.as_deref(), Some("reg"));
+            assert_eq!(profile.ca_cert_path.as_deref(), Some("/etc/old.pem"));
+        });
+    }
+
+    #[test]
     fn show_profile_errors_without_selection() {
         with_temp_config(|| {
             let err = handle_profiles(None, ProfileCommands::Show(ProfileShowArgs { name: None }))
                 .expect_err("should fail");
             assert!(err.to_string().contains("default_profile is unset"));
+        });
+    }
+
+    #[test]
+    fn show_profile_uses_selected_profile() {
+        with_temp_config(|| {
+            let mut store = ProfileStore::default();
+            store.profiles.insert(
+                "prod".into(),
+                Profile {
+                    control_plane_url: Some("https://cp.example".into()),
+                    operator_header: None,
+                    operator_token: Some("token".into()),
+                    registration_token: None,
+                    ca_cert_path: None,
+                },
+            );
+            store.save().expect("save");
+
+            handle_profiles(
+                Some("prod".into()),
+                ProfileCommands::Show(ProfileShowArgs { name: None }),
+            )
+            .expect("show");
         });
     }
 
@@ -207,6 +292,26 @@ mod tests {
             )
             .expect_err("should fail");
             assert!(err.to_string().contains("profile 'missing' not found"));
+        });
+    }
+
+    #[test]
+    fn set_default_updates_store() {
+        with_temp_config(|| {
+            let mut store = ProfileStore::default();
+            store.profiles.insert("prod".into(), Profile::default());
+            store.save().expect("save");
+
+            handle_profiles(
+                None,
+                ProfileCommands::SetDefault(ProfileSetDefaultArgs {
+                    name: "prod".into(),
+                }),
+            )
+            .expect("set default");
+
+            let loaded = ProfileStore::load().expect("load");
+            assert_eq!(loaded.default_profile.as_deref(), Some("prod"));
         });
     }
 
@@ -236,6 +341,25 @@ mod tests {
 
             let loaded = ProfileStore::load().expect("load");
             assert!(loaded.bootstrap_repo_owner.is_none());
+        });
+    }
+
+    #[test]
+    fn bootstrap_repo_owner_show_reads_value() {
+        with_temp_config(|| {
+            let store = ProfileStore {
+                bootstrap_repo_owner: Some("acme".into()),
+                ..Default::default()
+            };
+            store.save().expect("save");
+
+            handle_profiles(
+                None,
+                ProfileCommands::BootstrapRepoOwner {
+                    command: BootstrapRepoOwnerCommands::Show,
+                },
+            )
+            .expect("show");
         });
     }
 
