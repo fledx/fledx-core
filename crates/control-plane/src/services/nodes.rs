@@ -475,3 +475,192 @@ async fn update_deployment_statuses_for_node(
         .await
         .map_err(AppError::from)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_state::{RegistrationLimiter, RegistrationLimiterRef};
+    use crate::persistence::{nodes as node_store, tokens as token_store};
+    use crate::rate_limit::RateLimitDecision;
+    use crate::services::test_support::setup_state;
+    use crate::tokens::{TokenMatch, hash_token, legacy_hash, match_token};
+    use axum::http::StatusCode;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    struct DenyLimiter;
+
+    impl RegistrationLimiter for DenyLimiter {
+        fn acquire(&mut self) -> RateLimitDecision {
+            RateLimitDecision::limited(10, Duration::from_secs(2))
+        }
+    }
+
+    fn new_node(id: Uuid, token_hash: String) -> db::NewNode {
+        db::NewNode {
+            id,
+            name: Some("node".into()),
+            token_hash,
+            arch: None,
+            os: None,
+            public_ip: None,
+            public_host: None,
+            labels: None,
+            capacity: None,
+            last_seen: None,
+            status: db::NodeStatus::Ready,
+        }
+    }
+
+    #[tokio::test]
+    async fn register_node_persists_hashed_token() {
+        let state = setup_state().await;
+        let payload = RegistrationRequest {
+            name: Some("alpha".into()),
+            arch: Some("x86_64".into()),
+            os: Some("linux".into()),
+            labels: None,
+            capacity: None,
+            public_ip: None,
+            public_host: None,
+        };
+
+        let response = register_node(&state, &state.registration_token, payload)
+            .await
+            .expect("register");
+        let node = node_store::get_node(&state.db, response.node_id)
+            .await
+            .expect("get node")
+            .expect("node exists");
+
+        assert_eq!(node.name.as_deref(), Some("alpha"));
+        assert_eq!(node.status, db::NodeStatus::Registering);
+        let matched = match_token(&response.node_token, &node.token_hash, &state.token_pepper)
+            .expect("match token");
+        assert!(matches!(matched, Some(TokenMatch::Argon2)));
+        assert_eq!(response.tunnel.host, state.tunnel.advertised_host);
+        assert_eq!(response.tunnel.port, state.tunnel.advertised_port);
+    }
+
+    #[tokio::test]
+    async fn register_node_rejects_invalid_token() {
+        let state = setup_state().await;
+        let payload = RegistrationRequest {
+            name: None,
+            arch: None,
+            os: None,
+            labels: None,
+            capacity: None,
+            public_ip: None,
+            public_host: None,
+        };
+
+        let err = register_node(&state, "bad-token", payload)
+            .await
+            .expect_err("unauthorized");
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn register_node_returns_rate_limit_headers() {
+        let mut state = setup_state().await;
+        let limiter: RegistrationLimiterRef = Arc::new(tokio::sync::Mutex::new(DenyLimiter));
+        state.registration_limiter = Some(limiter);
+
+        let payload = RegistrationRequest {
+            name: None,
+            arch: None,
+            os: None,
+            labels: None,
+            capacity: None,
+            public_ip: None,
+            public_host: None,
+        };
+
+        let err = register_node(&state, &state.registration_token, payload)
+            .await
+            .expect_err("rate limited");
+        assert_eq!(err.status, StatusCode::TOO_MANY_REQUESTS);
+        let headers = err.headers.expect("rate limit headers");
+        assert!(headers.contains_key("x-ratelimit-limit"));
+    }
+
+    #[tokio::test]
+    async fn verify_node_token_accepts_active_token() {
+        let state = setup_state().await;
+        let node_id = Uuid::new_v4();
+        let node = new_node(node_id, "fallback".into());
+        node_store::create_node(&state.db, node)
+            .await
+            .expect("node");
+
+        let token = "node-token";
+        let hash = hash_token(token, &state.token_pepper).expect("hash");
+        let record = token_store::create_node_token(&state.db, node_id, hash, None)
+            .await
+            .expect("token");
+
+        let ok = verify_node_token(&state, node_id, token, "fallback")
+            .await
+            .expect("verify");
+        assert!(ok);
+
+        let updated = token_store::get_node_token(&state.db, record.id)
+            .await
+            .expect("get token")
+            .expect("record");
+        assert!(updated.last_used_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn verify_node_token_rejects_unknown_when_active_exists() {
+        let state = setup_state().await;
+        let node_id = Uuid::new_v4();
+        let node = new_node(node_id, "fallback".into());
+        node_store::create_node(&state.db, node)
+            .await
+            .expect("node");
+
+        let hash = hash_token("other-token", &state.token_pepper).expect("hash");
+        token_store::create_node_token(&state.db, node_id, hash, None)
+            .await
+            .expect("token");
+
+        let ok = verify_node_token(&state, node_id, "node-token", "fallback")
+            .await
+            .expect("verify");
+        assert!(!ok);
+    }
+
+    #[tokio::test]
+    async fn verify_node_token_falls_back_to_node_hash() {
+        let state = setup_state().await;
+        let node_id = Uuid::new_v4();
+        let token = "legacy-token";
+        let fallback = legacy_hash(token);
+        let node = new_node(node_id, fallback.clone());
+        node_store::create_node(&state.db, node)
+            .await
+            .expect("node");
+
+        let ok = verify_node_token(&state, node_id, token, &fallback)
+            .await
+            .expect("verify");
+        assert!(ok);
+
+        let records = token_store::list_active_node_tokens(&state.db, node_id)
+            .await
+            .expect("list");
+        assert_eq!(records.len(), 1);
+        let matched =
+            match_token(token, &records[0].token_hash, &state.token_pepper).expect("match");
+        assert!(matches!(matched, Some(TokenMatch::Argon2)));
+
+        let node = node_store::get_node(&state.db, node_id)
+            .await
+            .expect("get node")
+            .expect("node");
+        let matched = match_token(token, &node.token_hash, &state.token_pepper).expect("match");
+        assert!(matches!(matched, Some(TokenMatch::Argon2)));
+    }
+}
