@@ -70,3 +70,53 @@ fn duration_to_seconds(duration: Duration) -> u64 {
     }
     rounded
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn allowed_headers_include_limits_and_reset() {
+        let decision = RateLimitDecision::allowed(10, 4, Duration::from_secs(30));
+        let headers = decision.headers();
+
+        assert_eq!(
+            headers.get("x-ratelimit-limit").unwrap(),
+            "10",
+            "limit header should be set"
+        );
+        assert_eq!(
+            headers.get("x-ratelimit-remaining").unwrap(),
+            "4",
+            "remaining header should be set"
+        );
+        assert_eq!(
+            headers.get("x-ratelimit-reset").unwrap(),
+            "30",
+            "reset header should reflect seconds"
+        );
+        assert!(
+            headers.get(RETRY_AFTER).is_none(),
+            "retry-after should not be present when allowed"
+        );
+    }
+
+    #[test]
+    fn limited_headers_include_retry_after() {
+        let decision = RateLimitDecision::limited(5, Duration::from_millis(1500));
+        let headers = decision.headers();
+
+        assert_eq!(headers.get("x-ratelimit-limit").unwrap(), "5");
+        assert_eq!(headers.get("x-ratelimit-remaining").unwrap(), "0");
+        assert_eq!(headers.get("x-ratelimit-reset").unwrap(), "2");
+        assert_eq!(headers.get(RETRY_AFTER).unwrap(), "2");
+    }
+
+    #[test]
+    fn zero_limit_yields_no_headers() {
+        let decision = RateLimitDecision::allowed(0, 0, Duration::from_secs(10));
+        let headers = decision.headers();
+
+        assert!(headers.is_empty(), "zero limit should omit headers");
+    }
+}

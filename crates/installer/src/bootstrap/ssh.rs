@@ -708,4 +708,43 @@ mod tests {
         assert!(msg.contains("did not contain an absolute path"), "{msg}");
         assert!(msg.contains("fledx-bootstrap-cp"), "{msg}");
     }
+
+    #[test]
+    fn ssh_target_uses_override_user_when_provided() {
+        let target =
+            SshTarget::from_user_at_host("alice@example.com", Some("bob".to_string()), 22, None);
+        assert_eq!(target.user.as_deref(), Some("bob"));
+        assert_eq!(target.host, "example.com");
+        assert_eq!(target.destination(), "bob@example.com");
+    }
+
+    #[test]
+    fn ssh_target_destination_without_user_uses_host() {
+        let target = SshTarget::from_user_at_host("example.com", None, 22, None);
+        assert_eq!(target.user, None);
+        assert_eq!(target.destination(), "example.com");
+    }
+
+    #[test]
+    fn host_key_checking_values_match_expectations() {
+        assert_eq!(
+            SshHostKeyChecking::AcceptNew.strict_host_key_checking_value(),
+            "accept-new"
+        );
+        assert_eq!(
+            SshHostKeyChecking::Strict.strict_host_key_checking_value(),
+            "yes"
+        );
+        assert_eq!(
+            SshHostKeyChecking::Off.strict_host_key_checking_value(),
+            "no"
+        );
+    }
+
+    #[test]
+    fn render_upload_command_errors_without_parent() {
+        let err = render_upload_command(&PathBuf::from("/")).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("missing parent directory"), "{msg}");
+    }
 }
