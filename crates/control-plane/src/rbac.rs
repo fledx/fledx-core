@@ -88,3 +88,56 @@ pub fn default_scopes_for_role(role: OperatorRole) -> Vec<String> {
 pub fn is_valid_scope(scope: &str) -> bool {
     VALID_SCOPES.contains(&scope)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn to_vec(scopes: &[&str]) -> Vec<String> {
+        scopes.iter().map(|scope| (*scope).to_string()).collect()
+    }
+
+    #[test]
+    fn operator_role_from_str_normalizes_input() {
+        assert_eq!(
+            OperatorRole::from_str("ADMIN").unwrap(),
+            OperatorRole::Admin
+        );
+        assert_eq!(
+            OperatorRole::from_str("read-only").unwrap(),
+            OperatorRole::ReadOnly
+        );
+        assert_eq!(
+            OperatorRole::from_str("  read_only ").unwrap(),
+            OperatorRole::ReadOnly
+        );
+    }
+
+    #[test]
+    fn operator_role_from_str_rejects_unknown_role() {
+        assert!(OperatorRole::from_str("superuser").is_err());
+    }
+
+    #[test]
+    fn default_scopes_match_role() {
+        assert_eq!(
+            default_scopes_for_role(OperatorRole::Admin),
+            to_vec(&ADMIN_SCOPES)
+        );
+        assert_eq!(
+            default_scopes_for_role(OperatorRole::Operator),
+            to_vec(&OPERATOR_SCOPES)
+        );
+        assert_eq!(
+            default_scopes_for_role(OperatorRole::ReadOnly),
+            to_vec(&READ_ONLY_SCOPES)
+        );
+    }
+
+    #[test]
+    fn is_valid_scope_filters_unknown_scopes() {
+        assert!(is_valid_scope("deployment.read"));
+        assert!(!is_valid_scope("deployment.delete"));
+    }
+}

@@ -274,3 +274,73 @@ async fn log_authz_failure(
     )
     .await;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::{HeaderValue, StatusCode};
+
+    #[test]
+    fn extract_bearer_accepts_authorization_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer token-123"));
+
+        let token = extract_bearer(&headers).expect("token should parse");
+        assert_eq!(token, "token-123");
+    }
+
+    #[test]
+    fn extract_bearer_from_header_accepts_custom_header() {
+        let mut headers = HeaderMap::new();
+        let header = HeaderName::from_static("x-fledx-operator");
+        headers.insert(&header, HeaderValue::from_static("Bearer operator-token"));
+
+        let token = extract_bearer_from_header(&headers, &header, "custom header")
+            .expect("custom header should parse");
+        assert_eq!(token, "operator-token");
+    }
+
+    #[test]
+    fn extract_bearer_rejects_missing_header() {
+        let headers = HeaderMap::new();
+        let err = extract_bearer(&headers).expect_err("missing header should fail");
+
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+        assert!(err.message.contains("missing authorization header"));
+    }
+
+    #[test]
+    fn extract_bearer_rejects_invalid_scheme() {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, HeaderValue::from_static("Basic abc123"));
+        let err = extract_bearer(&headers).expect_err("invalid scheme should fail");
+
+        assert_eq!(err.status, StatusCode::UNAUTHORIZED);
+        assert!(err.message.contains("invalid authorization header scheme"));
+    }
+
+    #[test]
+    fn operator_identity_accessors_round_trip() {
+        let id = Uuid::new_v4();
+        let scopes = vec!["deployment.read".to_string(), "config.read".to_string()];
+        let identity = OperatorIdentity::DbToken {
+            id,
+            token_hash: "hash-123".to_string(),
+            role: OperatorRole::Operator,
+            scopes: scopes.clone(),
+        };
+
+        assert_eq!(identity.token_id(), Some(id));
+        assert_eq!(identity.token_hash(), "hash-123");
+        assert_eq!(identity.role(), OperatorRole::Operator);
+        assert_eq!(identity.scopes(), scopes.as_slice());
+        assert!(identity.has_scope("deployment.read"));
+        assert!(!identity.has_scope("deployment.write"));
+
+        let actor = identity.to_audit_actor();
+        assert_eq!(actor.token_id, Some(id));
+        assert_eq!(actor.token_hash.as_deref(), Some("hash-123"));
+        assert_eq!(actor.role.as_deref(), Some("operator"));
+        assert_eq!(actor.scopes.as_ref(), Some(&scopes));
+    }
+}
