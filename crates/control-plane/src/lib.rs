@@ -671,4 +671,70 @@ mod tls_tests {
             "unexpected error: {err}"
         );
     }
+
+    #[test]
+    fn load_tls_config_requires_cert_path() {
+        let cfg = ServerTlsConfig {
+            enabled: true,
+            cert_path: None,
+            key_path: Some("key.pem".to_string()),
+        };
+        let err = load_tls_config(&cfg).expect_err("missing cert path");
+        assert!(err.to_string().contains("cert_path is required"));
+    }
+
+    #[test]
+    fn load_tls_config_requires_key_path() {
+        let cfg = ServerTlsConfig {
+            enabled: true,
+            cert_path: Some("cert.pem".to_string()),
+            key_path: None,
+        };
+        let err = load_tls_config(&cfg).expect_err("missing key path");
+        assert!(err.to_string().contains("key_path is required"));
+    }
+
+    #[test]
+    fn load_tls_config_rejects_empty_certificate_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cert_path = dir.path().join("cert.pem");
+        let key_path = dir.path().join("key.pem");
+        fs::write(&cert_path, "").expect("write cert");
+        fs::write(&key_path, "unused").expect("write key");
+
+        let cfg = ServerTlsConfig {
+            enabled: true,
+            cert_path: Some(cert_path.to_string_lossy().to_string()),
+            key_path: Some(key_path.to_string_lossy().to_string()),
+        };
+
+        let err = load_tls_config(&cfg).expect_err("empty cert should fail");
+        assert!(
+            err.to_string()
+                .contains("TLS certificate file contains no PEM certificates"),
+            "unexpected error: {err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_connection_error;
+    use std::io;
+
+    #[test]
+    fn is_connection_error_flags_expected_kinds() {
+        let refused = io::Error::from(io::ErrorKind::ConnectionRefused);
+        let aborted = io::Error::from(io::ErrorKind::ConnectionAborted);
+        let reset = io::Error::from(io::ErrorKind::ConnectionReset);
+        assert!(is_connection_error(&refused));
+        assert!(is_connection_error(&aborted));
+        assert!(is_connection_error(&reset));
+    }
+
+    #[test]
+    fn is_connection_error_returns_false_for_other_kinds() {
+        let not_found = io::Error::from(io::ErrorKind::NotFound);
+        assert!(!is_connection_error(&not_found));
+    }
 }
