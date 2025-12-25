@@ -122,7 +122,7 @@ pub async fn run_parsed_with(cli: Cli, _options: RunOptions) -> anyhow::Result<(
         Commands::Configs { command } => handle_configs(&ctx, command).await?,
         Commands::Metrics { command } => handle_metrics(&ctx, command).await?,
         Commands::Usage { command } => handle_usage(&ctx, command).await?,
-        Commands::Completions { shell } => generate_completions(shell),
+        Commands::Completions { shell } => generate_completions(shell)?,
         #[cfg(feature = "bootstrap")]
         Commands::Bootstrap { args, command } => {
             handle_bootstrap(
