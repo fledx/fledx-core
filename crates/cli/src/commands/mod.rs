@@ -1,5 +1,6 @@
-use crate::api::OperatorApi;
+use crate::api::{OperatorApi, SessionTokenCache};
 use anyhow::Context;
+use std::sync::Arc;
 
 #[cfg(feature = "bootstrap")]
 pub mod bootstrap;
@@ -21,6 +22,7 @@ pub struct CommandContext {
     pub base: String,
     pub operator_header: String,
     pub operator_token: Option<String>,
+    pub session_cache: Option<Arc<SessionTokenCache>>,
 }
 
 impl CommandContext {
@@ -35,10 +37,35 @@ impl CommandContext {
             base,
             operator_header,
             operator_token,
+            session_cache: None,
+        }
+    }
+
+    pub fn new_with_session(
+        client: reqwest::Client,
+        base: String,
+        operator_header: String,
+        operator_token: Option<String>,
+        session_cache: Arc<SessionTokenCache>,
+    ) -> Self {
+        Self {
+            client,
+            base,
+            operator_header,
+            operator_token,
+            session_cache: Some(session_cache),
         }
     }
 
     pub fn operator_api(&self) -> anyhow::Result<OperatorApi> {
+        if let Some(cache) = &self.session_cache {
+            return Ok(OperatorApi::new_with_session(
+                self.client.clone(),
+                self.base.clone(),
+                self.operator_header.clone(),
+                cache.clone(),
+            ));
+        }
         let token = resolve_operator_token(&self.operator_token)?;
         Ok(make_operator_api(
             &self.client,

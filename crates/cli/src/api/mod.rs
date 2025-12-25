@@ -7,15 +7,28 @@ use reqwest::{
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::Value;
+use std::sync::Arc;
 
 use crate::version;
+
+mod session;
+pub use session::{SessionTokenCache, SessionTokenConfig};
+
+pub const CLIENT_FINGERPRINT_HEADER: &str = "x-fledx-client-fingerprint";
+
+#[derive(Clone)]
+enum OperatorAuth {
+    Static(String),
+    Session(Arc<SessionTokenCache>),
+}
 
 #[derive(Clone)]
 pub struct OperatorApi {
     client: Client,
     base: String,
     operator_header: String,
-    operator_token: String,
+    operator_auth: OperatorAuth,
+    client_fingerprint: Option<String>,
 }
 
 impl OperatorApi {
@@ -29,8 +42,29 @@ impl OperatorApi {
             client,
             base: base.into(),
             operator_header: operator_header.into(),
-            operator_token: operator_token.into(),
+            operator_auth: OperatorAuth::Static(operator_token.into()),
+            client_fingerprint: None,
         }
+    }
+
+    pub fn new_with_session(
+        client: Client,
+        base: impl Into<String>,
+        operator_header: impl Into<String>,
+        session_cache: Arc<SessionTokenCache>,
+    ) -> Self {
+        Self {
+            client,
+            base: base.into(),
+            operator_header: operator_header.into(),
+            operator_auth: OperatorAuth::Session(session_cache.clone()),
+            client_fingerprint: Some(session_cache.client_fingerprint().to_string()),
+        }
+    }
+
+    pub fn with_client_fingerprint(mut self, fingerprint: impl Into<String>) -> Self {
+        self.client_fingerprint = Some(fingerprint.into());
+        self
     }
 
     fn url(&self, path: &str) -> String {
@@ -38,7 +72,11 @@ impl OperatorApi {
         format!("{}/{}", self.base.trim_end_matches('/'), trimmed)
     }
 
-    fn apply_operator_auth(&self, req: RequestBuilder) -> Result<RequestBuilder> {
+    fn apply_operator_auth_with_token(
+        &self,
+        req: RequestBuilder,
+        token: &str,
+    ) -> Result<RequestBuilder> {
         let header = HeaderName::from_bytes(self.operator_header.as_bytes()).map_err(|err| {
             anyhow::anyhow!(
                 "invalid operator header name '{}': {}",
@@ -46,12 +84,34 @@ impl OperatorApi {
                 err
             )
         })?;
-        Ok(req.header(header, format!("Bearer {}", self.operator_token)))
+        let req = req.header(header, format!("Bearer {}", token));
+        let req = if let Some(fingerprint) = &self.client_fingerprint {
+            req.header(CLIENT_FINGERPRINT_HEADER, fingerprint)
+        } else {
+            req
+        };
+        Ok(req)
     }
 
     async fn send(&self, req: RequestBuilder) -> Result<Response> {
-        let req = self.apply_operator_auth(req)?;
+        let retry = req.try_clone();
+        let req = self.apply_operator_auth(req).await?;
         let res = req.send().await?;
+        let status = res.status();
+
+        if matches!(self.operator_auth, OperatorAuth::Session(_))
+            && (status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN)
+        {
+            if let OperatorAuth::Session(cache) = &self.operator_auth {
+                cache.invalidate().await;
+            }
+            if let Some(retry) = retry {
+                let req = self.apply_operator_auth(retry).await?;
+                let res = req.send().await?;
+                return handle_operator_response(res).await;
+            }
+        }
+
         handle_operator_response(res).await
     }
 
@@ -75,7 +135,24 @@ impl OperatorApi {
 
     #[cfg(test)]
     pub(crate) fn apply_auth(&self, req: RequestBuilder) -> Result<RequestBuilder> {
-        self.apply_operator_auth(req)
+        match &self.operator_auth {
+            OperatorAuth::Static(token) => self.apply_operator_auth_with_token(req, token),
+            OperatorAuth::Session(_) => {
+                Err(anyhow::anyhow!("session-auth requires async request path"))
+            }
+        }
+    }
+
+    async fn operator_token(&self) -> Result<String> {
+        match &self.operator_auth {
+            OperatorAuth::Static(token) => Ok(token.clone()),
+            OperatorAuth::Session(cache) => cache.token().await,
+        }
+    }
+
+    async fn apply_operator_auth(&self, req: RequestBuilder) -> Result<RequestBuilder> {
+        let token = self.operator_token().await?;
+        self.apply_operator_auth_with_token(req, &token)
     }
 
     pub async fn post_json<B, T>(&self, path: &str, body: &B) -> Result<T>
@@ -243,13 +320,16 @@ mod tests {
             "http://example.com",
             "x-operator-token",
             "abc",
-        );
+        )
+        .with_client_fingerprint("host=test;user=test");
         let req = api
             .apply_auth(Client::new().post("http://example.com"))
             .unwrap();
         let built = req.build().unwrap();
         let header = built.headers().get("x-operator-token").unwrap();
         assert_eq!(header.to_str().unwrap(), "Bearer abc");
+        let fingerprint = built.headers().get(CLIENT_FINGERPRINT_HEADER).unwrap();
+        assert_eq!(fingerprint.to_str().unwrap(), "host=test;user=test");
     }
 
     #[test]

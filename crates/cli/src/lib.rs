@@ -16,7 +16,7 @@ mod version;
 pub mod view;
 pub mod watch;
 
-pub use api::OperatorApi;
+pub use api::{OperatorApi, SessionTokenCache, SessionTokenConfig};
 pub use args::*;
 #[cfg(feature = "bootstrap")]
 pub use bootstrap_spec::{
@@ -50,6 +50,7 @@ use crate::commands::status::handle_status;
 use crate::commands::usage::handle_usage;
 #[cfg(feature = "bootstrap")]
 use crate::profile_store::ProfileStore;
+use std::sync::Arc;
 
 /// Shared async entrypoint used by the CLI binaries.
 pub async fn run() -> anyhow::Result<()> {
@@ -96,12 +97,22 @@ pub async fn run_parsed_with(cli: Cli, _options: RunOptions) -> anyhow::Result<(
     let globals = cli.globals.clone();
     let registration_token = globals.registration_token.clone();
     let base = globals.control_plane_url.trim_end_matches('/').to_string();
-    let ctx = CommandContext::new(
-        client.clone(),
-        base.clone(),
-        globals.operator_header.clone(),
-        globals.operator_token.clone(),
-    );
+    let ctx = if let Some(cache) = _options.session_cache.clone() {
+        CommandContext::new_with_session(
+            client.clone(),
+            base.clone(),
+            globals.operator_header.clone(),
+            globals.operator_token.clone(),
+            cache,
+        )
+    } else {
+        CommandContext::new(
+            client.clone(),
+            base.clone(),
+            globals.operator_header.clone(),
+            globals.operator_token.clone(),
+        )
+    };
     let command = cli.command;
 
     match command {
@@ -138,10 +149,11 @@ pub async fn run_parsed_with(cli: Cli, _options: RunOptions) -> anyhow::Result<(
 /// This exists primarily so downstream binaries can reuse the core CLI command
 /// implementation while tweaking distribution-specific behavior (e.g. bootstrap
 /// downloading enterprise release assets instead of core assets).
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone)]
 pub struct RunOptions {
     #[cfg(feature = "bootstrap")]
     pub bootstrap_spec: BootstrapReleaseSpec,
+    pub session_cache: Option<Arc<crate::api::SessionTokenCache>>,
 }
 
 impl Default for RunOptions {
@@ -149,6 +161,7 @@ impl Default for RunOptions {
         Self {
             #[cfg(feature = "bootstrap")]
             bootstrap_spec: BootstrapReleaseSpec::core(),
+            session_cache: None,
         }
     }
 }
