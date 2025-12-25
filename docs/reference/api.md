@@ -48,6 +48,9 @@ export FLEDX_CLI_OPERATOR_TOKEN=your-operator-token-here
 - Tokens are configured in the control plane: `FLEDX_CP_OPERATOR_TOKENS=token1,token2`
 - Multiple tokens supported (comma-separated)
 - Rotate tokens by updating control plane config and restarting
+- Env tokens are for bootstrap only. The control-plane logs a warning on use; set
+  `FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS=true` to disable env tokens after the first successful admin call
+  and remove them from your config once rotated.
 
 ### Public Endpoints
 

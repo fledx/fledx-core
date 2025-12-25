@@ -161,8 +161,14 @@ FLEDX_CP_TOKENS_PEPPER=change-me-pepper
 # Optional hardening
 # FLEDX_CP_PORTS_AUTO_ASSIGN=true
 # FLEDX_CP_FEATURES_ENFORCE_AGENT_COMPATIBILITY=true
+# FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS=true
 RUST_LOG=info
 ```
+
+`FLEDX_CP_OPERATOR_TOKENS` is meant for bootstrap only. The control-plane logs a warning every time an env token is
+used; set `FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS=true` to automatically turn off env tokens after the first
+successful admin call and rotate to managed tokens. Remove the token from the env file once you have created a
+replacement.
 
 Systemd unit `/etc/systemd/system/fledx-cp.service`:
 

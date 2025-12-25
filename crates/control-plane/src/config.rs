@@ -87,6 +87,16 @@ pub struct OperatorAuthConfig {
     #[serde(deserialize_with = "deserialize_string_or_vec")]
     pub tokens: Vec<String>,
     pub header_name: String,
+    #[serde(default)]
+    pub env: OperatorEnvConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct OperatorEnvConfig {
+    #[serde(default = "default_true")]
+    pub warn_on_use: bool,
+    #[serde(default)]
+    pub disable_after_first_success: bool,
 }
 
 fn deserialize_string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -256,6 +266,16 @@ const ENV_OVERRIDES: &[(&str, &str, bool)] = &[
     (
         "FLEDX_CP_OPERATOR_HEADER_NAME",
         "operator.header_name",
+        false,
+    ),
+    (
+        "FLEDX_CP_OPERATOR_ENV_WARN_ON_USE",
+        "operator.env.warn_on_use",
+        false,
+    ),
+    (
+        "FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS",
+        "operator.env.disable_after_first_success",
         false,
     ),
     ("FLEDX_CP_TOKENS_PEPPER", "tokens.pepper", false),
@@ -698,6 +718,8 @@ pub fn load() -> anyhow::Result<AppConfig> {
         .set_default("registration.rate_limit_per_minute", 30)?
         .set_default("operator.tokens", vec!["dev-operator-token"])?
         .set_default("operator.header_name", "authorization")?
+        .set_default("operator.env.warn_on_use", true)?
+        .set_default("operator.env.disable_after_first_success", false)?
         .set_default("tokens.pepper", "dev-token-pepper")?
         .set_default("limits.registration_body_bytes", 16 * 1024u64)?
         .set_default("limits.heartbeat_body_bytes", 64 * 1024u64)?
@@ -850,6 +872,25 @@ mod tests {
                 assert_eq!(cfg.registration.rate_limit_per_minute, 45);
                 assert_eq!(cfg.limits.max_field_len, 512);
                 assert!(!cfg.reachability.reschedule_on_unreachable);
+            },
+        );
+    }
+
+    #[test]
+    fn operator_env_policy_defaults_and_overrides() {
+        let cfg = load().expect("config loads");
+        assert!(cfg.operator.env.warn_on_use);
+        assert!(!cfg.operator.env.disable_after_first_success);
+
+        with_control_plane_env(
+            &[
+                ("FLEDX_CP_OPERATOR_ENV_WARN_ON_USE", "false"),
+                ("FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS", "true"),
+            ],
+            || {
+                let cfg = load().expect("config loads");
+                assert!(!cfg.operator.env.warn_on_use);
+                assert!(cfg.operator.env.disable_after_first_success);
             },
         );
     }

@@ -4053,7 +4053,9 @@ mod tests {
 
     mod common {
         use super::*;
-        use crate::app_state::{NoopRegistrationLimiter, OperatorAuth, RegistrationLimiterRef};
+        use crate::app_state::{
+            EnvTokenPolicy, NoopRegistrationLimiter, OperatorAuth, RegistrationLimiterRef,
+        };
         use std::sync::Arc;
 
         pub(super) async fn setup_state() -> AppState {
@@ -4091,6 +4093,7 @@ mod tests {
                 operator_auth: OperatorAuth {
                     tokens: vec!["op-token".into()],
                     header_name: HeaderName::from_static("authorization"),
+                    env_policy: EnvTokenPolicy::default(),
                 },
                 operator_token_validator: std::sync::Arc::new(|state, token| {
                     Box::pin(crate::auth::env_only_operator_token_validator(state, token))
@@ -4168,6 +4171,28 @@ mod tests {
                     .unwrap();
                 assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
             }
+        }
+
+        #[tokio::test]
+        async fn env_tokens_can_be_disabled_after_first_use() {
+            let mut state = setup_state().await;
+            state.operator_auth.env_policy = crate::app_state::EnvTokenPolicy::new(true, true);
+
+            let app = build_router(state.clone()).with_state(state.clone());
+
+            let first = app
+                .clone()
+                .oneshot(common::operator_request("/api/v1/nodes"))
+                .await
+                .unwrap();
+            assert_eq!(first.status(), StatusCode::OK);
+
+            let second = app
+                .clone()
+                .oneshot(common::operator_request("/api/v1/nodes"))
+                .await
+                .unwrap();
+            assert_eq!(second.status(), StatusCode::FORBIDDEN);
         }
     }
 

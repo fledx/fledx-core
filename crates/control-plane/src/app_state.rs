@@ -2,6 +2,7 @@ use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
+    sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -65,16 +66,67 @@ pub struct AppState {
 pub struct OperatorAuth {
     pub tokens: Vec<String>,
     pub header_name: HeaderName,
+    pub env_policy: EnvTokenPolicy,
 }
 
 impl OperatorAuth {
     pub fn is_env_token(&self, candidate: &str) -> bool {
+        if self.env_policy.is_disabled() {
+            return false;
+        }
         self.tokens.iter().any(|token| {
             if token.len() != candidate.len() {
                 return false;
             }
             token.as_bytes().ct_eq(candidate.as_bytes()).into()
         })
+    }
+}
+
+/// Runtime policy for environment-provided operator tokens.
+#[derive(Clone)]
+pub struct EnvTokenPolicy {
+    warn_on_use: bool,
+    disable_after_first_success: bool,
+    disabled: Arc<AtomicBool>,
+}
+
+impl EnvTokenPolicy {
+    pub fn new(warn_on_use: bool, disable_after_first_success: bool) -> Self {
+        Self {
+            warn_on_use,
+            disable_after_first_success,
+            disabled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn from_config(cfg: &crate::config::OperatorEnvConfig) -> Self {
+        Self::new(cfg.warn_on_use, cfg.disable_after_first_success)
+    }
+
+    pub fn should_warn(&self) -> bool {
+        self.warn_on_use
+    }
+
+    pub fn disable_after_first_success(&self) -> bool {
+        self.disable_after_first_success
+    }
+
+    pub fn is_disabled(&self) -> bool {
+        self.disabled.load(Ordering::Relaxed)
+    }
+
+    /// Returns true when this call disabled env tokens.
+    pub fn disable(&self) -> bool {
+        self.disabled
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    }
+}
+
+impl Default for EnvTokenPolicy {
+    fn default() -> Self {
+        Self::new(true, false)
     }
 }
 

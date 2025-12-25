@@ -43,6 +43,10 @@ in `localStorage` so you do not have to type it again during the next browser se
   `dev-operator-token`). You paste the token into the masked input at the top of the page; the UI automatically prefixes
   it with `Bearer ` if you omit the prefix and persists it inside the browser under the key `fledx-observability-token`
   for the next session.
+- **Bootstrap-only env tokens.** Tokens from `FLEDX_CP_OPERATOR_TOKENS` are intended for initial bootstrap. The
+  control-plane logs a warning whenever an env token is used. Set
+  `FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS=true` to automatically disable env tokens after the first
+  successful admin request and rotate to database-backed/session tokens instead.
 - **Operator header name.** The UI displays this name next to the token input. If you change the header (for example, to
   `x-custom-operator`), the UI will continue to read `/ui` but the header text it shows will match what the
   control-plane reports.

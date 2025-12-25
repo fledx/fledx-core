@@ -36,7 +36,8 @@ use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::app_state::{
-    AppState, OperatorAuth, OperatorAuthorizer, OperatorTokenValidator, RegistrationLimiterRef,
+    AppState, EnvTokenPolicy, OperatorAuth, OperatorAuthorizer, OperatorTokenValidator,
+    RegistrationLimiterRef,
 };
 use crate::metrics::{init_metrics_recorder, record_build_info, MetricsHistory};
 
@@ -162,6 +163,18 @@ where
         .header_name
         .parse::<HeaderName>()
         .map_err(|err| anyhow::anyhow!("invalid operator header name: {}", err))?;
+    let operator_env_policy = EnvTokenPolicy::from_config(&app_config.operator.env);
+    if operator_env_policy.disable_after_first_success() {
+        info!(
+            token_count = operator_tokens.len(),
+            "environment operator tokens loaded (bootstrap only); will be disabled after first successful use"
+        );
+    } else if operator_env_policy.should_warn() {
+        info!(
+            token_count = operator_tokens.len(),
+            "environment operator tokens loaded (bootstrap only); set FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS=true to disable after first use"
+        );
+    }
 
     let db_pool = persistence::migrations::init_pool(&app_config.database.url).await?;
     if app_config.features.migrations_dry_run_on_start && mode == CommandMode::Serve {
@@ -267,6 +280,7 @@ where
         operator_auth: OperatorAuth {
             tokens: operator_tokens,
             header_name: operator_header,
+            env_policy: operator_env_policy,
         },
         operator_token_validator,
         operator_authorizer,

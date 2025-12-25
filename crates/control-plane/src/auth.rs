@@ -12,6 +12,7 @@ use crate::{
     telemetry,
     tokens::legacy_hash,
 };
+use tracing::{info, warn};
 use uuid::Uuid;
 
 pub async fn require_operator_auth(
@@ -55,6 +56,50 @@ pub async fn require_operator_auth(
             return Err(AppError::forbidden("invalid operator token"));
         }
     };
+    if let OperatorIdentity::EnvToken { .. } = &identity {
+        let actor = identity.to_audit_actor();
+        let policy = &state.operator_auth.env_policy;
+        if policy.should_warn() {
+            warn!(
+                request_id = request_id.as_deref(),
+                path = %path,
+                "environment operator token used; intended for bootstrap only"
+            );
+            telemetry::record_audit_log(
+                &state,
+                "auth.env_token_used",
+                "operator",
+                AuditStatus::Success,
+                audit::AuditContext {
+                    resource_id: None,
+                    actor: Some(&actor),
+                    request_id: request_id.as_deref(),
+                    payload: Some("environment operator token accepted".to_string()),
+                },
+            )
+            .await;
+        }
+        if policy.disable_after_first_success() && policy.disable() {
+            info!(
+                request_id = request_id.as_deref(),
+                path = %path,
+                "environment operator tokens disabled after first successful use"
+            );
+            telemetry::record_audit_log(
+                &state,
+                "auth.env_token_disabled",
+                "operator",
+                AuditStatus::Success,
+                audit::AuditContext {
+                    resource_id: None,
+                    actor: Some(&actor),
+                    request_id: request_id.as_deref(),
+                    payload: Some("environment operator tokens disabled".to_string()),
+                },
+            )
+            .await;
+        }
+    }
 
     if let Some(authorizer) = &state.operator_authorizer {
         if let Err(err) = (authorizer)(&req, &identity) {

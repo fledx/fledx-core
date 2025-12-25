@@ -11,7 +11,9 @@ use axum::{
 use chrono::Utc;
 use common::api;
 use control_plane::{
-    app_state::{AppState, NoopRegistrationLimiter, OperatorAuth, RegistrationLimiterRef},
+    app_state::{
+        AppState, EnvTokenPolicy, NoopRegistrationLimiter, OperatorAuth, RegistrationLimiterRef,
+    },
     compat::AgentCompatibility,
     config::{
         CompatibilityConfig, LimitsConfig, PortsConfig, ReachabilityConfig, RetentionConfig,
@@ -287,6 +289,7 @@ pub fn make_state(db: db::Db, config: &TestAppConfig, schema: db::MigrationSnaps
                 .operator_header
                 .clone()
                 .unwrap_or_else(|| HeaderName::from_static("authorization")),
+            env_policy: EnvTokenPolicy::default(),
         },
         operator_token_validator: Arc::new(|state, token| {
             Box::pin(control_plane::auth::env_only_operator_token_validator(
