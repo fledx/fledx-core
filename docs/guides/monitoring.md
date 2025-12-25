@@ -142,7 +142,7 @@ See detailed setup instructions below for configuration files and alert rules.
 **Control Plane Metrics:**
 
 ```bash
-curl http://localhost:49422/metrics
+curl -H "Authorization: Bearer <operator-token>" http://localhost:49422/metrics
 ```
 
 **Node Agent Metrics:**
@@ -151,7 +151,8 @@ curl http://localhost:49422/metrics
 curl http://<node-ip>:49431/metrics
 ```
 
-Both endpoints expose Prometheus-compatible metrics.
+Both endpoints expose Prometheus-compatible metrics. The control-plane endpoint requires an operator token (header name
+defaults to `authorization`; override with `FLEDX_CP_OPERATOR_HEADER_NAME`).
 
 ### Setting Up Prometheus
 
@@ -170,6 +171,7 @@ scrape_configs:
     static_configs:
       - targets: [ 'control-plane.example.com:49422' ]
     metrics_path: '/metrics'
+    bearer_token: '<operator-token>'
 
   # Node Agents
   - job_name: 'fledx-node-agents'

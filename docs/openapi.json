@@ -11,7 +11,7 @@
       "name": "BUSL-1.1",
       "identifier": "BUSL-1.1"
     },
-    "version": "0.5.0-dev (git 6dc4cec-dirty, dirty=true, built 2025-12-17T20:53:38Z)"
+    "version": "0.5.0-dev (git 18ff310-dirty, dirty=true, built 2025-12-25T18:17:58Z)"
   },
   "paths": {
     "/api/v1/configs": {
@@ -1580,7 +1580,12 @@
               "text/plain": {}
             }
           }
-        }
+        },
+        "security": [
+          {
+            "operatorBearer": []
+          }
+        ]
       }
     }
   },
@@ -4621,7 +4626,7 @@
             "type": "integer",
             "format": "int32",
             "description": "Port where the gateway exposes the tunnel listener.",
-            "example": 7443,
+            "example": 49423,
             "minimum": 0
           },
           "use_tls": {

@@ -57,7 +57,7 @@ export FLEDX_CLI_OPERATOR_TOKEN=your-operator-token-here
 The following endpoints do not require authentication:
 
 - `GET /health` - Control plane health check
-- `GET /metrics` - Prometheus metrics (consider restricting in production)
+- `GET /metrics` - Prometheus metrics (requires operator token)
 
 ## Common Workflows
 

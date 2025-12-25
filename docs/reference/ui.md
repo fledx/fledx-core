@@ -41,7 +41,8 @@ in `localStorage` so you do not have to type it again during the next browser se
 
 - **Operator tokens.** The UI requires one of the strings listed in `FLEDX_CP_OPERATOR_TOKENS`. You paste the token into
   the masked input at the top of the page; the UI automatically prefixes it with `Bearer ` if you omit the prefix and
-  persists it inside the browser under the key `fledx-observability-token` for the next session.
+  persists it inside the browser under the key `fledx-observability-token` for the next session. The same token is used
+  for `/metrics` requests.
 - **Bootstrap-only env tokens.** Tokens from `FLEDX_CP_OPERATOR_TOKENS` are intended for initial bootstrap. The
   control-plane logs a warning whenever an env token is used. Set
   `FLEDX_CP_OPERATOR_ENV_DISABLE_AFTER_FIRST_SUCCESS=true` to automatically disable env tokens after the first

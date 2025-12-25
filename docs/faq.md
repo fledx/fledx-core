@@ -68,7 +68,7 @@ See the [Upgrade Guide](guides/upgrades.md) for detailed procedures.
 
 - **Control Plane Logs:** `sudo journalctl -u fledx-cp -f`
 - **Node Agent Logs:** `sudo journalctl -u fledx-agent -f`
-- **Metrics Endpoint:** `http://<control-plane>:49422/metrics` (Prometheus format)
+- **Metrics Endpoint:** `http://<control-plane>:49422/metrics` (Prometheus format; requires operator token)
 - **Deployment Logs:** `fledx deployments logs --resource-type deployment --resource-id <id>`
 
 See the [Monitoring Guide](guides/monitoring.md) for more information.

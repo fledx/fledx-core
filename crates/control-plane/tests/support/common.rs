@@ -146,7 +146,7 @@ pub async fn setup_apps_with_config(config: TestAppConfig) -> (Router, Router, d
     let migration_outcome = migrations::run_migrations(&db).await.expect("migrations");
     let state = make_state(db.clone(), &config, migration_outcome.snapshot);
     let app = build_router(state.clone()).with_state(state.clone());
-    let metrics_app = build_metrics_router().with_state(state);
+    let metrics_app = build_metrics_router(state.clone()).with_state(state);
     (app, metrics_app, db)
 }
 

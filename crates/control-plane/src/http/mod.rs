@@ -93,7 +93,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
     let middleware_stack =
         ServiceBuilder::new().layer(HttpMetricsLayer::new(state.metrics_history.clone()));
     Router::<AppState>::new()
-        .merge(system::api_router())
+        .merge(system::api_router(state.clone()))
         .merge(agents::router(state.clone()))
         .merge(deployments::router(state.clone()))
         .merge(relay::router(state.clone()))
@@ -103,8 +103,8 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .layer(middleware_stack)
 }
 
-pub fn build_metrics_router() -> Router<AppState> {
-    Router::<AppState>::new().merge(system::metrics_router())
+pub fn build_metrics_router(state: AppState) -> Router<AppState> {
+    Router::<AppState>::new().merge(system::metrics_router(state))
 }
 
 async fn enforce_agent_compatibility(
@@ -403,6 +403,7 @@ pub(crate) async fn healthz(State(state): State<AppState>) -> impl IntoResponse 
     get,
     path = "/metrics",
     responses((status = 200, description = "Prometheus metrics", content_type = "text/plain")),
+    security(("operatorBearer" = [])),
     tag = "system"
 )]
 pub(crate) async fn metrics(State(state): State<AppState>) -> impl IntoResponse {
@@ -4163,7 +4164,7 @@ mod tests {
         async fn list_endpoints_require_operator_auth() {
             let state = setup_state().await;
             let app = build_router(state.clone()).with_state(state.clone());
-            for uri in ["/api/v1/nodes", "/api/v1/metrics/summary"] {
+            for uri in ["/api/v1/nodes", "/api/v1/metrics/summary", "/metrics"] {
                 let response = app
                     .clone()
                     .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
@@ -4535,7 +4536,7 @@ mod tests {
             };
 
             let app = build_router(state.clone()).with_state(state.clone());
-            let metrics_app = build_metrics_router().with_state(state);
+            let metrics_app = build_metrics_router(state.clone()).with_state(state);
             let request = Request::builder()
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
@@ -4565,13 +4566,7 @@ mod tests {
             assert_eq!(replica.metrics, vec![recent_metric]);
 
             let response = metrics_app
-                .oneshot(
-                    Request::builder()
-                        .method("GET")
-                        .uri("/metrics")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
+                .oneshot(common::operator_request("/metrics"))
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
@@ -5190,7 +5185,7 @@ mod tests {
             };
 
             let app = build_router(state.clone()).with_state(state.clone());
-            let metrics_app = build_metrics_router().with_state(state.clone());
+            let metrics_app = build_metrics_router(state.clone()).with_state(state.clone());
             let request = Request::builder()
                 .method("POST")
                 .uri(format!("/api/v1/nodes/{}/heartbeats", node_id))
@@ -5322,13 +5317,7 @@ mod tests {
 
             let metrics_response = metrics_app
                 .clone()
-                .oneshot(
-                    Request::builder()
-                        .method("GET")
-                        .uri("/metrics")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
+                .oneshot(common::operator_request("/metrics"))
                 .await
                 .unwrap();
             assert_eq!(metrics_response.status(), StatusCode::OK);

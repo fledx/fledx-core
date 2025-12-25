@@ -53,6 +53,7 @@ async fn metrics_endpoint_reports_http_requests() {
             HttpRequest::builder()
                 .method("GET")
                 .uri("/metrics")
+                .header("authorization", format!("Bearer {}", TEST_OPERATOR_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -65,6 +66,22 @@ async fn metrics_endpoint_reports_http_requests() {
         body.contains("control_plane_http_requests_total") && body.contains("path=\"/health\""),
         "metrics payload missing http counters: {body}"
     );
+}
+
+#[tokio::test]
+async fn metrics_endpoint_requires_operator_token() {
+    let (_app, metrics_app, _db) = setup_apps().await;
+    let response = metrics_app
+        .oneshot(
+            HttpRequest::builder()
+                .method("GET")
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -111,6 +128,7 @@ async fn health_and_metrics_report_schema_versions() {
             HttpRequest::builder()
                 .method("GET")
                 .uri("/metrics")
+                .header("authorization", format!("Bearer {}", TEST_OPERATOR_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -394,6 +412,7 @@ async fn missing_agent_version_header_uses_fallback_and_respects_bounds() {
             HttpRequest::builder()
                 .method("GET")
                 .uri("/metrics")
+                .header("authorization", format!("Bearer {}", TEST_OPERATOR_TOKEN))
                 .body(Body::empty())
                 .unwrap(),
         )

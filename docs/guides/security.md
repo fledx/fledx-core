@@ -37,7 +37,8 @@ This guide covers setting up secure transport, token handling, and network expos
 ## Network Exposure
 
 - Control plane: expose HTTPS listener only; restrict to operator and agent
-  networks. Default port 49421 (HTTP) or 8443 (behind proxy); metrics default 49422.
+  networks. Default port 49421 (HTTP) or 8443 (behind proxy); metrics default 49422 and
+  require an operator token.
 - Agents: no inbound ports required; they initiate outbound connections to the
   control plane and pull container images from your registry.
 - Workload ports: use explicit firewall rules for published ports; prefer

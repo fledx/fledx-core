@@ -352,7 +352,7 @@ where
     let base_router: Router<AppState> = routes::build_router(state.clone());
     let app = (hooks.extend_router)(state.clone(), base_router).with_state(state.clone());
 
-    let metrics_app = crate::http::build_metrics_router().with_state(state.clone());
+    let metrics_app = crate::http::build_metrics_router(state.clone()).with_state(state.clone());
     let metrics_service = metrics_app.into_make_service_with_connect_info::<SocketAddr>();
 
     let api_listener = TcpListener::bind(api_addr).await?;

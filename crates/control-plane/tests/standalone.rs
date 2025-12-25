@@ -20,6 +20,7 @@ async fn wait_http_ok_while_running(
     url: &str,
     child: &mut Child,
     timeout: Duration,
+    bearer_token: Option<&str>,
 ) -> anyhow::Result<()> {
     let client = reqwest::Client::new();
     let start = std::time::Instant::now();
@@ -30,7 +31,13 @@ async fn wait_http_ok_while_running(
         if start.elapsed() > timeout {
             anyhow::bail!("timed out waiting for {}", url);
         }
-        match client.get(url).send().await {
+        let request = client.get(url);
+        let request = if let Some(token) = bearer_token {
+            request.bearer_auth(token)
+        } else {
+            request
+        };
+        match request.send().await {
             Ok(res) if res.status().is_success() => return Ok(()),
             _ => tokio::time::sleep(Duration::from_millis(50)).await,
         }
@@ -393,12 +400,25 @@ async fn standalone_metrics_include_agent_and_cp() -> anyhow::Result<()> {
         &format!("http://127.0.0.1:{}/health", env.cp_port),
         &mut child,
         Duration::from_secs(10),
+        None,
     )
     .await?;
 
     let metrics_url = format!("http://127.0.0.1:{}/metrics", env.metrics_port);
-    wait_http_ok_while_running(&metrics_url, &mut child, Duration::from_secs(10)).await?;
-    let body = reqwest::get(metrics_url).await?.text().await?;
+    wait_http_ok_while_running(
+        &metrics_url,
+        &mut child,
+        Duration::from_secs(10),
+        Some(&env.operator_token),
+    )
+    .await?;
+    let body = reqwest::Client::new()
+        .get(metrics_url)
+        .bearer_auth(&env.operator_token)
+        .send()
+        .await?
+        .text()
+        .await?;
 
     assert!(
         body.contains("control_plane_info"),
@@ -443,6 +463,7 @@ async fn standalone_can_run_a_container_via_docker() -> anyhow::Result<()> {
         &format!("http://127.0.0.1:{}/health", env.cp_port),
         &mut cp,
         Duration::from_secs(10),
+        None,
     )
     .await?;
     let reg = register_node(env.cp_port, &env.registration_token).await?;
@@ -483,6 +504,7 @@ async fn standalone_can_run_a_container_via_docker() -> anyhow::Result<()> {
         &format!("http://127.0.0.1:{}/health", env.cp_port),
         &mut standalone,
         Duration::from_secs(10),
+        None,
     )
     .await?;
     wait_node_ready(env.cp_port, &env.operator_token, reg.node_id).await?;
