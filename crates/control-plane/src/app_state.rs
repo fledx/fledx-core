@@ -239,6 +239,7 @@ mod tests {
         let auth = OperatorAuth {
             tokens: vec!["secret-token".to_string()],
             header_name: HeaderName::from_static("authorization"),
+            env_policy: EnvTokenPolicy::default(),
         };
 
         assert!(auth.is_env_token("secret-token"));
