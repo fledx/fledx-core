@@ -7,26 +7,26 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 use crate::view::format::format_uuid;
-use crate::{DeployWatchArgs, StatusArgs, MAX_PAGE_LIMIT};
+use crate::{DeployWatchArgs, MAX_PAGE_LIMIT, StatusArgs};
 
 pub const CONFIG_MAX_FIELD_LEN: usize = 255;
 pub const CONFIG_MAX_VALUE_LEN: usize = 4096;
 pub const CONFIG_MAX_FILE_PATH_LEN: usize = 512;
 
 pub fn validate_positive_u64(field: &str, value: Option<u64>) -> anyhow::Result<()> {
-    if let Some(val) = value {
-        if val == 0 {
-            anyhow::bail!("{field} must be greater than zero");
-        }
+    if let Some(val) = value
+        && val == 0
+    {
+        anyhow::bail!("{field} must be greater than zero");
     }
     Ok(())
 }
 
 pub fn validate_positive_u32(field: &str, value: Option<u32>) -> anyhow::Result<()> {
-    if let Some(val) = value {
-        if val == 0 {
-            anyhow::bail!("{field} must be greater than zero");
-        }
+    if let Some(val) = value
+        && val == 0
+    {
+        anyhow::bail!("{field} must be greater than zero");
     }
     Ok(())
 }
@@ -68,10 +68,10 @@ pub fn validate_command_args(args: &[String], flag_name: &str) -> anyhow::Result
 }
 
 pub fn validate_config_version_arg(version: Option<i64>) -> anyhow::Result<Option<i64>> {
-    if let Some(v) = version {
-        if v < 1 {
-            anyhow::bail!("version must be at least 1");
-        }
+    if let Some(v) = version
+        && v < 1
+    {
+        anyhow::bail!("version must be at least 1");
     }
     Ok(version)
 }
@@ -334,18 +334,20 @@ mod tests {
     #[test]
     fn validate_command_args_rejects_empty_values() {
         let err = validate_command_args(&["run".into(), "   ".into()], "--command").unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("--command arguments cannot be empty"));
+        assert!(
+            err.to_string()
+                .contains("--command arguments cannot be empty")
+        );
     }
 
     #[test]
     fn config_files_from_args_rejects_newlines_in_ref() {
         let files = vec![("/etc/app/config.yml".into(), "ref\nextra".into())];
         let err = config_files_from_args(&files).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("config file_ref cannot contain newlines"));
+        assert!(
+            err.to_string()
+                .contains("config file_ref cannot contain newlines")
+        );
     }
 
     #[test]

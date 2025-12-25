@@ -1,21 +1,21 @@
 use ::common::api::{DeploymentSummary, NodeSummary, Page};
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout},
     prelude::*,
     style::{Color, Style},
     widgets::{Block, Borders, Cell, Paragraph, Table},
-    Frame,
 };
 use serde::Serialize;
 
 use super::{
+    AttachedConfigInfo, ConfigAttachmentLookup,
     deployments::{
         deployment_table_constraints, deployment_table_header, deployment_table_rows,
         render_deployments_table,
     },
     format::{color_deployment_status, color_node_status},
     nodes::{node_table_constraints, node_table_header, node_table_rows, render_nodes_table},
-    AttachedConfigInfo, ConfigAttachmentLookup,
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -202,7 +202,7 @@ pub fn render_summary(
 mod tests {
     use super::*;
     use chrono::TimeZone;
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{Terminal, backend::TestBackend};
     use uuid::Uuid;
 
     #[test]

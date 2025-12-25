@@ -7,10 +7,10 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::Context;
-use tokio::time::{sleep, Instant};
+use tokio::time::{Instant, sleep};
 
-use super::{looks_like_noninteractive_sudo_failure, run_capture, sh_quote, sh_quote_path};
 use super::{InstallTarget, SshTarget, SudoMode};
+use super::{looks_like_noninteractive_sudo_failure, run_capture, sh_quote, sh_quote_path};
 
 fn normalize_unit_name(unit: &str) -> String {
     let trimmed = unit.trim();
@@ -1324,16 +1324,22 @@ mod tests {
     impl EnvVarGuard {
         fn set(key: &'static str, value: String) -> Self {
             let prev = env::var(key).ok();
-            env::set_var(key, value);
+            // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+            unsafe {
+                env::set_var(key, value);
+            }
             Self { key, prev }
         }
     }
 
     impl Drop for EnvVarGuard {
         fn drop(&mut self) {
-            match &self.prev {
-                Some(value) => env::set_var(self.key, value),
-                None => env::remove_var(self.key),
+            // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+            unsafe {
+                match &self.prev {
+                    Some(value) => env::set_var(self.key, value),
+                    None => env::remove_var(self.key),
+                }
             }
         }
     }
@@ -1855,9 +1861,10 @@ exit 1
         with_fake_commands(&[("sudo", SUDO)], || {
             let err = sudo_run_cmd(SudoMode::root(false), "true", vec![OsString::from("arg")])
                 .expect_err("should fail");
-            assert!(err
-                .to_string()
-                .contains("sudo failed in non-interactive mode"));
+            assert!(
+                err.to_string()
+                    .contains("sudo failed in non-interactive mode")
+            );
         });
     }
 }

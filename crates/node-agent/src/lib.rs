@@ -127,9 +127,10 @@ mod tests {
         cfg.allow_insecure_http = false;
 
         let err = validate_control_plane_url(&cfg).expect_err("http should be rejected");
-        assert!(err
-            .to_string()
-            .contains("insecure control-plane URL not allowed"));
+        assert!(
+            err.to_string()
+                .contains("insecure control-plane URL not allowed")
+        );
     }
 
     #[test]

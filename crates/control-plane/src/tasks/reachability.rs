@@ -6,13 +6,13 @@ use serde_json::json;
 use tracing::warn;
 use uuid::Uuid;
 
+use crate::Result;
 use crate::app_state::AppState;
 use crate::audit::{AuditContext, AuditStatus};
 use crate::config::PortsConfig;
 use crate::http::{
-    assignments_changed, assignments_from_decision, deployment_ports_for_storage,
+    DeploymentFields, assignments_changed, assignments_from_decision, deployment_ports_for_storage,
     deserialize_deployment_fields, port_allocation_config, record_replica_schedule_decision,
-    DeploymentFields,
 };
 use crate::persistence as db;
 use crate::persistence::{
@@ -20,7 +20,6 @@ use crate::persistence::{
 };
 use crate::scheduler;
 use crate::telemetry;
-use crate::Result;
 
 #[derive(Debug, Default)]
 pub struct ReachabilityReport {
@@ -265,31 +264,29 @@ async fn reschedule_deployments(
             report.rescheduled += 1;
         }
 
-        if assignment_changed {
-            if let Some(state) = audit_state {
-                let reason = if current_assignments
-                    .iter()
-                    .any(|assignment| unreachable.contains(&assignment.node_id))
-                {
-                    "node_unreachable"
-                } else {
-                    "under_assigned"
-                };
-                let status = if pending_failure {
-                    AuditStatus::Failure
-                } else {
-                    AuditStatus::Success
-                };
-                record_deployment_reschedule_audit(
-                    state,
-                    deployment.id,
-                    reason,
-                    &current_assignments,
-                    &new_assignments,
-                    status,
-                )
-                .await;
-            }
+        if assignment_changed && let Some(state) = audit_state {
+            let reason = if current_assignments
+                .iter()
+                .any(|assignment| unreachable.contains(&assignment.node_id))
+            {
+                "node_unreachable"
+            } else {
+                "under_assigned"
+            };
+            let status = if pending_failure {
+                AuditStatus::Failure
+            } else {
+                AuditStatus::Success
+            };
+            record_deployment_reschedule_audit(
+                state,
+                deployment.id,
+                reason,
+                &current_assignments,
+                &new_assignments,
+                status,
+            )
+            .await;
         }
     }
 

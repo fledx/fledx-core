@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     runtime::{ContainerRuntimeError, DynContainerRuntime},
-    state::{ensure_runtime, record_runtime_error, ReplicaKey, SharedState},
+    state::{ReplicaKey, SharedState, ensure_runtime, record_runtime_error},
 };
 
 use super::container_name;
@@ -117,16 +117,16 @@ pub(super) async fn stop_and_remove(
     runtime: &DynContainerRuntime,
     name: &str,
 ) -> anyhow::Result<()> {
-    if let Err(err) = runtime.stop_container(name).await {
-        if !matches!(err, ContainerRuntimeError::NotFound { .. }) {
-            return Err(err.into());
-        }
+    if let Err(err) = runtime.stop_container(name).await
+        && !matches!(err, ContainerRuntimeError::NotFound { .. })
+    {
+        return Err(err.into());
     }
 
-    if let Err(err) = runtime.remove_container(name).await {
-        if !matches!(err, ContainerRuntimeError::NotFound { .. }) {
-            return Err(err.into());
-        }
+    if let Err(err) = runtime.remove_container(name).await
+        && !matches!(err, ContainerRuntimeError::NotFound { .. })
+    {
+        return Err(err.into());
     }
 
     Ok(())
@@ -137,7 +137,7 @@ mod tests {
     use super::*;
     use crate::{
         api, runtime, state,
-        test_support::{base_config, state_with_runtime_and_config, MockRuntime},
+        test_support::{MockRuntime, base_config, state_with_runtime_and_config},
     };
     use chrono::Utc;
 

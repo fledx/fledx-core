@@ -3,14 +3,14 @@ use std::collections::{HashMap, HashSet};
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::api::{register_node, OperatorApi};
+use crate::OutputMode;
+use crate::api::{OperatorApi, register_node};
 use crate::args::{NodeCommands, NodeListArgs, NodeRegisterArgs, NodeStatusArgs};
-use crate::commands::configs::fetch_config_attachments_for_targets;
 use crate::commands::CommandContext;
+use crate::commands::configs::fetch_config_attachments_for_targets;
 use crate::validate::validate_limit;
 use crate::view::nodes::render_nodes_table;
-use crate::view::{to_pretty_json, to_pretty_yaml, AttachedConfigInfo};
-use crate::OutputMode;
+use crate::view::{AttachedConfigInfo, to_pretty_json, to_pretty_yaml};
 use common::api::{self, CapacityHints, Page};
 
 pub async fn handle_node_register(

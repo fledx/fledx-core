@@ -13,13 +13,14 @@ use tracing::warn;
 use uuid::Uuid;
 
 use crate::{
+    REQUEST_ID_HEADER, TRACEPARENT_HEADER,
     api::{
         ConfigDesired, DeploymentHealth, HealthStatus, InstanceState, InstanceStatus, PortMapping,
         ResourceMetricSample, ServiceIdentityBundle, TunnelEndpoint,
     },
     compat, config,
     runtime::{ContainerResourceUsage, ContainerRuntimeError, DynContainerRuntime},
-    telemetry, REQUEST_ID_HEADER, TRACEPARENT_HEADER,
+    telemetry,
 };
 
 pub const ENDPOINTS_LABEL: &str = "fledx.endpoints";
@@ -505,11 +506,7 @@ pub async fn save_managed_entry(
 pub fn backoff_remaining(managed: &ManagedDeployment) -> Option<chrono::Duration> {
     managed.backoff_until.and_then(|until| {
         let now = Utc::now();
-        if until > now {
-            Some(until - now)
-        } else {
-            None
-        }
+        if until > now { Some(until - now) } else { None }
     })
 }
 
@@ -556,10 +553,10 @@ pub fn ensure_runtime(state: &mut AppState) -> Result<DynContainerRuntime, anyho
         return Ok(rt.clone());
     }
 
-    if let Some(until) = state.runtime_backoff_until {
-        if until > Instant::now() {
-            anyhow::bail!("docker reconnect backoff in effect");
-        }
+    if let Some(until) = state.runtime_backoff_until
+        && until > Instant::now()
+    {
+        anyhow::bail!("docker reconnect backoff in effect");
     }
 
     let attempt = state.runtime_backoff_attempts.saturating_add(1);

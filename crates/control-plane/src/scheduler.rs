@@ -4,8 +4,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::persistence::{
-    self, nodes, ports, NodeRecord, NodeStatus, PlacementConstraints, PlacementHints,
-    PortAllocationConfig, PortAllocationError, PortMapping, PortReservationConflict,
+    self, NodeRecord, NodeStatus, PlacementConstraints, PlacementHints, PortAllocationConfig,
+    PortAllocationError, PortMapping, PortReservationConflict, nodes, ports,
 };
 
 #[derive(Clone)]
@@ -301,26 +301,24 @@ pub(crate) fn node_matches_constraints(
         return false;
     }
 
-    if let Some(required_arch) = constraints.arch.as_ref() {
-        if node
+    if let Some(required_arch) = constraints.arch.as_ref()
+        && node
             .arch
             .as_ref()
             .map(|arch| arch.eq_ignore_ascii_case(required_arch))
             != Some(true)
-        {
-            return false;
-        }
+    {
+        return false;
     }
 
-    if let Some(required_os) = constraints.os.as_ref() {
-        if node
+    if let Some(required_os) = constraints.os.as_ref()
+        && node
             .os
             .as_ref()
             .map(|os| os.eq_ignore_ascii_case(required_os))
             != Some(true)
-        {
-            return false;
-        }
+    {
+        return false;
     }
 
     if !constraints.labels.is_empty() {
@@ -339,15 +337,15 @@ pub(crate) fn node_matches_constraints(
         let Some(node_capacity) = node.capacity.as_ref().map(|cap| &cap.0) else {
             return false;
         };
-        if let Some(req_cpu) = required_capacity.cpu_millis {
-            if node_capacity.cpu_millis.unwrap_or(0) < req_cpu {
-                return false;
-            }
+        if let Some(req_cpu) = required_capacity.cpu_millis
+            && node_capacity.cpu_millis.unwrap_or(0) < req_cpu
+        {
+            return false;
         }
-        if let Some(req_mem) = required_capacity.memory_bytes {
-            if node_capacity.memory_bytes.unwrap_or(0) < req_mem {
-                return false;
-            }
+        if let Some(req_mem) = required_capacity.memory_bytes
+            && node_capacity.memory_bytes.unwrap_or(0) < req_mem
+        {
+            return false;
         }
     }
 
@@ -359,12 +357,12 @@ fn rotate_from_last(candidates: &mut [Candidate], last_assigned: Option<Uuid>) {
         return;
     }
 
-    if let Some(last) = last_assigned {
-        if let Some(pos) = candidates.iter().position(|c| c.node.id == last) {
-            let len = candidates.len();
-            let shift = (pos + 1) % len;
-            candidates.rotate_left(shift);
-        }
+    if let Some(last) = last_assigned
+        && let Some(pos) = candidates.iter().position(|c| c.node.id == last)
+    {
+        let len = candidates.len();
+        let shift = (pos + 1) % len;
+        candidates.rotate_left(shift);
     }
 }
 

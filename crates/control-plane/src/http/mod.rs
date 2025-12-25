@@ -6,7 +6,7 @@ use std::{
 use crate::{
     app_state::AppState,
     audit::{self, AuditContext, AuditStatus},
-    auth::{extract_bearer, require_operator_auth, OperatorIdentity},
+    auth::{OperatorIdentity, extract_bearer, require_operator_auth},
     config::{LimitsConfig, PortsConfig},
     error::{ApiResult, AppError},
     metrics::HttpMetricsLayer,
@@ -15,21 +15,21 @@ use crate::{
         nodes as node_store, ports as port_store, tokens as token_store, usage as usage_store,
     },
     scheduler, services, telemetry,
-    tokens::{hash_token, match_token, TokenMatch},
+    tokens::{TokenMatch, hash_token, match_token},
     validation,
 };
 use ::metrics::{counter, gauge};
 use axum::{
+    Json, Router,
     body::Body,
     extract::{Extension, Path, Query, State},
     http::{
-        header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
         HeaderMap, HeaderValue, Request, StatusCode,
+        header::{CONTENT_TYPE, ETAG, IF_NONE_MATCH},
     },
     middleware::{self, Next},
     response::IntoResponse,
     response::Response,
-    Json, Router,
 };
 use chrono::{DateTime, Duration as ChronoDuration, Timelike, Utc};
 #[allow(unused_imports)]
@@ -42,8 +42,8 @@ use tower::ServiceBuilder;
 use tower_http::request_id::RequestId;
 use tracing::{info, warn};
 use utoipa::{
-    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
     Modify, OpenApi,
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
 };
 use uuid::Uuid;
 
@@ -278,10 +278,10 @@ pub(crate) fn add_compatibility_headers(state: &AppState, headers: &mut HeaderMa
         headers.insert(AGENT_COMPAT_MAX_HEADER, value);
     }
 
-    if let Some(url) = state.agent_compat.upgrade_url.as_deref() {
-        if let Ok(value) = HeaderValue::from_str(url) {
-            headers.insert(AGENT_COMPAT_UPGRADE_URL_HEADER, value);
-        }
+    if let Some(url) = state.agent_compat.upgrade_url.as_deref()
+        && let Ok(value) = HeaderValue::from_str(url)
+    {
+        headers.insert(AGENT_COMPAT_UPGRADE_URL_HEADER, value);
     }
 }
 
@@ -718,10 +718,10 @@ pub(crate) fn ensure_health_last_error(
     health: Option<api::HealthStatus>,
 ) -> Option<api::HealthStatus> {
     health.map(|mut status| {
-        if status.last_error.is_none() {
-            if let Some(reason) = status.reason.clone() {
-                status.last_error = Some(reason);
-            }
+        if status.last_error.is_none()
+            && let Some(reason) = status.reason.clone()
+        {
+            status.last_error = Some(reason);
         }
         status
     })
@@ -770,11 +770,11 @@ pub(crate) fn aggregate_usage_rollups(
 
     for inst in instances {
         for sample in &inst.metrics {
-            if let Some(cutoff) = cutoff {
-                if sample.collected_at < cutoff {
-                    stats.dropped_samples += 1;
-                    continue;
-                }
+            if let Some(cutoff) = cutoff
+                && sample.collected_at < cutoff
+            {
+                stats.dropped_samples += 1;
+                continue;
             }
 
             let bucket_start = truncate_to_minute(sample.collected_at);
@@ -1099,28 +1099,30 @@ fn usage_time_bounds(
     };
     let default_window = ChronoDuration::seconds(default_window_secs.min(i64::MAX as u64) as i64);
     let mut start = since.unwrap_or(reference_end - default_window);
+    let cutoff = (retention_secs > 0)
+        .then(|| now - ChronoDuration::seconds(retention_secs.min(i64::MAX as u64) as i64));
 
-    if let Some(cutoff) = (retention_secs > 0)
-        .then(|| now - ChronoDuration::seconds(retention_secs.min(i64::MAX as u64) as i64))
+    if let Some(cutoff) = cutoff
+        && let Some(end) = until
+        && end < cutoff
     {
-        if let Some(end) = until {
-            if end < cutoff {
-                return Err(AppError::bad_request(
-                    "requested window is outside the retention period",
-                ));
-            }
-        }
-        if start < cutoff {
-            start = cutoff;
-        }
+        return Err(AppError::bad_request(
+            "requested window is outside the retention period",
+        ));
     }
 
-    if let Some(end) = until {
-        if start > end {
-            return Err(AppError::bad_request(
-                "since must be earlier than or equal to until",
-            ));
-        }
+    if let Some(cutoff) = cutoff
+        && start < cutoff
+    {
+        start = cutoff;
+    }
+
+    if let Some(end) = until
+        && start > end
+    {
+        return Err(AppError::bad_request(
+            "since must be earlier than or equal to until",
+        ));
     }
 
     Ok((start, until))
@@ -1138,10 +1140,9 @@ fn usage_summary_bounds(retention_secs: u64) -> (DateTime<Utc>, DateTime<Utc>) {
     let end = now;
     if let Some(cutoff) = (retention_secs > 0)
         .then(|| now - ChronoDuration::seconds(retention_secs.min(i64::MAX as u64) as i64))
+        && start < cutoff
     {
-        if start < cutoff {
-            start = cutoff;
-        }
+        start = cutoff;
     }
     (start, end)
 }
@@ -1798,12 +1799,11 @@ pub(crate) async fn update_config(
 
         let new_name = name.unwrap_or_else(|| current.name.clone());
         validation::validate_config_name(&new_name, &state.limits)?;
-        if new_name != current.name {
-            if let Some(existing) = config_store::get_config_by_name(&state.db, &new_name).await? {
-                if existing.id != config_id {
-                    return Err(AppError::bad_request("config name already exists"));
-                }
-            }
+        if new_name != current.name
+            && let Some(existing) = config_store::get_config_by_name(&state.db, &new_name).await?
+            && existing.id != config_id
+        {
+            return Err(AppError::bad_request("config name already exists"));
         }
 
         let next_version = match version {

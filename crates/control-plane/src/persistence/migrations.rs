@@ -139,14 +139,14 @@ pub async fn init_pool(database_url: &str) -> Result<Db> {
 }
 
 fn ensure_db_dir(database_url: &str) -> Result<()> {
-    if let Some(path_str) = database_url.strip_prefix("sqlite://") {
-        if !database_url.starts_with("sqlite::memory") {
-            let path = Path::new(path_str);
-            if let Some(parent) = path.parent() {
-                if !parent.as_os_str().is_empty() {
-                    std::fs::create_dir_all(parent)?;
-                }
-            }
+    if let Some(path_str) = database_url.strip_prefix("sqlite://")
+        && !database_url.starts_with("sqlite::memory")
+    {
+        let path = Path::new(path_str);
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
         }
     }
     Ok(())

@@ -1,4 +1,4 @@
-use axum::http::{header::RETRY_AFTER, HeaderMap, HeaderName, HeaderValue};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, header::RETRY_AFTER};
 use std::time::Duration;
 
 #[derive(Debug, Clone)]

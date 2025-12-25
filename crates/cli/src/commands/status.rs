@@ -3,12 +3,12 @@ use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::args::StatusArgs;
+use crate::commands::CommandContext;
 use crate::commands::configs::fetch_config_attachments_for_targets;
 use crate::commands::deploy::{empty_deployment_page, fetch_deployments_page, sort_deployments};
 use crate::commands::nodes::{empty_node_page, fetch_nodes_page, sort_nodes};
-use crate::commands::CommandContext;
 use crate::validate::validate_status_args;
-use crate::view::status::{compute_summary, render_status_view, status_output_view, StatusOutput};
+use crate::view::status::{StatusOutput, compute_summary, render_status_view, status_output_view};
 use crate::watch::{should_colorize, watch_status};
 
 pub async fn handle_status(ctx: &CommandContext, args: StatusArgs) -> anyhow::Result<()> {

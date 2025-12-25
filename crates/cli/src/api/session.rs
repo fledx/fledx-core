@@ -1,4 +1,4 @@
-use crate::api::{render_control_plane_error, CLIENT_FINGERPRINT_HEADER};
+use crate::api::{CLIENT_FINGERPRINT_HEADER, render_control_plane_error};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use reqwest::header::{HeaderName, RETRY_AFTER};
@@ -110,10 +110,11 @@ impl SessionTokenCache {
                     if !token_needs_refresh(token, &self.config) {
                         return Ok(token.value.clone());
                     }
-                    if let Some(until) = state.backoff_until {
-                        if Instant::now() < until && !token_expired(token) {
-                            return Ok(token.value.clone());
-                        }
+                    if let Some(until) = state.backoff_until
+                        && Instant::now() < until
+                        && !token_expired(token)
+                    {
+                        return Ok(token.value.clone());
                     }
                 }
 
@@ -124,14 +125,14 @@ impl SessionTokenCache {
                     continue;
                 }
 
-                if let Some(until) = state.backoff_until {
-                    if Instant::now() < until {
-                        let message = state
-                            .last_error
-                            .clone()
-                            .unwrap_or_else(|| "session exchange backoff active".to_string());
-                        return Err(anyhow::anyhow!(message));
-                    }
+                if let Some(until) = state.backoff_until
+                    && Instant::now() < until
+                {
+                    let message = state
+                        .last_error
+                        .clone()
+                        .unwrap_or_else(|| "session exchange backoff active".to_string());
+                    return Err(anyhow::anyhow!(message));
                 }
 
                 let fallback = state.token.clone().filter(|token| !token_expired(token));
@@ -267,19 +268,17 @@ async fn exchange_session_token(
 }
 
 fn retry_after_from_headers(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
-    if let Some(value) = headers.get(RETRY_AFTER) {
-        if let Ok(raw) = value.to_str() {
-            if let Ok(seconds) = raw.parse::<u64>() {
-                return Some(Duration::from_secs(seconds.max(1)));
-            }
-        }
+    if let Some(value) = headers.get(RETRY_AFTER)
+        && let Ok(raw) = value.to_str()
+        && let Ok(seconds) = raw.parse::<u64>()
+    {
+        return Some(Duration::from_secs(seconds.max(1)));
     }
-    if let Some(value) = headers.get("x-ratelimit-reset") {
-        if let Ok(raw) = value.to_str() {
-            if let Ok(seconds) = raw.parse::<u64>() {
-                return Some(Duration::from_secs(seconds.max(1)));
-            }
-        }
+    if let Some(value) = headers.get("x-ratelimit-reset")
+        && let Ok(raw) = value.to_str()
+        && let Ok(seconds) = raw.parse::<u64>()
+    {
+        return Some(Duration::from_secs(seconds.max(1)));
     }
     None
 }

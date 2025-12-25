@@ -4,8 +4,8 @@ use common::api;
 use uuid::Uuid;
 
 use super::common::{
-    DeploymentStatusArg, DesiredStateArg, OutputFormatArgs, DEFAULT_DEPLOY_WATCH_INTERVAL_SECS,
-    DEFAULT_LOG_FOLLOW_INTERVAL_SECS, DEFAULT_PAGE_LIMIT,
+    DEFAULT_DEPLOY_WATCH_INTERVAL_SECS, DEFAULT_LOG_FOLLOW_INTERVAL_SECS, DEFAULT_PAGE_LIMIT,
+    DeploymentStatusArg, DesiredStateArg, OutputFormatArgs,
 };
 
 #[derive(Debug, Subcommand)]

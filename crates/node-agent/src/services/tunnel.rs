@@ -5,48 +5,48 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{anyhow, Context};
-use base64::{engine::general_purpose, Engine as _};
+use anyhow::{Context, anyhow};
+use base64::{Engine as _, engine::general_purpose};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::Utc;
 use h2::{RecvStream, SendStream};
 use http::{
-    header::{HeaderName, HeaderValue as HttpHeaderValue},
     Request, StatusCode, Uri,
+    header::{HeaderName, HeaderValue as HttpHeaderValue},
 };
 use reqwest::{
+    Client, Method as ReqwestMethod,
     header::{
         HeaderMap as ReqwestHeaderMap, HeaderName as ReqwestHeaderName,
         HeaderValue as ReqwestHeaderValue,
     },
-    Client, Method as ReqwestMethod,
 };
 use serde::{Deserialize, Serialize};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
-    sync::{mpsc, watch, Mutex, Semaphore},
+    sync::{Mutex, Semaphore, mpsc, watch},
     time,
 };
 use tokio_rustls::{
+    TlsConnector,
     client::TlsStream,
     rustls::{
-        self,
+        self, ClientConfig, RootCertStore,
         client::danger::{ServerCertVerified, ServerCertVerifier},
         pki_types::{CertificateDer, ServerName},
-        ClientConfig, RootCertStore,
     },
-    TlsConnector,
 };
 use tracing::{error, warn};
 use uuid::Uuid;
 use webpki_roots::TLS_SERVER_ROOTS;
 
 use crate::{
+    AGENT_BUILD_HEADER, AGENT_VERSION_HEADER,
     config::{AppConfig, TunnelRoute},
     health,
     state::{self, SharedState},
-    telemetry, version, AGENT_BUILD_HEADER, AGENT_VERSION_HEADER,
+    telemetry, version,
 };
 
 const FRAME_CHANNEL_CAPACITY: usize = 128;
@@ -521,10 +521,10 @@ async fn handle_forward_request(
 fn build_header_map(headers: &HashMap<String, String>) -> ReqwestHeaderMap {
     let mut map = ReqwestHeaderMap::new();
     for (key, value) in headers.iter() {
-        if let Ok(name) = ReqwestHeaderName::from_bytes(key.to_ascii_lowercase().as_bytes()) {
-            if let Ok(value) = ReqwestHeaderValue::from_str(value) {
-                map.append(name, value);
-            }
+        if let Ok(name) = ReqwestHeaderName::from_bytes(key.to_ascii_lowercase().as_bytes())
+            && let Ok(value) = ReqwestHeaderValue::from_str(value)
+        {
+            map.append(name, value);
         }
     }
     map

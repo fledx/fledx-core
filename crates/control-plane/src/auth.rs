@@ -1,6 +1,6 @@
 use axum::{
     extract::State,
-    http::{header::AUTHORIZATION, HeaderMap, HeaderName, Request},
+    http::{HeaderMap, HeaderName, Request, header::AUTHORIZATION},
     middleware::Next,
 };
 
@@ -8,7 +8,7 @@ use crate::{
     app_state::AppState,
     audit::{self, AuditActor, AuditStatus},
     error::{ApiResult, AppError},
-    rbac::{default_scopes_for_role, OperatorRole},
+    rbac::{OperatorRole, default_scopes_for_role},
     telemetry,
     tokens::legacy_hash,
 };
@@ -101,19 +101,19 @@ pub async fn require_operator_auth(
         }
     }
 
-    if let Some(authorizer) = &state.operator_authorizer {
-        if let Err(err) = (authorizer)(&req, &identity) {
-            let actor = identity.to_audit_actor();
-            log_authz_failure(
-                state.clone(),
-                request_id.clone(),
-                path.clone(),
-                actor,
-                err.message.clone(),
-            )
-            .await;
-            return Err(err);
-        }
+    if let Some(authorizer) = &state.operator_authorizer
+        && let Err(err) = (authorizer)(&req, &identity)
+    {
+        let actor = identity.to_audit_actor();
+        log_authz_failure(
+            state.clone(),
+            request_id.clone(),
+            path.clone(),
+            actor,
+            err.message.clone(),
+        )
+        .await;
+        return Err(err);
     }
 
     if let Some(limiter) = &state.operator_limiter {

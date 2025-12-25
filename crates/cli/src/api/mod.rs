@@ -1,11 +1,11 @@
 use ::common::api as common_api;
 use anyhow::Result;
 use reqwest::{
-    header::{HeaderMap, HeaderName},
     Client, RequestBuilder, Response, StatusCode,
+    header::{HeaderMap, HeaderName},
 };
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -295,10 +295,10 @@ pub(crate) fn append_request_id(message: String, request_id: Option<String>) -> 
 }
 
 pub(crate) fn extract_error_message(body: &str) -> Option<String> {
-    if let Ok(val) = serde_json::from_str::<Value>(body) {
-        if let Some(err) = val.get("error").and_then(|e| e.as_str()) {
-            return Some(err.to_string());
-        }
+    if let Ok(val) = serde_json::from_str::<Value>(body)
+        && let Some(err) = val.get("error").and_then(|e| e.as_str())
+    {
+        return Some(err.to_string());
     }
     let trimmed = body.trim();
     if trimmed.is_empty() {
@@ -388,11 +388,11 @@ mod tests {
         thread::spawn(move || {
             if let Ok((mut stream, _)) = listener.accept() {
                 let mut buf = [0_u8; 4096];
-                if let Ok(n) = stream.read(&mut buf) {
-                    if let Some(capture) = capture {
-                        let request = String::from_utf8_lossy(&buf[..n]).to_string();
-                        *capture.lock().expect("lock") = request;
-                    }
+                if let Ok(n) = stream.read(&mut buf)
+                    && let Some(capture) = capture
+                {
+                    let request = String::from_utf8_lossy(&buf[..n]).to_string();
+                    *capture.lock().expect("lock") = request;
                 }
 
                 let mut response = String::new();

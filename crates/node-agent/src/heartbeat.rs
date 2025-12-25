@@ -64,7 +64,7 @@ mod tests {
     use httpmock::MockServer;
     use std::collections::VecDeque;
     use tokio::sync::watch;
-    use tokio::time::{sleep, timeout, Duration as TokioDuration};
+    use tokio::time::{Duration as TokioDuration, sleep, timeout};
     use uuid::Uuid;
 
     #[test]

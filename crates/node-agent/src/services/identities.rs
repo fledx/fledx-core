@@ -130,10 +130,10 @@ fn persist_bundles(cfg: &AppConfig, bundles: &[ServiceIdentityBundle]) -> anyhow
 
 fn write_if_changed(path: &Path, data: &[u8], mode: u32) -> anyhow::Result<bool> {
     let existing = fs::read(path).ok();
-    if let Some(current) = existing {
-        if current == data {
-            return Ok(false);
-        }
+    if let Some(current) = existing
+        && current == data
+    {
+        return Ok(false);
     }
 
     let parent = path.parent().context("path missing parent")?;

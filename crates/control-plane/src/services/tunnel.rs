@@ -6,18 +6,18 @@ use std::{
 };
 
 use anyhow::Context;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use h2::server;
 use http::{
-    header::{HeaderName, HeaderValue},
     Method, Response, StatusCode,
+    header::{HeaderName, HeaderValue},
 };
 use metrics::{counter, histogram};
 use tokio::{
     net::TcpListener,
-    sync::{mpsc, oneshot, Semaphore},
+    sync::{Semaphore, mpsc, oneshot},
     time,
 };
 use tracing::{error, info, warn};
@@ -26,7 +26,7 @@ use uuid::Uuid;
 use crate::{
     app_state::AppState,
     persistence::{nodes as node_store, tokens as token_store},
-    tokens::{hash_token, match_token, TokenMatch},
+    tokens::{TokenMatch, hash_token, match_token},
     tunnel::{ForwardResponse, TunnelCommand, TunnelRegistry},
 };
 
@@ -444,21 +444,20 @@ async fn verify_node_token(
 
     for node_token in active_tokens {
         if let Ok(Some(kind)) = match_token(token, &node_token.token_hash, &state.token_pepper) {
-            if matches!(kind, TokenMatch::Legacy) {
-                if let Ok(new_hash) = hash_token(token, &state.token_pepper) {
-                    if let Err(err) = token_store::update_node_token_record_hash(
-                        &state.db,
-                        node_token.id,
-                        new_hash.clone(),
-                    )
-                    .await
-                    {
-                        warn!(?err, %node_id, "failed to upgrade node token hash");
-                    } else {
-                        let _ =
-                            node_store::update_node_token_hash(&state.db, node_id, new_hash).await;
-                        info!(%node_id, "upgraded node token hash to argon2");
-                    }
+            if matches!(kind, TokenMatch::Legacy)
+                && let Ok(new_hash) = hash_token(token, &state.token_pepper)
+            {
+                if let Err(err) = token_store::update_node_token_record_hash(
+                    &state.db,
+                    node_token.id,
+                    new_hash.clone(),
+                )
+                .await
+                {
+                    warn!(?err, %node_id, "failed to upgrade node token hash");
+                } else {
+                    let _ = node_store::update_node_token_hash(&state.db, node_id, new_hash).await;
+                    info!(%node_id, "upgraded node token hash to argon2");
                 }
             }
             let _ = token_store::touch_node_token_last_used(&state.db, node_token.id).await;

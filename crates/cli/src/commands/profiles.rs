@@ -150,8 +150,11 @@ mod tests {
     fn with_temp_config<F: FnOnce()>(f: F) {
         let _guard = ENV_LOCK.lock().expect("lock");
         let dir = tempdir().expect("tempdir");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::remove_var("HOME");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            std::env::remove_var("HOME");
+        }
         f();
     }
 

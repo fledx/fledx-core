@@ -270,13 +270,19 @@ mod tests {
         let secret = format!("SECRET_{}", Uuid::new_v4());
         let prefix = format!("TEST_SECRET_{}", Uuid::new_v4());
         let env_key = format!("{prefix}{secret}");
-        std::env::set_var(&env_key, "shh");
+        // SAFETY: Test controls env mutations and runs in isolation.
+        unsafe {
+            std::env::set_var(&env_key, "shh");
+        }
 
         let entry = config_entry_secret("TOKEN", &secret);
         let value = resolve_config_entry(&entry, &prefix).expect("secret");
         assert_eq!(value, "shh");
 
-        std::env::remove_var(env_key);
+        // SAFETY: Test controls env mutations and runs in isolation.
+        unsafe {
+            std::env::remove_var(env_key);
+        }
     }
 
     #[test]
@@ -383,9 +389,10 @@ mod tests {
             .map(|(_, value)| value.as_str());
         assert_eq!(env_value, Some("value"));
 
-        assert!(spec
-            .mounts
-            .iter()
-            .any(|mount| mount.container_path == "/etc/app/config.yaml"));
+        assert!(
+            spec.mounts
+                .iter()
+                .any(|mount| mount.container_path == "/etc/app/config.yaml")
+        );
     }
 }

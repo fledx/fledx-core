@@ -220,10 +220,10 @@ pub async fn update_deployment(
 
     let total_nodes = nodes::count_nodes(&state.db).await?;
 
-    if let Some(name) = update.name.as_ref() {
-        if name.trim().is_empty() {
-            return Err(AppError::bad_request("name cannot be empty"));
-        }
+    if let Some(name) = update.name.as_ref()
+        && name.trim().is_empty()
+    {
+        return Err(AppError::bad_request("name cannot be empty"));
     }
 
     let name = update

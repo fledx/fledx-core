@@ -10,10 +10,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
+use axum::Router;
 use axum::extract::{Json, Path, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
-use axum::Router;
 use node_agent::api;
 use node_agent::build_client;
 use node_agent::config;
@@ -24,14 +24,14 @@ use node_agent::runtime::{
     ContainerSpec, ContainerStatus, DockerRuntime, DynContainerRuntime, ExecResult,
 };
 use node_agent::state::{self, ReplicaKey};
-use tokio::io::{copy_bidirectional, AsyncWriteExt};
+use tokio::io::{AsyncWriteExt, copy_bidirectional};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::Command;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{Mutex, watch};
 use tokio::time::sleep;
 use tracing::{info, warn};
 use tracing_subscriber::fmt::writer::{BoxMakeWriter, MakeWriterExt};
-use tracing_subscriber::{util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, util::SubscriberInitExt};
 use uuid::Uuid;
 
 #[tokio::test]
@@ -635,10 +635,13 @@ impl DockerEnvGuard {
         let prev_cert_path = env::var("DOCKER_CERT_PATH").ok();
         let prev_certdir = env::var("DOCKER_TLS_CERTDIR").ok();
 
-        env::set_var("DOCKER_HOST", endpoint);
-        env::set_var("DOCKER_TLS_VERIFY", "0");
-        env::remove_var("DOCKER_CERT_PATH");
-        env::remove_var("DOCKER_TLS_CERTDIR");
+        // SAFETY: Tests control Docker env mutations and run in isolation.
+        unsafe {
+            env::set_var("DOCKER_HOST", endpoint);
+            env::set_var("DOCKER_TLS_VERIFY", "0");
+            env::remove_var("DOCKER_CERT_PATH");
+            env::remove_var("DOCKER_TLS_CERTDIR");
+        }
 
         Self {
             prev_host,
@@ -651,24 +654,27 @@ impl DockerEnvGuard {
 
 impl Drop for DockerEnvGuard {
     fn drop(&mut self) {
-        match &self.prev_host {
-            Some(value) => env::set_var("DOCKER_HOST", value),
-            None => env::remove_var("DOCKER_HOST"),
-        }
+        // SAFETY: Tests control Docker env mutations and run in isolation.
+        unsafe {
+            match &self.prev_host {
+                Some(value) => env::set_var("DOCKER_HOST", value),
+                None => env::remove_var("DOCKER_HOST"),
+            }
 
-        match &self.prev_tls_verify {
-            Some(value) => env::set_var("DOCKER_TLS_VERIFY", value),
-            None => env::remove_var("DOCKER_TLS_VERIFY"),
-        }
+            match &self.prev_tls_verify {
+                Some(value) => env::set_var("DOCKER_TLS_VERIFY", value),
+                None => env::remove_var("DOCKER_TLS_VERIFY"),
+            }
 
-        match &self.prev_cert_path {
-            Some(value) => env::set_var("DOCKER_CERT_PATH", value),
-            None => env::remove_var("DOCKER_CERT_PATH"),
-        }
+            match &self.prev_cert_path {
+                Some(value) => env::set_var("DOCKER_CERT_PATH", value),
+                None => env::remove_var("DOCKER_CERT_PATH"),
+            }
 
-        match &self.prev_certdir {
-            Some(value) => env::set_var("DOCKER_TLS_CERTDIR", value),
-            None => env::remove_var("DOCKER_TLS_CERTDIR"),
+            match &self.prev_certdir {
+                Some(value) => env::set_var("DOCKER_TLS_CERTDIR", value),
+                None => env::remove_var("DOCKER_TLS_CERTDIR"),
+            }
         }
     }
 }
@@ -1446,7 +1452,7 @@ async fn chaos_docker_restart_recovers_runtime() -> anyhow::Result<()> {
                 .unwrap_or(false)
                 && labels
                     .get("fledx.generation")
-                    .map(|gen| gen == &generation_label)
+                    .map(|generation| generation == &generation_label)
                     .unwrap_or(false)
         })
         .collect();

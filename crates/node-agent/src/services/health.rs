@@ -3,7 +3,7 @@ use reqwest::Client;
 use tracing::warn;
 
 use crate::{
-    health::{apply_probe_results, run_health_for_work, uses_exec_probe, HealthCheckWork},
+    health::{HealthCheckWork, apply_probe_results, run_health_for_work, uses_exec_probe},
     runtime::DynContainerRuntime,
     state::{self, SharedState},
 };

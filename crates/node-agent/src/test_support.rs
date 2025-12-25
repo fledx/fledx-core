@@ -385,10 +385,10 @@ impl ContainerRuntime for MockRuntime {
     ) -> Result<runtime::ContainerResourceUsage, ContainerRuntimeError> {
         self.stats_calls.fetch_add(1, Ordering::SeqCst);
         let mut guard = self.stats_actions.lock().expect("lock");
-        if let Some(queue) = guard.get_mut(id) {
-            if let Some(result) = queue.pop_front() {
-                return result;
-            }
+        if let Some(queue) = guard.get_mut(id)
+            && let Some(result) = queue.pop_front()
+        {
+            return result;
         }
 
         Err(ContainerRuntimeError::NotFound { id: id.to_string() })

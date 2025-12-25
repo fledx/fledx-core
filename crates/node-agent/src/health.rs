@@ -98,26 +98,23 @@ pub(crate) async fn run_health_for_work(
         now,
     };
 
-    if let Some(probe) = work.health_config.liveness.as_ref() {
-        if let Some(outcome) =
+    if let Some(probe) = work.health_config.liveness.as_ref()
+        && let Some(outcome) =
             maybe_run_probe(&mut work.liveness_state, probe, ProbeRole::Liveness, &ctx).await?
-        {
-            if outcome.threshold_just_reached {
-                work.failed_probe = Some(ProbeRole::Liveness);
-                work.failure_reason = Some(role_failure_reason(ProbeRole::Liveness, &outcome));
-            }
-        }
+        && outcome.threshold_just_reached
+    {
+        work.failed_probe = Some(ProbeRole::Liveness);
+        work.failure_reason = Some(role_failure_reason(ProbeRole::Liveness, &outcome));
     }
 
-    if let Some(probe) = work.health_config.readiness.as_ref() {
-        if let Some(outcome) =
+    if let Some(probe) = work.health_config.readiness.as_ref()
+        && let Some(outcome) =
             maybe_run_probe(&mut work.readiness_state, probe, ProbeRole::Readiness, &ctx).await?
-        {
-            if outcome.threshold_just_reached && work.failed_probe.is_none() {
-                work.failed_probe = Some(ProbeRole::Readiness);
-                work.failure_reason = Some(role_failure_reason(ProbeRole::Readiness, &outcome));
-            }
-        }
+        && outcome.threshold_just_reached
+        && work.failed_probe.is_none()
+    {
+        work.failed_probe = Some(ProbeRole::Readiness);
+        work.failure_reason = Some(role_failure_reason(ProbeRole::Readiness, &outcome));
     }
 
     Ok(())
@@ -230,7 +227,7 @@ async fn run_http_probe(
                 message: format!("http probe port {port} not mapped"),
                 error: Some("port not mapped".into()),
                 threshold_just_reached: false,
-            }
+            };
         }
     };
 
@@ -290,7 +287,7 @@ async fn run_tcp_probe(
                 message: format!("tcp probe port {port} not mapped"),
                 error: Some("port not mapped".into()),
                 threshold_just_reached: false,
-            }
+            };
         }
     };
 
@@ -330,7 +327,7 @@ async fn run_exec_probe(
                 message: "exec runtime unavailable".into(),
                 error: Some("docker runtime unavailable".into()),
                 threshold_just_reached: false,
-            }
+            };
         }
     };
 
@@ -401,10 +398,10 @@ fn should_run_probe(
         }
     }
 
-    if let Some(next_run) = state.next_run_at {
-        if now < next_run {
-            return false;
-        }
+    if let Some(next_run) = state.next_run_at
+        && now < next_run
+    {
+        return false;
     }
 
     true
@@ -495,7 +492,7 @@ mod tests {
     use crate::{
         api::{DeploymentHealth, HealthProbe, HealthProbeKind, InstanceState, PortMapping},
         state::{ManagedDeployment, ReplicaKey},
-        test_support::{base_config, state_with_runtime_and_config, ExecAction, MockRuntime},
+        test_support::{ExecAction, MockRuntime, base_config, state_with_runtime_and_config},
     };
     use chrono::{Duration as ChronoDuration, Utc};
     use httpmock::{Method::GET, MockServer};

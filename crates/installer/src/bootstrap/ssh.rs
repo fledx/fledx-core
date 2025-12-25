@@ -643,16 +643,22 @@ mod tests {
     impl EnvVarGuard {
         fn set(key: &'static str, value: String) -> Self {
             let prev = env::var(key).ok();
-            env::set_var(key, value);
+            // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+            unsafe {
+                env::set_var(key, value);
+            }
             Self { key, prev }
         }
     }
 
     impl Drop for EnvVarGuard {
         fn drop(&mut self) {
-            match &self.prev {
-                Some(value) => env::set_var(self.key, value),
-                None => env::remove_var(self.key),
+            // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+            unsafe {
+                match &self.prev {
+                    Some(value) => env::set_var(self.key, value),
+                    None => env::remove_var(self.key),
+                }
             }
         }
     }
@@ -873,9 +879,10 @@ exit ${FAKE_SSH_EXIT:-0}\n";
             target.run_command(SudoMode::root(false), "true", &[])
         })
         .expect_err("should fail");
-        assert!(err
-            .to_string()
-            .contains("sudo failed in non-interactive mode"));
+        assert!(
+            err.to_string()
+                .contains("sudo failed in non-interactive mode")
+        );
     }
 
     #[test]
@@ -932,9 +939,10 @@ exit ${FAKE_SSH_EXIT:-0}\n";
             target.run(SudoMode::root(false), "true")
         })
         .expect_err("should fail");
-        assert!(err
-            .to_string()
-            .contains("sudo failed in non-interactive mode"));
+        assert!(
+            err.to_string()
+                .contains("sudo failed in non-interactive mode")
+        );
     }
 
     #[test]

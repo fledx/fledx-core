@@ -2,7 +2,7 @@ use chrono::Duration as ChronoDuration;
 use clap::{Args, Subcommand};
 use uuid::Uuid;
 
-use super::common::{OutputFormatArgs, DEFAULT_PAGE_LIMIT};
+use super::common::{DEFAULT_PAGE_LIMIT, OutputFormatArgs};
 
 #[derive(Debug, Subcommand)]
 pub enum UsageCommands {

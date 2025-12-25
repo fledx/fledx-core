@@ -96,7 +96,9 @@ fn default_max_supported(cp: &Version) -> Version {
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum CompatError {
-    #[error("agent version {agent_version} unsupported; control-plane window {min_supported}..={max_supported}")]
+    #[error(
+        "agent version {agent_version} unsupported; control-plane window {min_supported}..={max_supported}"
+    )]
     Incompatible {
         agent_version: String,
         min_supported: String,
@@ -280,13 +282,13 @@ pub async fn handle_error_response(
         warn!(?err, "failed to parse compatibility headers");
     }
 
-    if let Ok(payload) = serde_json::from_str::<AgentVersionError>(body) {
-        if payload.error == UNSUPPORTED_AGENT_ERROR {
-            update_from_error_payload(state, &payload, headers)
-                .await
-                .ok();
-            return Ok(Some(payload.into()));
-        }
+    if let Ok(payload) = serde_json::from_str::<AgentVersionError>(body)
+        && payload.error == UNSUPPORTED_AGENT_ERROR
+    {
+        update_from_error_payload(state, &payload, headers)
+            .await
+            .ok();
+        return Ok(Some(payload.into()));
     }
 
     Ok(None)

@@ -121,8 +121,11 @@ mod tests {
     fn save_creates_toml_with_private_perms() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::remove_var("HOME");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            std::env::remove_var("HOME");
+        }
 
         let mut store = ProfileStore {
             default_profile: Some("default".into()),
@@ -162,8 +165,11 @@ mod tests {
     fn load_returns_default_when_missing() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::remove_var("HOME");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            std::env::remove_var("HOME");
+        }
 
         let loaded = ProfileStore::load().expect("load");
         assert!(loaded.default_profile.is_none());
@@ -174,8 +180,11 @@ mod tests {
     fn load_roundtrips_saved_file() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::remove_var("HOME");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            std::env::remove_var("HOME");
+        }
 
         let mut store = ProfileStore {
             default_profile: Some("prod".into()),
@@ -212,8 +221,11 @@ mod tests {
 
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::remove_var("HOME");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            std::env::remove_var("HOME");
+        }
 
         let path = ProfileStore::path().expect("path");
         let parent = path.parent().expect("parent");

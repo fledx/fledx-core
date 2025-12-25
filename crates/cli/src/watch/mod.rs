@@ -7,12 +7,12 @@ use crossterm::{
     cursor::{Hide, Show},
     event::{self, Event, KeyCode, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::{
     signal, task,
-    time::{sleep, Duration, Instant},
+    time::{Duration, Instant, sleep},
 };
 
 use crate::api::OperatorApi;
@@ -23,15 +23,15 @@ use crate::commands::nodes::empty_node_page;
 use crate::commands::status::fetch_status_output;
 use crate::validate::validate_deploy_watch_args;
 use crate::view::{
+    ConfigAttachmentLookup,
     format::{format_optional_uuid, format_timestamp, format_uuid},
     logs::truncate_detail,
     status::{
-        render_status_frame, render_status_view, DeploymentStatusCounts, NodeStatusCounts,
-        StatusOutput, StatusRenderFlags, StatusSummary,
+        DeploymentStatusCounts, NodeStatusCounts, StatusOutput, StatusRenderFlags, StatusSummary,
+        render_status_frame, render_status_view,
     },
-    ConfigAttachmentLookup,
 };
-use crate::{DeployLogsArgs, DeployWatchArgs, StatusArgs, DEFAULT_PAGE_LIMIT};
+use crate::{DEFAULT_PAGE_LIMIT, DeployLogsArgs, DeployWatchArgs, StatusArgs};
 
 use ::common::api::{DeploymentStatus, DeploymentStatusResponse, InstanceState};
 
@@ -224,13 +224,13 @@ async fn watch_status_tui(
 
 async fn wait_for_exit_event(timeout: Duration) -> io::Result<bool> {
     task::spawn_blocking(move || {
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                let is_ctrl_c =
-                    key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
-                if is_ctrl_c || key.code == KeyCode::Char('q') {
-                    return Ok(true);
-                }
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+        {
+            let is_ctrl_c =
+                key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+            if is_ctrl_c || key.code == KeyCode::Char('q') {
+                return Ok(true);
             }
         }
         Ok(false)
@@ -256,14 +256,14 @@ where
     let mut last_key: Option<DeploymentWatchKey> = None;
 
     loop {
-        if let Some(limit) = runtime_limit {
-            if Instant::now().duration_since(start) >= limit {
-                reporter(format!(
-                    "max runtime {}s reached, stopping watch",
-                    limit.as_secs()
-                ));
-                break;
-            }
+        if let Some(limit) = runtime_limit
+            && Instant::now().duration_since(start) >= limit
+        {
+            reporter(format!(
+                "max runtime {}s reached, stopping watch",
+                limit.as_secs()
+            ));
+            break;
         }
 
         match fetch_status().await {

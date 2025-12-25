@@ -2,11 +2,11 @@ use chrono::Utc;
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::OutputMode;
 use crate::args::{UsageCommands, UsageListArgs};
 use crate::commands::CommandContext;
 use crate::validate::validate_limit;
 use crate::view::usage::format_usage_output;
-use crate::OutputMode;
 use common::api;
 
 #[derive(Serialize)]
@@ -151,9 +151,10 @@ mod tests {
             },
         };
         let err = validate_usage_args(&args).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("--deployment or --node is required"));
+        assert!(
+            err.to_string()
+                .contains("--deployment or --node is required")
+        );
     }
 
     #[test]

@@ -7,9 +7,9 @@ use tracing::{error, warn};
 use crate::{
     api,
     cp_client::{ControlPlaneClient, CpResponse},
-    reconcile::{adoption, apply, cleanup, desired_fetch, replica_key, ReconcileOutcome},
+    reconcile::{ReconcileOutcome, adoption, apply, cleanup, desired_fetch, replica_key},
     runtime,
-    state::{self, ensure_runtime, ReplicaKey, SharedState},
+    state::{self, ReplicaKey, SharedState, ensure_runtime},
     telemetry,
 };
 
@@ -134,7 +134,7 @@ mod tests {
     use crate::{
         api, runtime,
         state::{self, RuntimeFactory},
-        test_support::{base_config, state_with_runtime_and_config, FakeCpClient, MockRuntime},
+        test_support::{FakeCpClient, MockRuntime, base_config, state_with_runtime_and_config},
     };
     use uuid::Uuid;
 

@@ -28,10 +28,10 @@ pub use validate::*;
 
 pub type PortMapping = ::common::api::PortMapping;
 
-#[cfg(feature = "bootstrap")]
-use clap::parser::ValueSource;
 #[cfg(not(feature = "bootstrap"))]
 use clap::Parser;
+#[cfg(feature = "bootstrap")]
+use clap::parser::ValueSource;
 #[cfg(feature = "bootstrap")]
 use clap::{CommandFactory, FromArgMatches};
 
@@ -227,34 +227,34 @@ fn apply_profile_overrides(
     };
 
     // Precedence: CLI flags > env vars > profile > defaults.
-    if profile_can_override(matches, "control_plane_url") {
-        if let Some(url) = profile.control_plane_url.clone() {
-            globals.control_plane_url = url;
-        }
+    if profile_can_override(matches, "control_plane_url")
+        && let Some(url) = profile.control_plane_url.clone()
+    {
+        globals.control_plane_url = url;
     }
 
-    if profile_can_override(matches, "operator_header") {
-        if let Some(header) = profile.operator_header.clone() {
-            globals.operator_header = header;
-        }
+    if profile_can_override(matches, "operator_header")
+        && let Some(header) = profile.operator_header.clone()
+    {
+        globals.operator_header = header;
     }
 
-    if profile_can_override(matches, "operator_token") {
-        if let Some(token) = profile.operator_token.clone() {
-            globals.operator_token = Some(token);
-        }
+    if profile_can_override(matches, "operator_token")
+        && let Some(token) = profile.operator_token.clone()
+    {
+        globals.operator_token = Some(token);
     }
 
-    if profile_can_override(matches, "registration_token") {
-        if let Some(token) = profile.registration_token.clone() {
-            globals.registration_token = Some(token);
-        }
+    if profile_can_override(matches, "registration_token")
+        && let Some(token) = profile.registration_token.clone()
+    {
+        globals.registration_token = Some(token);
     }
 
-    if profile_can_override(matches, "ca_cert_path") {
-        if let Some(path) = profile.ca_cert_path.clone() {
-            globals.ca_cert_path = Some(path);
-        }
+    if profile_can_override(matches, "ca_cert_path")
+        && let Some(path) = profile.ca_cert_path.clone()
+    {
+        globals.ca_cert_path = Some(path);
     }
 
     Ok(())
@@ -294,11 +294,14 @@ mod profile_override_tests {
     #[test]
     fn profile_overrides_defaults_and_missing_values() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
-        std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
-        std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
-        std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
-        std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
-        std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
+            std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
+            std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
+            std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+            std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
+        }
 
         let store = store_with_default_profile();
         let selected_profile = Some("default".to_string());
@@ -324,11 +327,14 @@ mod profile_override_tests {
     #[test]
     fn profile_does_not_override_cli_flags() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
-        std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
-        std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
-        std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
-        std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
-        std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
+            std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
+            std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
+            std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+            std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
+        }
 
         let store = store_with_default_profile();
         let selected_profile = Some("default".to_string());
@@ -368,11 +374,14 @@ mod profile_override_tests {
     #[test]
     fn profile_does_not_override_env_vars() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
-        std::env::set_var("FLEDX_CLI_CONTROL_PLANE_URL", "http://env.example:8080");
-        std::env::set_var("FLEDX_CLI_OPERATOR_HEADER", "x-env-operator-token");
-        std::env::set_var("FLEDX_CLI_OPERATOR_TOKEN", "env-op");
-        std::env::set_var("FLEDX_CLI_REGISTRATION_TOKEN", "env-reg");
-        std::env::set_var("FLEDX_CLI_CA_CERT_PATH", "/env/ca.pem");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("FLEDX_CLI_CONTROL_PLANE_URL", "http://env.example:8080");
+            std::env::set_var("FLEDX_CLI_OPERATOR_HEADER", "x-env-operator-token");
+            std::env::set_var("FLEDX_CLI_OPERATOR_TOKEN", "env-op");
+            std::env::set_var("FLEDX_CLI_REGISTRATION_TOKEN", "env-reg");
+            std::env::set_var("FLEDX_CLI_CA_CERT_PATH", "/env/ca.pem");
+        }
 
         let store = store_with_default_profile();
         let selected_profile = Some("default".to_string());
@@ -394,19 +403,25 @@ mod profile_override_tests {
         assert_eq!(globals.registration_token.as_deref(), Some("env-reg"));
         assert_eq!(globals.ca_cert_path.as_deref(), Some("/env/ca.pem"));
 
-        std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
-        std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
-        std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
-        std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
-        std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::remove_var("FLEDX_CLI_CONTROL_PLANE_URL");
+            std::env::remove_var("FLEDX_CLI_OPERATOR_HEADER");
+            std::env::remove_var("FLEDX_CLI_OPERATOR_TOKEN");
+            std::env::remove_var("FLEDX_CLI_REGISTRATION_TOKEN");
+            std::env::remove_var("FLEDX_CLI_CA_CERT_PATH");
+        }
     }
 
     #[test]
     fn default_profile_is_not_persisted_for_missing_profile() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::remove_var("HOME");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            std::env::remove_var("HOME");
+        }
 
         let mut store = ProfileStore::default();
         maybe_persist_default_profile(&mut store, &Some("missing".to_string())).expect("persist");
@@ -419,8 +434,11 @@ mod profile_override_tests {
     fn default_profile_is_persisted_for_existing_profile() {
         let _guard = crate::test_support::ENV_LOCK.lock().expect("lock");
         let dir = tempfile::tempdir().expect("tempdir");
-        std::env::set_var("XDG_CONFIG_HOME", dir.path());
-        std::env::remove_var("HOME");
+        // SAFETY: Tests hold ENV_LOCK to serialize env mutations.
+        unsafe {
+            std::env::set_var("XDG_CONFIG_HOME", dir.path());
+            std::env::remove_var("HOME");
+        }
 
         let mut store = ProfileStore::default();
         store

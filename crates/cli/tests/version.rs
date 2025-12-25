@@ -46,20 +46,18 @@ fn prints_semver_git_sha_and_dirty_flag() {
         "git sha should be short hex or unknown: {sha_section}"
     );
 
-    if looks_hex {
-        if let Ok(git_output) = Command::new("git")
+    if looks_hex
+        && let Ok(git_output) = Command::new("git")
             .args(["rev-parse", "--short", "HEAD"])
             .output()
-        {
-            if git_output.status.success() {
-                let expected = String::from_utf8_lossy(&git_output.stdout)
-                    .trim()
-                    .to_string();
-                assert!(
-                    sha_section.contains(&expected),
-                    "version should surface current git SHA (expected prefix {expected})"
-                );
-            }
-        }
+        && git_output.status.success()
+    {
+        let expected = String::from_utf8_lossy(&git_output.stdout)
+            .trim()
+            .to_string();
+        assert!(
+            sha_section.contains(&expected),
+            "version should surface current git SHA (expected prefix {expected})"
+        );
     }
 }

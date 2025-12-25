@@ -3,8 +3,8 @@ use subtle::ConstantTimeEq;
 
 use crate::Result;
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 use sha2::{Digest, Sha256};
 
@@ -74,9 +74,7 @@ fn verify_argon2(token: &str, stored_hash: &str, pepper: &str) -> Result<bool> {
 
 fn verify_legacy(token: &str, stored_hash: &str) -> bool {
     let expected = legacy_hash(token);
-    let matches = expected.len() == stored_hash.len()
-        && expected.as_bytes().ct_eq(stored_hash.as_bytes()).into();
-    matches
+    expected.len() == stored_hash.len() && expected.as_bytes().ct_eq(stored_hash.as_bytes()).into()
 }
 
 #[cfg(test)]

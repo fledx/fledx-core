@@ -2,19 +2,19 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use anyhow::Context;
-use reqwest::header::ETAG;
 use reqwest::StatusCode;
+use reqwest::header::ETAG;
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use tracing::{info, warn};
 use uuid::Uuid;
 
+use crate::SERVICE_IDENTITY_FINGERPRINT_HEADER;
 use crate::api::{ConfigDesired, ServiceIdentityBundle};
 use crate::compat;
 use crate::cp_client::ControlPlaneClient;
 use crate::state::{self, SharedState};
 use crate::telemetry;
-use crate::SERVICE_IDENTITY_FINGERPRINT_HEADER;
 
 const CONFIG_BACKOFF_BASE_MS: u64 = 500;
 const CONFIG_BACKOFF_MAX_MS: u64 = 30_000;
@@ -56,10 +56,10 @@ pub async fn refresh_configs(state: &SharedState) -> anyhow::Result<()> {
         )
     };
 
-    if let Some(until) = backoff_until {
-        if until > std::time::Instant::now() {
-            return Ok(());
-        }
+    if let Some(until) = backoff_until
+        && until > std::time::Instant::now()
+    {
+        return Ok(());
     }
 
     let client = ControlPlaneClient::new(state).await;
@@ -204,7 +204,7 @@ mod tests {
     use crate::api::{ConfigEntry, ConfigMetadata, NodeConfigResponse};
     use crate::runtime::DynContainerRuntime;
     use crate::telemetry;
-    use crate::test_support::{base_config, state_with_runtime_and_config, MockRuntime};
+    use crate::test_support::{MockRuntime, base_config, state_with_runtime_and_config};
     use chrono::Utc;
     use httpmock::{Method::GET, MockServer};
     use std::collections::HashMap;

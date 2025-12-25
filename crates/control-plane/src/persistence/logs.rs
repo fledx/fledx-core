@@ -1,12 +1,12 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
-use sqlx::types::Json;
 use sqlx::FromRow;
+use sqlx::types::Json;
 use uuid::Uuid;
 
 use super::{
-    nodes::NodeStatus, usage, Db, HealthStatus, NodeInventoryUpdate, ResourceMetricSample,
+    Db, HealthStatus, NodeInventoryUpdate, ResourceMetricSample, nodes::NodeStatus, usage,
 };
 use crate::Result;
 

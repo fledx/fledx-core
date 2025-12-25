@@ -233,7 +233,7 @@ fn prune_backoff(backoff: &mut HashMap<String, BackoffEntry>, targets: &[(Replic
 mod tests {
     use super::*;
     use crate::state::{ManagedDeployment, ReplicaKey};
-    use crate::test_support::{base_config, state_with_runtime_and_config, MockRuntime};
+    use crate::test_support::{MockRuntime, base_config, state_with_runtime_and_config};
     use chrono::Utc;
     use std::collections::VecDeque;
     use uuid::Uuid;

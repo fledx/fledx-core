@@ -7,7 +7,7 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::error::{ApiResult, AppError};
 use crate::persistence::{self as db, deployments, logs, nodes, tokens};
-use crate::tokens::{generate_token, hash_token, match_token, TokenMatch};
+use crate::tokens::{TokenMatch, generate_token, hash_token, match_token};
 use crate::validation;
 use common::api::{InstanceStatus, NodeStatus, TunnelEndpoint, UsageSummary};
 

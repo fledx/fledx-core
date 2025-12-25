@@ -14,7 +14,7 @@ use tracing::{info, warn};
 use crate::{
     config::AppConfig,
     runtime::{self, ContainerSpec, FileMount, PortMapping, PortProtocol},
-    state::{self, ensure_runtime, record_runtime_error, SharedState},
+    state::{self, SharedState, ensure_runtime, record_runtime_error},
 };
 
 const GATEWAY_CONTAINER_NAME: &str = "fledx-gateway";
@@ -64,10 +64,10 @@ impl GatewayManager {
             return Ok(());
         }
 
-        if let Some(until) = self.backoff_until {
-            if until > Instant::now() {
-                return Ok(());
-            }
+        if let Some(until) = self.backoff_until
+            && until > Instant::now()
+        {
+            return Ok(());
         }
 
         let bootstrap_path = write_bootstrap(&cfg)?;
@@ -96,10 +96,8 @@ impl GatewayManager {
             .ensure_running(&cfg, runtime.clone(), &bootstrap_path, &bootstrap_hash)
             .await?;
 
-        if running {
-            if let Err(err) = check_admin(http, cfg.gateway.admin_port).await {
-                warn!(?err, "envoy admin health check failed");
-            }
+        if running && let Err(err) = check_admin(http, cfg.gateway.admin_port).await {
+            warn!(?err, "envoy admin health check failed");
         }
 
         Ok(())
@@ -316,7 +314,7 @@ async fn check_admin(client: &Client, admin_port: u16) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::{base_config, state_with_runtime_and_config, MockRuntime};
+    use crate::test_support::{MockRuntime, base_config, state_with_runtime_and_config};
     use std::fs;
 
     #[tokio::test]
@@ -344,14 +342,16 @@ mod tests {
         assert_eq!(started.len(), 1);
         let spec = &started[0];
         assert_eq!(spec.name.as_deref(), Some("fledx-gateway"));
-        assert!(spec
-            .ports
-            .iter()
-            .any(|p| p.container_port == admin_port && p.host_port == admin_port));
-        assert!(spec
-            .ports
-            .iter()
-            .any(|p| p.container_port == 10080 && p.host_port == 10080));
+        assert!(
+            spec.ports
+                .iter()
+                .any(|p| p.container_port == admin_port && p.host_port == admin_port)
+        );
+        assert!(
+            spec.ports
+                .iter()
+                .any(|p| p.container_port == 10080 && p.host_port == 10080)
+        );
 
         manager.tick(&state, &client).await?;
         assert_eq!(runtime.start_calls(), 1);
@@ -392,18 +392,21 @@ mod tests {
         assert!(spec.mounts.iter().any(
             |m| m.host_path == "/tmp/envoy.yaml" && m.container_path == "/etc/envoy/envoy.yaml"
         ));
-        assert!(spec
-            .ports
-            .iter()
-            .any(|p| p.container_port == 19000 && p.host_port == 19000));
-        assert!(spec
-            .ports
-            .iter()
-            .any(|p| p.container_port == 19001 && p.host_port == 19001));
-        assert!(spec
-            .labels
-            .iter()
-            .any(|(k, v)| k == "fledx.gateway" && v == "true"));
+        assert!(
+            spec.ports
+                .iter()
+                .any(|p| p.container_port == 19000 && p.host_port == 19000)
+        );
+        assert!(
+            spec.ports
+                .iter()
+                .any(|p| p.container_port == 19001 && p.host_port == 19001)
+        );
+        assert!(
+            spec.labels
+                .iter()
+                .any(|(k, v)| k == "fledx.gateway" && v == "true")
+        );
     }
 
     #[test]

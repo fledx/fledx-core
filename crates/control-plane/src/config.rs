@@ -527,10 +527,10 @@ impl PortsConfig {
         if self.range_start > self.range_end {
             anyhow::bail!("ports.range_start must be <= ports.range_end");
         }
-        if let Some(host) = &self.public_host {
-            if host.trim().is_empty() {
-                anyhow::bail!("ports.public_host cannot be empty");
-            }
+        if let Some(host) = &self.public_host
+            && host.trim().is_empty()
+        {
+            anyhow::bail!("ports.public_host cannot be empty");
         }
         Ok(())
     }
@@ -815,22 +815,28 @@ mod tests {
             .filter(|(key, _)| key.starts_with(&prefix))
             .collect();
 
-        for (key, _) in &existing {
-            env::remove_var(key);
-        }
+        // SAFETY: ENV_LOCK serializes env mutations for tests.
+        unsafe {
+            for (key, _) in &existing {
+                env::remove_var(key);
+            }
 
-        for (key, value) in vars {
-            env::set_var(key, value);
+            for (key, value) in vars {
+                env::set_var(key, value);
+            }
         }
 
         let result = panic::catch_unwind(test);
 
-        for (key, _) in vars {
-            env::remove_var(key);
-        }
+        // SAFETY: ENV_LOCK serializes env mutations for tests.
+        unsafe {
+            for (key, _) in vars {
+                env::remove_var(key);
+            }
 
-        for (key, value) in existing {
-            env::set_var(key, value);
+            for (key, value) in existing {
+                env::set_var(key, value);
+            }
         }
 
         result.unwrap();
@@ -1015,9 +1021,10 @@ mod tests {
         }
         .validate()
         .expect_err("whitespace entry");
-        assert!(err
-            .to_string()
-            .contains("must not contain surrounding whitespace"));
+        assert!(
+            err.to_string()
+                .contains("must not contain surrounding whitespace")
+        );
 
         let err = VolumesConfig {
             allowed_host_prefixes: vec!["relative".into()],

@@ -4,8 +4,8 @@ use sqlx::{FromRow, QueryBuilder, Sqlite, Transaction};
 use uuid::Uuid;
 
 use super::{
-    ports, DeploymentHealth, PlacementConstraints, PlacementHints, PortMapping, SecretEnv,
-    SecretFile, VolumeMount,
+    DeploymentHealth, PlacementConstraints, PlacementHints, PortMapping, SecretEnv, SecretFile,
+    VolumeMount, ports,
 };
 use crate::Result;
 

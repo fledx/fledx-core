@@ -3,16 +3,17 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Serialize;
 use tokio::signal;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use uuid::Uuid;
 
+use crate::OutputMode;
 use crate::api::OperatorApi;
 use crate::args::{
     DeployCommands, DeployCreateArgs, DeployDeleteArgs, DeployLogsArgs, DeployStatusArgs,
     DeployStopArgs, DeployUpdateArgs, HealthSpecArgs,
 };
-use crate::commands::configs::fetch_config_attachments_for_targets;
 use crate::commands::CommandContext;
+use crate::commands::configs::fetch_config_attachments_for_targets;
 use crate::validate::{
     ensure_unique_container_ports, validate_command_args, validate_constraint_requirements,
     validate_positive_u32, validate_positive_u64, validate_replica_count,
@@ -21,9 +22,8 @@ use crate::view::deployments::render_deployments_table;
 use crate::view::format::format_affinity_details;
 use crate::view::logs::{format_log_entry_line, render_audit_logs_table};
 use crate::view::status::DeploymentStatusView;
-use crate::view::{to_pretty_json, to_pretty_yaml, AttachedConfigInfo};
+use crate::view::{AttachedConfigInfo, to_pretty_json, to_pretty_yaml};
 use crate::watch::watch_deployment;
-use crate::OutputMode;
 use common::api::{
     self, CapacityHints, DeploymentCreateResponse, DeploymentHealth, DeploymentSpec,
     DeploymentStatusResponse, DeploymentSummary, DeploymentUpdate, DesiredState, HealthProbe,
@@ -179,18 +179,18 @@ pub async fn handle_deploy_update(
     } = args;
     let api = ctx.operator_api()?;
 
-    if let Some(img) = image.as_ref() {
-        if img.trim().is_empty() {
-            anyhow::bail!("image cannot be empty");
-        }
+    if let Some(img) = image.as_ref()
+        && img.trim().is_empty()
+    {
+        anyhow::bail!("image cannot be empty");
     }
     if let Some(replica_count) = replicas {
         validate_replica_count(replica_count)?;
     }
-    if let Some(n) = name.as_ref() {
-        if n.trim().is_empty() {
-            anyhow::bail!("name cannot be empty");
-        }
+    if let Some(n) = name.as_ref()
+        && n.trim().is_empty()
+    {
+        anyhow::bail!("name cannot be empty");
     }
     if clear_command && command.is_some() {
         anyhow::bail!("--clear-command cannot be combined with --command");
@@ -1403,15 +1403,21 @@ mod tests {
         let lines = deployment_status_lines(&status);
         assert!(lines.iter().any(|line| line.contains("health.liveness")));
         assert!(lines.iter().any(|line| line.contains("interval=5s")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("instance health: false")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("last_probe_result: tcp failure")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("reason: connection refused")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("instance health: false"))
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("last_probe_result: tcp failure"))
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("reason: connection refused"))
+        );
     }
 
     #[test]
@@ -1536,12 +1542,16 @@ mod tests {
         assert!(lines.iter().any(|line| line == "assignments:"));
         assert!(lines.iter().any(|line| line.contains("replica 1 ->")));
         assert!(lines.iter().any(|line| line.contains("placement.affinity")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("placement.anti_affinity")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("placement.spread: true")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("placement.anti_affinity"))
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("placement.spread: true"))
+        );
         assert!(lines.iter().any(|line| line.contains("volume:")));
         assert!(lines.iter().any(|line| line.contains("secret_env:")));
         assert!(lines.iter().any(|line| line.contains("secret_file:")));
@@ -1583,9 +1593,11 @@ mod tests {
         };
 
         let lines = deployment_status_lines(&status);
-        assert!(lines
-            .iter()
-            .any(|line| line.contains(&format!("assigned_node_id: {node_id}"))));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains(&format!("assigned_node_id: {node_id}")))
+        );
     }
 
     fn spawn_json_server(body: String) -> std::net::SocketAddr {
@@ -1615,11 +1627,11 @@ mod tests {
                 Ok(0) => break,
                 Ok(n) => {
                     buf.extend_from_slice(&chunk[..n]);
-                    if header_end.is_none() {
-                        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
-                            header_end = Some(pos + 4);
-                            break;
-                        }
+                    if header_end.is_none()
+                        && let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n")
+                    {
+                        header_end = Some(pos + 4);
+                        break;
                     }
                 }
                 Err(_) => break,
@@ -1814,9 +1826,10 @@ mod tests {
             },
         };
         let err = handle_deploy_update(&ctx, args).await.unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("provide at least one field to update"));
+        assert!(
+            err.to_string()
+                .contains("provide at least one field to update")
+        );
     }
 
     #[tokio::test]

@@ -38,10 +38,10 @@ pub async fn rotate_node_token(
     state: &AppState,
     req: RotateNodeTokenRequest,
 ) -> ApiResult<TokenWithValue> {
-    if let Some(expires_at) = req.expires_at {
-        if expires_at <= Utc::now() {
-            return Err(AppError::bad_request("expires_at must be in the future"));
-        }
+    if let Some(expires_at) = req.expires_at
+        && expires_at <= Utc::now()
+    {
+        return Err(AppError::bad_request("expires_at must be in the future"));
     }
 
     let node_exists = nodes::get_node(&state.db, req.node_id).await?;

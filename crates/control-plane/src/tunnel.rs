@@ -5,7 +5,7 @@ use std::{
 };
 
 use metrics::{counter, gauge, histogram};
-use tokio::sync::{mpsc, oneshot, OwnedSemaphorePermit, RwLock, Semaphore};
+use tokio::sync::{OwnedSemaphorePermit, RwLock, Semaphore, mpsc, oneshot};
 use uuid::Uuid;
 
 /// Lightweight registry for active agent tunnels.

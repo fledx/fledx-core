@@ -11,17 +11,17 @@ use axum::body::Body;
 use axum::http::{Request as HttpRequest, StatusCode};
 use chrono::{Duration as ChronoDuration, Utc};
 use common::{
-    agent_request, legacy_hash, register_ready_node, register_ready_node_with_ingress,
-    register_ready_node_with_payload, setup_app, setup_app_with_config, setup_app_with_state,
-    setup_apps, setup_apps_with_config, DeploymentCreateResponse, DeploymentStatus,
-    DeploymentStatusResponse, DesiredState, DesiredStateResponse, NodeConfigResponse, NodeStatus,
-    NodeStatusResponse, RegistrationResponse, TestAppConfig, TEST_OPERATOR_TOKEN, TEST_REG_TOKEN,
+    DeploymentCreateResponse, DeploymentStatus, DeploymentStatusResponse, DesiredState,
+    DesiredStateResponse, NodeConfigResponse, NodeStatus, NodeStatusResponse, RegistrationResponse,
+    TEST_OPERATOR_TOKEN, TEST_REG_TOKEN, TestAppConfig, agent_request, legacy_hash,
+    register_ready_node, register_ready_node_with_ingress, register_ready_node_with_payload,
+    setup_app, setup_app_with_config, setup_app_with_state, setup_apps, setup_apps_with_config,
 };
 use control_plane::{
     config::{PortsConfig, ReachabilityConfig, VolumesConfig},
     persistence as db,
     persistence::{configs, deployments, logs, migrations, nodes},
-    routes::{run_reachability_sweep, ReachabilityReport},
+    routes::{ReachabilityReport, run_reachability_sweep},
     validation,
 };
 use http_body_util::BodyExt;
@@ -825,11 +825,13 @@ async fn deployment_create_returns_full_payload_and_status_fields() {
             .as_deref(),
         Some("/etc/secret/api")
     );
-    assert!(desired_dep
-        .secret_files
-        .as_ref()
-        .map(|files| files[0].optional)
-        .unwrap_or(false));
+    assert!(
+        desired_dep
+            .secret_files
+            .as_ref()
+            .map(|files| files[0].optional)
+            .unwrap_or(false)
+    );
     assert_eq!(desired_port.host_port, Some(18080));
     assert!(desired_port.expose);
     assert_eq!(desired_port.endpoint.as_deref(), Some("127.0.0.1:18080"));
@@ -2673,11 +2675,13 @@ async fn deployment_update_changes_replicas_and_placement() {
         serde_json::from_slice(&desired_body).expect("parse desired-state");
     let desired_dep = desired.deployments.first().expect("deployment present");
     assert_eq!(desired_dep.replicas, 2);
-    assert!(desired_dep
-        .placement
-        .as_ref()
-        .and_then(|p| p.affinity.as_ref())
-        .is_some());
+    assert!(
+        desired_dep
+            .placement
+            .as_ref()
+            .and_then(|p| p.affinity.as_ref())
+            .is_some()
+    );
 }
 
 #[tokio::test]
@@ -5032,10 +5036,12 @@ async fn config_attach_and_detach_targets_return_metadata() {
             .unwrap();
     assert!(!detach_dep.attached);
     assert!(detach_dep.attached_at.is_none());
-    assert!(configs::configs_for_deployment(&db, deployment.id)
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        configs::configs_for_deployment(&db, deployment.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 
     let attach_node = app
         .clone()
@@ -5080,10 +5086,12 @@ async fn config_attach_and_detach_targets_return_metadata() {
             .unwrap();
     assert!(!detach_node.attached);
     assert!(detach_node.attached_at.is_none());
-    assert!(configs::configs_for_node(&db, node.id)
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        configs::configs_for_node(&db, node.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -5259,10 +5267,12 @@ async fn config_attachment_requires_targets_and_is_idempotent() {
     let detached: ConfigAttachmentResponse =
         serde_json::from_slice(&detach.into_body().collect().await.unwrap().to_bytes()).unwrap();
     assert!(!detached.attached);
-    assert!(configs::configs_for_deployment(&db, deployment.id)
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        configs::configs_for_deployment(&db, deployment.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -5352,11 +5362,13 @@ async fn node_configs_endpoint_serves_configs_and_supports_etag() {
     assert_eq!(config.files[0].path, "/etc/config/app.yaml");
     assert_eq!(config.attached_nodes, vec![reg.node_id]);
     assert!(config.attached_deployments.is_empty());
-    assert!(config
-        .checksum
-        .as_ref()
-        .map(|c| !c.is_empty())
-        .unwrap_or(false));
+    assert!(
+        config
+            .checksum
+            .as_ref()
+            .map(|c| !c.is_empty())
+            .unwrap_or(false)
+    );
 
     let cached = app
         .clone()

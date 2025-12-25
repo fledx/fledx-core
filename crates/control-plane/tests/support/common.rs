@@ -3,10 +3,10 @@
 use std::{sync::Arc, time::Duration};
 
 use axum::{
+    Router,
     body::Body,
     http::request::Builder as HttpBuilder,
     http::{HeaderName, Request as HttpRequest},
-    Router,
 };
 use chrono::Utc;
 use common::api;
@@ -19,7 +19,7 @@ use control_plane::{
         CompatibilityConfig, LimitsConfig, PortsConfig, ReachabilityConfig, RetentionConfig,
         TunnelConfig,
     },
-    metrics::{init_metrics_recorder, record_build_info, MetricsHistory},
+    metrics::{MetricsHistory, init_metrics_recorder, record_build_info},
     persistence as db,
     persistence::{migrations, nodes},
     routes::{build_metrics_router, build_router},

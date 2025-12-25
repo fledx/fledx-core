@@ -86,7 +86,7 @@ mod tests {
     use super::*;
     use crate::{
         api, runtime,
-        test_support::{base_config, state_with_runtime_and_config, MockRuntime},
+        test_support::{MockRuntime, base_config, state_with_runtime_and_config},
     };
 
     #[tokio::test]

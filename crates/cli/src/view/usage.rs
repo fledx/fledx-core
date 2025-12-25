@@ -2,8 +2,8 @@ use ::common::api::{Page, UsageRollup};
 
 use super::format::{format_bytes_i64, format_cpu_percent, format_timestamp, format_uuid};
 use super::table::render_table;
-use crate::view::{to_pretty_json, to_pretty_yaml};
 use crate::OutputMode;
+use crate::view::{to_pretty_json, to_pretty_yaml};
 
 pub fn render_usage_table(rollups: &[UsageRollup]) -> String {
     let headers = [

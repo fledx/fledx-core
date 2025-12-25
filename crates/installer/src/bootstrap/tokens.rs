@@ -6,7 +6,7 @@ use anyhow::Context;
 use rand::TryRngCore;
 use serde::Deserialize;
 use tokio::time::timeout as tokio_timeout;
-use tokio::time::{sleep, Instant};
+use tokio::time::{Instant, sleep};
 
 fn describe_timeout(timeout: Duration) -> String {
     // Keep this short and stable for CLI output.
@@ -189,8 +189,7 @@ pub async fn wait_for_node_tunnel_connected(
                         let details = status.last_error.as_deref().unwrap_or("no error reported");
                         eprintln!(
                             "agent not connected yet (attempt {attempt}): status={} last_heartbeat_secs={:?} last_error={details}",
-                            status.status,
-                            status.last_heartbeat_secs
+                            status.status, status.last_heartbeat_secs
                         );
                         last_log = Instant::now();
                     }
@@ -502,9 +501,10 @@ mod tests {
         let err = fetch_control_plane_health(&client, &base_url)
             .await
             .expect_err("invalid json");
-        assert!(err
-            .to_string()
-            .contains("failed to parse control-plane health response"));
+        assert!(
+            err.to_string()
+                .contains("failed to parse control-plane health response")
+        );
     }
 
     #[tokio::test]
@@ -581,9 +581,10 @@ mod tests {
             );
         tokio::time::advance(Duration::from_secs(3)).await;
         let err = handle.await.unwrap().expect_err("should timeout");
-        assert!(err
-            .to_string()
-            .contains("timed out waiting for control-plane health"));
+        assert!(
+            err.to_string()
+                .contains("timed out waiting for control-plane health")
+        );
     }
 
     #[tokio::test]
@@ -627,9 +628,10 @@ mod tests {
         });
         tokio::time::advance(Duration::from_secs(3)).await;
         let err = handle.await.unwrap().expect_err("timeout");
-        assert!(err
-            .to_string()
-            .contains("timed out waiting for agent tunnel connection"));
+        assert!(
+            err.to_string()
+                .contains("timed out waiting for agent tunnel connection")
+        );
     }
 
     #[tokio::test]

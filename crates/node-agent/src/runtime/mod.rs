@@ -49,7 +49,7 @@ pub trait ContainerRuntime: Send + Sync {
     async fn stop_container(&self, id: &str) -> Result<(), ContainerRuntimeError>;
     async fn remove_container(&self, id: &str) -> Result<(), ContainerRuntimeError>;
     async fn list_managed_containers(&self)
-        -> Result<Vec<ContainerDetails>, ContainerRuntimeError>;
+    -> Result<Vec<ContainerDetails>, ContainerRuntimeError>;
 
     async fn container_stats(
         &self,

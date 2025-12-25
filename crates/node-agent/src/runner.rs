@@ -11,7 +11,7 @@ use crate::{
     runtime::{DockerRuntime, DynContainerRuntime},
     sampler::resource_sampler_loop,
     services,
-    state::{self, ensure_runtime, RuntimeFactory},
+    state::{self, RuntimeFactory, ensure_runtime},
     telemetry, validate_control_plane_url, version,
 };
 
@@ -59,11 +59,11 @@ impl AgentHandle {
     /// Wait for all agent tasks to finish and perform optional cleanup.
     pub async fn await_termination(self) -> anyhow::Result<()> {
         for handle in self.tasks {
-            if let Err(join_err) = handle.await {
-                if join_err.is_panic() {
-                    error!(?join_err, "agent task panicked during shutdown");
-                    anyhow::bail!("agent task panicked");
-                }
+            if let Err(join_err) = handle.await
+                && join_err.is_panic()
+            {
+                error!(?join_err, "agent task panicked during shutdown");
+                anyhow::bail!("agent task panicked");
             }
         }
 
@@ -314,7 +314,7 @@ mod tests {
     use super::*;
     use crate::runtime::ContainerRuntimeError;
     use crate::runtime::{ContainerDetails, ContainerStatus};
-    use crate::test_support::{base_config, MockRuntime};
+    use crate::test_support::{MockRuntime, base_config};
     use std::sync::Arc;
     use tokio::sync::watch;
 

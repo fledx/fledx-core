@@ -1,5 +1,5 @@
 [workspace]
-resolver = "2"
+resolver = "3"
 members = [
     "crates/control-plane",
     "crates/node-agent",
@@ -9,7 +9,8 @@ members = [
 ]
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
+rust-version = "1.92"
 
 [workspace.dependencies]
 anyhow = "1"

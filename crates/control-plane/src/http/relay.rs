@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use axum::{
+    Json, Router,
     body::{self, Body},
     extract::{Path, State},
     http::{HeaderName, HeaderValue, Request, StatusCode},
     response::IntoResponse,
     routing::any,
-    Json, Router,
 };
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use metrics::{counter, histogram};
 use serde::Serialize;
 use tracing::warn;

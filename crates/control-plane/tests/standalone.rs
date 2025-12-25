@@ -2,7 +2,7 @@ use std::{net::TcpListener, path::PathBuf, process::Stdio, time::Duration};
 
 use common::api;
 use nix::{
-    sys::signal::{kill, Signal},
+    sys::signal::{Signal, kill},
     unistd::Pid,
 };
 use scopeguard::defer;
@@ -258,10 +258,10 @@ async fn wait_node_ready(cp_port: u16, operator_token: &str, node_id: Uuid) -> a
             continue;
         }
         let page: api::NodeSummaryPage = res.json().await?;
-        if let Some(node) = page.items.into_iter().find(|n| n.node_id == node_id) {
-            if node.status == api::NodeStatus::Ready {
-                return Ok(());
-            }
+        if let Some(node) = page.items.into_iter().find(|n| n.node_id == node_id)
+            && node.status == api::NodeStatus::Ready
+        {
+            return Ok(());
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -327,12 +327,12 @@ async fn wait_deployment_running(
             continue;
         }
         let status: api::DeploymentStatusResponse = res.json().await?;
-        if status.status == api::DeploymentStatus::Running {
-            if let Some(inst) = status.instance.as_ref() {
-                if inst.state == api::InstanceState::Running && inst.container_id.is_some() {
-                    return Ok(status);
-                }
-            }
+        if status.status == api::DeploymentStatus::Running
+            && let Some(inst) = status.instance.as_ref()
+            && inst.state == api::InstanceState::Running
+            && inst.container_id.is_some()
+        {
+            return Ok(status);
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }

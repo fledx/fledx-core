@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::{
     api::{self, DeploymentHealth, HealthProbe, HealthProbeKind},
@@ -200,28 +200,28 @@ fn validate_probe(role: &str, probe: &HealthProbe) -> Result<()> {
         }
     }
 
-    if let Some(val) = probe.interval_seconds {
-        if val == 0 {
-            bail!("{role} interval_seconds must be greater than zero");
-        }
+    if let Some(val) = probe.interval_seconds
+        && val == 0
+    {
+        bail!("{role} interval_seconds must be greater than zero");
     }
 
-    if let Some(val) = probe.timeout_seconds {
-        if val == 0 {
-            bail!("{role} timeout_seconds must be greater than zero");
-        }
+    if let Some(val) = probe.timeout_seconds
+        && val == 0
+    {
+        bail!("{role} timeout_seconds must be greater than zero");
     }
 
-    if let Some(val) = probe.failure_threshold {
-        if val == 0 {
-            bail!("{role} failure_threshold must be greater than zero");
-        }
+    if let Some(val) = probe.failure_threshold
+        && val == 0
+    {
+        bail!("{role} failure_threshold must be greater than zero");
     }
 
-    if let Some(val) = probe.start_period_seconds {
-        if val == 0 {
-            bail!("{role} start_period_seconds must be greater than zero");
-        }
+    if let Some(val) = probe.start_period_seconds
+        && val == 0
+    {
+        bail!("{role} start_period_seconds must be greater than zero");
     }
 
     Ok(())
@@ -269,9 +269,10 @@ mod tests {
         }];
 
         let err = validate_ports(&ports).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("exposed container port 8080 requires a host_port binding"));
+        assert!(
+            err.to_string()
+                .contains("exposed container port 8080 requires a host_port binding")
+        );
     }
 
     #[test]
@@ -312,13 +313,20 @@ mod tests {
             optional: false,
         }];
 
-        std::env::remove_var("FLEDX_SECRET_MY_SECRET");
+        // SAFETY: Test controls env mutations and runs in isolation.
+        unsafe {
+            std::env::remove_var("FLEDX_SECRET_MY_SECRET");
+        }
         let err = resolve_secret_env(&entries, "FLEDX_SECRET_").unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("required secret MY_SECRET missing"));
+        assert!(
+            err.to_string()
+                .contains("required secret MY_SECRET missing")
+        );
 
-        std::env::set_var("FLEDX_SECRET_MY_SECRET", "value");
+        // SAFETY: Test controls env mutations and runs in isolation.
+        unsafe {
+            std::env::set_var("FLEDX_SECRET_MY_SECRET", "value");
+        }
         let resolved = resolve_secret_env(&entries, "FLEDX_SECRET_").expect("resolved env");
         assert_eq!(resolved, vec![("TOKEN".into(), "value".into())]);
     }
@@ -331,7 +339,10 @@ mod tests {
             optional: true,
         }];
 
-        std::env::remove_var("FLEDX_SECRET_OPTIONAL_SECRET");
+        // SAFETY: Test controls env mutations and runs in isolation.
+        unsafe {
+            std::env::remove_var("FLEDX_SECRET_OPTIONAL_SECRET");
+        }
         let resolved = resolve_secret_env(&entries, "FLEDX_SECRET_").expect("resolved env");
         assert!(resolved.is_empty());
     }
@@ -400,9 +411,10 @@ mod tests {
         };
 
         let err = validate_health(&health).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("health configuration must define at least one probe"));
+        assert!(
+            err.to_string()
+                .contains("health configuration must define at least one probe")
+        );
     }
 
     #[test]

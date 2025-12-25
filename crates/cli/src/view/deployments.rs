@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{
+    AttachedConfigInfo,
     format::{
         color_deployment_status, deployment_status_color, deployment_status_label,
         format_attached_configs, format_optional_uuid, format_placement_hint, format_timestamp,
@@ -15,7 +16,6 @@ use super::{
     },
     status::status_cell,
     table::render_table,
-    AttachedConfigInfo,
 };
 
 pub fn render_deployments_table(

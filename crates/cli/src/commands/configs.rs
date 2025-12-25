@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use uuid::Uuid;
 
+use crate::OutputMode;
 use crate::api::OperatorApi;
 use crate::args::{
     ConfigAttachCommands, ConfigAttachDeploymentArgs, ConfigAttachNodeArgs, ConfigCommands,
@@ -15,8 +16,7 @@ use crate::validate::{
 };
 use crate::view::format::{format_timestamp, format_uuid};
 use crate::view::table::render_table;
-use crate::view::{to_pretty_json, to_pretty_yaml, AttachedConfigInfo, ConfigAttachmentLookup};
-use crate::OutputMode;
+use crate::view::{AttachedConfigInfo, ConfigAttachmentLookup, to_pretty_json, to_pretty_yaml};
 use common::api::{self, ConfigSummaryPage};
 
 pub async fn handle_configs(ctx: &CommandContext, command: ConfigCommands) -> anyhow::Result<()> {
@@ -478,16 +478,22 @@ mod tests {
         let lines = config_lines(&config);
         assert!(lines.iter().any(|line| line == "entries:"));
         assert!(lines.iter().any(|line| line.contains("MODE = prod")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("TOKEN = secret:token-ref")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("TOKEN = secret:token-ref"))
+        );
         assert!(lines.iter().any(|line| line == "files:"));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("/etc/app/config.yml -> config-blobs/app-v1")));
-        assert!(lines
-            .iter()
-            .any(|line| line.contains("attached_deployments:")));
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("/etc/app/config.yml -> config-blobs/app-v1"))
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("attached_deployments:"))
+        );
         assert!(lines.iter().any(|line| line.contains("attached_nodes:")));
     }
 }

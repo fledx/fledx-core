@@ -642,7 +642,10 @@ mod tests {
             if self.saved.iter().all(|(k, _)| *k != key) {
                 self.saved.push((key, std::env::var(key).ok()));
             }
-            std::env::set_var(key, value);
+            // SAFETY: Callers hold env_lock, so env mutations are serialized.
+            unsafe {
+                std::env::set_var(key, value);
+            }
         }
     }
 
@@ -650,8 +653,18 @@ mod tests {
         fn drop(&mut self) {
             for (key, previous) in self.saved.drain(..) {
                 match previous {
-                    Some(value) => std::env::set_var(key, value),
-                    None => std::env::remove_var(key),
+                    Some(value) => {
+                        // SAFETY: Callers hold env_lock, so env mutations are serialized.
+                        unsafe {
+                            std::env::set_var(key, value);
+                        }
+                    }
+                    None => {
+                        // SAFETY: Callers hold env_lock, so env mutations are serialized.
+                        unsafe {
+                            std::env::remove_var(key);
+                        }
+                    }
                 }
             }
         }
@@ -680,6 +693,29 @@ mod tests {
         assert_eq!(route.path_prefix, "/api");
         assert_eq!(route.target_host, "example.com");
         route.validate().expect("route valid");
+    }
+
+    #[test]
+    fn tunnel_route_validate_rejects_empty_prefix() {
+        let route = TunnelRoute {
+            path_prefix: "".into(),
+            target_host: "example.com".into(),
+            target_port: 443,
+        };
+        let err = route.validate().unwrap_err();
+        assert!(err.to_string().contains("path_prefix"));
+    }
+
+    #[test]
+    fn tunnel_route_validate_accepts_normalized_prefix() {
+        let mut route = TunnelRoute {
+            path_prefix: "api/".into(),
+            target_host: "example.com".into(),
+            target_port: 443,
+        };
+        route.normalize();
+        route.validate().expect("route valid");
+        assert_eq!(route.path_prefix, "/api");
     }
 
     #[test]

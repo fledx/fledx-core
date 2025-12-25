@@ -3,9 +3,9 @@ use std::time::Duration;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use tracing::{info, warn};
 
+use crate::Result;
 use crate::config::RetentionConfig;
 use crate::persistence::{self as db, usage as usage_store};
-use crate::Result;
 
 pub async fn usage_retention_loop(db: db::Db, retention: RetentionConfig) {
     let sweep_interval = retention.usage_cleanup_interval_secs.max(60);

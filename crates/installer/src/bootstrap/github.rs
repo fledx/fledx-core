@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use anyhow::Context;
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -539,14 +539,20 @@ mod tests {
     fn with_release_keys_env<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
         let _guard = env_lock().lock().expect("env lock");
         let original = std::env::var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV).ok();
-        match value {
-            Some(value) => std::env::set_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV, value),
-            None => std::env::remove_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV),
+        // SAFETY: Tests hold env_lock to serialize env mutations.
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV, value),
+                None => std::env::remove_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV),
+            }
         }
         let out = f();
-        match original {
-            Some(value) => std::env::set_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV, value),
-            None => std::env::remove_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV),
+        // SAFETY: Tests hold env_lock to serialize env mutations.
+        unsafe {
+            match original {
+                Some(value) => std::env::set_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV, value),
+                None => std::env::remove_var(RELEASE_SIGNING_PUBKEYS_ED25519_ENV),
+            }
         }
         out
     }
@@ -759,9 +765,10 @@ mod tests {
             )
             .expect_err("should fail without keys")
         });
-        assert!(err
-            .to_string()
-            .contains("no trusted ed25519 release signing keys"));
+        assert!(
+            err.to_string()
+                .contains("no trusted ed25519 release signing keys")
+        );
     }
 
     #[test]

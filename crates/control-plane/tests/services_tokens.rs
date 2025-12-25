@@ -5,8 +5,8 @@ use axum::http::{HeaderMap, StatusCode};
 use chrono::{Duration as ChronoDuration, Utc};
 use control_plane::persistence::{migrations, nodes, tokens};
 use control_plane::services::{compatibility, tokens as token_service};
-use control_plane::tokens::{match_token, TokenMatch};
-use support::{make_state, TestAppConfig};
+use control_plane::tokens::{TokenMatch, match_token};
+use support::{TestAppConfig, make_state};
 use uuid::Uuid;
 
 #[tokio::test]

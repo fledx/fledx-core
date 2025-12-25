@@ -2,8 +2,8 @@ use std::{
     collections::VecDeque,
     future::Future,
     pin::Pin,
-    sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 

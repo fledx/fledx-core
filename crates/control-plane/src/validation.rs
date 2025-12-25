@@ -155,19 +155,19 @@ pub fn normalize_capacity(
         return Ok(None);
     };
 
-    if let Some(cpu) = capacity.cpu_millis {
-        if cpu == 0 {
-            return Err(AppError::bad_request(
-                "cpu_millis must be greater than zero",
-            ));
-        }
+    if let Some(cpu) = capacity.cpu_millis
+        && cpu == 0
+    {
+        return Err(AppError::bad_request(
+            "cpu_millis must be greater than zero",
+        ));
     }
-    if let Some(memory) = capacity.memory_bytes {
-        if memory == 0 {
-            return Err(AppError::bad_request(
-                "memory_bytes must be greater than zero",
-            ));
-        }
+    if let Some(memory) = capacity.memory_bytes
+        && memory == 0
+    {
+        return Err(AppError::bad_request(
+            "memory_bytes must be greater than zero",
+        ));
     }
 
     if capacity.cpu_millis.is_none() && capacity.memory_bytes.is_none() && !allow_empty {
@@ -295,10 +295,10 @@ pub(crate) fn validate_deployment_spec(
     port_cfg: &PortsConfig,
     vol_cfg: &VolumesConfig,
 ) -> ApiResult<()> {
-    if let Some(replicas) = spec.replicas {
-        if replicas == 0 {
-            return Err(AppError::bad_request("replicas must be at least 1"));
-        }
+    if let Some(replicas) = spec.replicas
+        && replicas == 0
+    {
+        return Err(AppError::bad_request("replicas must be at least 1"));
     }
     validate_opt_str("name", spec.name.as_deref(), limits.max_field_len)?;
     validate_required_str("image", &spec.image, limits.max_field_len)?;
@@ -553,23 +553,23 @@ fn validate_port(field: &str, port: u16) -> ApiResult<()> {
 }
 
 fn validate_positive_u64(field: &str, value: Option<u64>) -> ApiResult<()> {
-    if let Some(val) = value {
-        if val == 0 {
-            return Err(AppError::bad_request(format!(
-                "{field} must be greater than zero"
-            )));
-        }
+    if let Some(val) = value
+        && val == 0
+    {
+        return Err(AppError::bad_request(format!(
+            "{field} must be greater than zero"
+        )));
     }
     Ok(())
 }
 
 fn validate_positive_u32(field: &str, value: Option<u32>) -> ApiResult<()> {
-    if let Some(val) = value {
-        if val == 0 {
-            return Err(AppError::bad_request(format!(
-                "{field} must be greater than zero"
-            )));
-        }
+    if let Some(val) = value
+        && val == 0
+    {
+        return Err(AppError::bad_request(format!(
+            "{field} must be greater than zero"
+        )));
     }
     Ok(())
 }

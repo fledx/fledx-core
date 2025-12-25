@@ -4,14 +4,14 @@ use crate::{
     api::{self, InstanceState},
     runtime::{self, DynContainerRuntime},
     state::{
-        self, load_managed_entry, record_runtime_error, save_managed_entry, ReplicaKey, SharedState,
+        self, ReplicaKey, SharedState, load_managed_entry, record_runtime_error, save_managed_entry,
     },
     telemetry, validation,
 };
 
 use super::{
     backoff,
-    config_apply::{apply_configs_to_spec, DeploymentContext},
+    config_apply::{DeploymentContext, apply_configs_to_spec},
     container_name, desired_replica_generation, instance_message, instance_state_from_status,
     replica_key, spec,
 };
@@ -270,10 +270,10 @@ async fn reconcile_stopped(
 ) -> anyhow::Result<()> {
     let mut managed = load_managed_entry(state, key, desired_replica_generation(&desired)).await;
 
-    if let Err(err) = spec::stop_and_remove(&runtime, &container_name).await {
-        if let Some(cre) = err.downcast_ref::<runtime::ContainerRuntimeError>() {
-            record_runtime_error(state, cre).await;
-        }
+    if let Err(err) = spec::stop_and_remove(&runtime, &container_name).await
+        && let Some(cre) = err.downcast_ref::<runtime::ContainerRuntimeError>()
+    {
+        record_runtime_error(state, cre).await;
     }
 
     managed.consecutive_failures = 0;
@@ -307,7 +307,7 @@ mod tests {
     use super::*;
     use crate::{
         api, runtime,
-        test_support::{base_config, state_with_runtime_and_config, MockRuntime, StartAction},
+        test_support::{MockRuntime, StartAction, base_config, state_with_runtime_and_config},
     };
     use chrono::Utc;
     use std::collections::HashMap;
@@ -583,11 +583,13 @@ mod tests {
         let guard = state.managed_read().await;
         let entry = guard.managed.get(&key).expect("entry");
         assert_eq!(entry.state, InstanceState::Failed);
-        assert!(entry
-            .message
-            .as_deref()
-            .unwrap_or_default()
-            .contains("port conflict"));
+        assert!(
+            entry
+                .message
+                .as_deref()
+                .unwrap_or_default()
+                .contains("port conflict")
+        );
     }
 
     #[tokio::test]

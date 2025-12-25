@@ -1,12 +1,12 @@
 use anyhow::Context;
-use reqwest::{header::HeaderMap, StatusCode};
+use reqwest::{StatusCode, header::HeaderMap};
 use tracing::warn;
 
 use crate::{
+    REQUEST_ID_HEADER, SERVICE_IDENTITY_FINGERPRINT_HEADER,
     api::{self, NodeConfigResponse},
     compat, config,
     state::{self, SharedState},
-    REQUEST_ID_HEADER, SERVICE_IDENTITY_FINGERPRINT_HEADER,
 };
 
 #[derive(Debug)]

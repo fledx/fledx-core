@@ -1,4 +1,4 @@
-use super::common::{NodeStatusArg, OutputFormatArgs, DEFAULT_PAGE_LIMIT};
+use super::common::{DEFAULT_PAGE_LIMIT, NodeStatusArg, OutputFormatArgs};
 use clap::{Args, Subcommand};
 
 #[derive(Debug, Clone, Args)]

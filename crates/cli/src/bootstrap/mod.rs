@@ -1,6 +1,6 @@
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 use std::time::Instant;
@@ -619,8 +619,7 @@ Use --no-docker-group to skip this step."
 
             eprintln!(
                 "resolving agent release: no {} release matching control-plane version {}; falling back to latest",
-                &agent_repo,
-                requested_version
+                &agent_repo, requested_version
             );
             installer::bootstrap::fetch_release(client, &agent_repo, None)
                 .await

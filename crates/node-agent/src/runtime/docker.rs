@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use bollard::{
+    Docker,
     errors::Error as DockerError,
     exec::{CreateExecOptions, StartExecOptions, StartExecResults},
     models::{ContainerCreateBody, HostConfig},
@@ -9,18 +10,17 @@ use bollard::{
         CreateContainerOptions, CreateImageOptions, InspectContainerOptions, ListContainersOptions,
         RemoveContainerOptions, StartContainerOptions, StatsOptionsBuilder, StopContainerOptions,
     },
-    Docker,
 };
 use futures_util::{StreamExt, TryStreamExt};
 use uuid::Uuid;
 
 use crate::runtime::{
+    ContainerDetails, ContainerResourceUsage, ContainerRuntime, ContainerRuntimeError,
+    ContainerSpec, ExecResult, PortMapping, PortProtocol,
     helpers::{
         blkio_bytes, build_mounts, build_ports, calculate_cpu_percent, format_env, map_status,
         network_bytes,
     },
-    ContainerDetails, ContainerResourceUsage, ContainerRuntime, ContainerRuntimeError,
-    ContainerSpec, ExecResult, PortMapping, PortProtocol,
 };
 
 #[derive(Clone)]
@@ -478,10 +478,10 @@ fn map_port_conflict(err: &DockerError, ports: &[PortMapping]) -> Option<PortCon
 
     let parsed = extract_host_binding(message);
 
-    if let Some((ip, port, proto_hint)) = parsed {
-        if let Some(matching) = find_matching_mapping(ports, ip.as_deref(), port, proto_hint) {
-            return Some(matching);
-        }
+    if let Some((ip, port, proto_hint)) = parsed
+        && let Some(matching) = find_matching_mapping(ports, ip.as_deref(), port, proto_hint)
+    {
+        return Some(matching);
     }
 
     ports.first().map(|p| PortConflictDetails {
@@ -502,10 +502,10 @@ fn find_matching_mapping(
             return None;
         }
 
-        if let Some(proto_hint) = protocol {
-            if mapping.protocol != proto_hint {
-                return None;
-            }
+        if let Some(proto_hint) = protocol
+            && mapping.protocol != proto_hint
+        {
+            return None;
         }
 
         if let Some(ip_hint) = ip {

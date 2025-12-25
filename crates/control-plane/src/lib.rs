@@ -25,21 +25,21 @@ pub type Result<T> = std::result::Result<T, anyhow::Error>;
 use std::{env, future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::Duration};
 
 use anyhow::Context;
-use axum::{http::HeaderName, serve::Listener, Router};
+use axum::{Router, http::HeaderName, serve::Listener};
 use metrics_exporter_prometheus::PrometheusHandle;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde_json::json;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
-use tokio_rustls::{server::TlsStream, TlsAcceptor};
+use tokio_rustls::{TlsAcceptor, server::TlsStream};
 use tracing::{error, info};
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::app_state::{
     AppState, EnvTokenPolicy, OperatorAuth, OperatorAuthorizer, OperatorTokenValidator,
     RegistrationLimiterRef,
 };
-use crate::metrics::{init_metrics_recorder, record_build_info, MetricsHistory};
+use crate::metrics::{MetricsHistory, init_metrics_recorder, record_build_info};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandMode {

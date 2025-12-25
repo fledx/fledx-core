@@ -8,13 +8,13 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{
+    AttachedConfigInfo,
     format::{
         color_node_status, format_attached_configs, format_capacity, format_labels,
         format_optional_str, format_timestamp, format_uuid, node_status_color, node_status_label,
     },
     status::status_cell,
     table::render_table,
-    AttachedConfigInfo,
 };
 
 pub fn render_nodes_table(

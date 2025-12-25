@@ -121,8 +121,8 @@ pub fn extract_single_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
 
     #[test]
     fn parse_sha256_file_reads_first_token() {

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 
 use crate::{
     api, config,
@@ -132,16 +132,16 @@ pub(super) async fn stop_and_remove(
     runtime: &DynContainerRuntime,
     name: &str,
 ) -> anyhow::Result<()> {
-    if let Err(err) = runtime.stop_container(name).await {
-        if !matches!(err, runtime::ContainerRuntimeError::NotFound { .. }) {
-            return Err(err.into());
-        }
+    if let Err(err) = runtime.stop_container(name).await
+        && !matches!(err, runtime::ContainerRuntimeError::NotFound { .. })
+    {
+        return Err(err.into());
     }
 
-    if let Err(err) = runtime.remove_container(name).await {
-        if !matches!(err, runtime::ContainerRuntimeError::NotFound { .. }) {
-            return Err(err.into());
-        }
+    if let Err(err) = runtime.remove_container(name).await
+        && !matches!(err, runtime::ContainerRuntimeError::NotFound { .. })
+    {
+        return Err(err.into());
     }
 
     Ok(())
@@ -259,7 +259,10 @@ mod tests {
         let mut cfg = base_config();
         cfg.secrets_prefix = "FLEDX_SECRET_".into();
 
-        std::env::set_var("FLEDX_SECRET_API_KEY", "secret");
+        // SAFETY: Test controls env mutations and runs in isolation.
+        unsafe {
+            std::env::set_var("FLEDX_SECRET_API_KEY", "secret");
+        }
         let mut desired = base_desired();
         desired.env = Some(HashMap::from([("API_KEY".into(), "plain".into())]));
         desired.secret_env = Some(vec![api::SecretEnv {
@@ -274,20 +277,25 @@ mod tests {
             to_container_spec(&desired, "container-1", &cfg, &endpoints).expect("container spec");
         let env = spec.env.iter().find(|(k, _)| k == "API_KEY").unwrap();
         assert_eq!(env.1, "secret");
-        assert!(spec
-            .labels
-            .iter()
-            .any(|(k, v)| k == ENDPOINTS_LABEL && v.contains("10.0.0.1:8080")));
-        assert!(spec
-            .labels
-            .iter()
-            .any(|(k, v)| k == "fledx.generation" && v == "5"));
+        assert!(
+            spec.labels
+                .iter()
+                .any(|(k, v)| k == ENDPOINTS_LABEL && v.contains("10.0.0.1:8080"))
+        );
+        assert!(
+            spec.labels
+                .iter()
+                .any(|(k, v)| k == "fledx.generation" && v == "5")
+        );
     }
 
     #[test]
     fn to_container_spec_errors_when_secret_missing() {
         let cfg = base_config();
-        std::env::remove_var("FLEDX_SECRET_MISSING");
+        // SAFETY: Test controls env mutations and runs in isolation.
+        unsafe {
+            std::env::remove_var("FLEDX_SECRET_MISSING");
+        }
         let mut desired = base_desired();
         desired.secret_env = Some(vec![api::SecretEnv {
             name: "API_KEY".into(),

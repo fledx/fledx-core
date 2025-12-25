@@ -1,6 +1,6 @@
 use clap::Args;
 
-use super::common::{DeploymentStatusArg, NodeStatusArg, DEFAULT_PAGE_LIMIT};
+use super::common::{DEFAULT_PAGE_LIMIT, DeploymentStatusArg, NodeStatusArg};
 
 #[derive(Debug, Clone, Args)]
 pub struct StatusArgs {

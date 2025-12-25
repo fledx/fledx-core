@@ -1,5 +1,5 @@
 use axum::http::HeaderMap;
-use sqlx::{error::DatabaseError, Error as SqlxError};
+use sqlx::{Error as SqlxError, error::DatabaseError};
 use tracing::error;
 
 /// Application error type for HTTP handlers.

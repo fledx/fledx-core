@@ -237,7 +237,7 @@ mod tests {
     use super::*;
     use crate::runtime;
     use crate::test_support::{
-        base_config, state_with_runtime_and_config, FakeCpClient, MockRuntime,
+        FakeCpClient, MockRuntime, base_config, state_with_runtime_and_config,
     };
     use tokio::sync::watch;
 
