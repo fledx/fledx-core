@@ -555,3 +555,409 @@ pub async fn replace_port_reservations(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::persistence::deployments::{self, DesiredState, NewDeploymentAssignment};
+    use crate::persistence::migrations;
+    use crate::persistence::nodes::{self, NodeStatus};
+
+    async fn setup_db() -> Db {
+        let pool = migrations::init_pool("sqlite::memory:")
+            .await
+            .expect("pool");
+        migrations::run_migrations(&pool).await.expect("migrations");
+        pool
+    }
+
+    fn port_mapping(
+        container_port: u16,
+        host_port: Option<u16>,
+        protocol: &str,
+        host_ip: Option<&str>,
+    ) -> PortMapping {
+        PortMapping {
+            container_port,
+            host_port,
+            protocol: protocol.to_string(),
+            host_ip: host_ip.map(str::to_string),
+            expose: false,
+            endpoint: None,
+        }
+    }
+
+    fn new_node(name: &str) -> nodes::NewNode {
+        nodes::NewNode {
+            id: Uuid::new_v4(),
+            name: Some(name.to_string()),
+            token_hash: format!("{name}-token"),
+            arch: None,
+            os: None,
+            public_ip: None,
+            public_host: None,
+            labels: None,
+            capacity: None,
+            last_seen: None,
+            status: NodeStatus::Ready,
+        }
+    }
+
+    async fn create_node(pool: &Db, name: &str) -> Uuid {
+        nodes::create_node(pool, new_node(name))
+            .await
+            .expect("create node")
+            .id
+    }
+
+    async fn create_deployment(pool: &Db, name: &str) -> Uuid {
+        let deployment = deployments::NewDeployment::new(name.to_string(), "image".to_string());
+        deployments::create_deployment(pool, deployment)
+            .await
+            .expect("create deployment")
+            .id
+    }
+
+    async fn insert_reservation(
+        pool: &Db,
+        deployment_id: Uuid,
+        node_id: Uuid,
+        host_ip: &str,
+        protocol: &str,
+        host_port: u16,
+    ) {
+        sqlx::query(
+            r#"
+            INSERT INTO port_reservations (deployment_id, node_id, host_ip, protocol, host_port)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            "#,
+        )
+        .bind(deployment_id)
+        .bind(node_id)
+        .bind(host_ip)
+        .bind(protocol)
+        .bind(i64::from(host_port))
+        .execute(pool)
+        .await
+        .expect("insert reservation");
+    }
+
+    #[test]
+    fn normalize_host_ip_handles_wildcards_and_case() {
+        assert_eq!(normalize_host_ip(None), "");
+        let wildcard = " 0.0.0.0 ".to_string();
+        assert_eq!(normalize_host_ip(Some(&wildcard)), "");
+        let v6 = " :: ".to_string();
+        assert_eq!(normalize_host_ip(Some(&v6)), "");
+        let mixed = " LoCaLhOsT ".to_string();
+        assert_eq!(normalize_host_ip(Some(&mixed)), "localhost");
+        let address = " 10.0.0.1 ".to_string();
+        assert_eq!(normalize_host_ip(Some(&address)), "10.0.0.1");
+
+        assert!(is_wildcard_host_ip(""));
+        assert!(is_wildcard_host_ip("0.0.0.0"));
+        assert!(is_wildcard_host_ip("::"));
+        assert!(!is_wildcard_host_ip("10.0.0.1"));
+
+        assert_eq!(PortReservationConflict::format_host("", 80), "0.0.0.0:80");
+        assert_eq!(
+            PortReservationConflict::format_host("10.0.0.1", 80),
+            "10.0.0.1:80"
+        );
+    }
+
+    #[test]
+    fn record_conflict_prefers_wildcard_then_specific() {
+        let node_id = Uuid::new_v4();
+        let wildcard_dep = Uuid::new_v4();
+        let host_dep = Uuid::new_v4();
+
+        let mut usage = PortUsage {
+            wildcard: Some(wildcard_dep),
+            ..Default::default()
+        };
+        usage.hosts.insert("10.0.0.1".to_string(), host_dep);
+
+        let conflict =
+            record_conflict(&usage, node_id, "10.0.0.2", "tcp", 80).expect("wildcard conflict");
+        assert_eq!(conflict.deployment_id, wildcard_dep);
+        assert!(conflict.host_ip.is_empty());
+
+        let mut usage = PortUsage::default();
+        usage.hosts.insert("10.0.0.1".to_string(), host_dep);
+        let conflict = record_conflict(&usage, node_id, "", "tcp", 80).expect("specific conflict");
+        assert_eq!(conflict.deployment_id, host_dep);
+        assert_eq!(conflict.host_ip, "10.0.0.1");
+
+        let conflict = record_conflict(&usage, node_id, "10.0.0.2", "tcp", 80);
+        assert!(conflict.is_none());
+    }
+
+    #[tokio::test]
+    async fn allocate_host_ports_requires_auto_assign_enabled() {
+        let db = setup_db().await;
+        let config = PortAllocationConfig {
+            enable_auto_assign: false,
+            range_start: 3000,
+            range_end: 3001,
+        };
+        let ports = vec![port_mapping(80, None, "tcp", None)];
+
+        let err = allocate_host_ports_for_node(
+            &db,
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            &ports,
+            None,
+            &config,
+        )
+        .await
+        .expect_err("auto assign disabled");
+        let allocation = err
+            .downcast_ref::<PortAllocationError>()
+            .expect("allocation error");
+        assert!(matches!(
+            allocation,
+            PortAllocationError::AutoAssignDisabled
+        ));
+    }
+
+    #[tokio::test]
+    async fn allocate_host_ports_detects_wildcard_conflict() {
+        let db = setup_db().await;
+        let node_id = create_node(&db, "conflict-node").await;
+        let existing_dep = create_deployment(&db, "conflict-dep").await;
+        insert_reservation(&db, existing_dep, node_id, "", "tcp", 8080).await;
+        let config = PortAllocationConfig {
+            enable_auto_assign: true,
+            range_start: 8000,
+            range_end: 8001,
+        };
+        let ports = vec![port_mapping(80, Some(8080), "TCP", Some("10.0.0.1"))];
+        let deployment_id = create_deployment(&db, "request-dep").await;
+
+        let err = allocate_host_ports_for_node(&db, node_id, deployment_id, &ports, None, &config)
+            .await
+            .expect_err("conflict");
+        let allocation = err
+            .downcast_ref::<PortAllocationError>()
+            .expect("allocation error");
+        match allocation {
+            PortAllocationError::Conflict(conflict) => {
+                assert_eq!(conflict.deployment_id, existing_dep);
+                assert_eq!(conflict.protocol, "tcp");
+                assert!(conflict.host_ip.is_empty());
+            }
+            other => panic!("expected conflict, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn allocate_host_ports_ignores_deployment() {
+        let db = setup_db().await;
+        let node_id = create_node(&db, "ignore-node").await;
+        let ignored_dep = create_deployment(&db, "ignore-dep").await;
+        insert_reservation(&db, ignored_dep, node_id, "10.0.0.1", "tcp", 3000).await;
+
+        let config = PortAllocationConfig {
+            enable_auto_assign: true,
+            range_start: 3000,
+            range_end: 3002,
+        };
+        let ports = vec![port_mapping(80, None, "tcp", Some("10.0.0.1"))];
+        let deployment_id = create_deployment(&db, "new-dep").await;
+
+        let resolved = allocate_host_ports_for_node(
+            &db,
+            node_id,
+            deployment_id,
+            &ports,
+            Some(ignored_dep),
+            &config,
+        )
+        .await
+        .expect("allocate");
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].host_port, Some(3000));
+        assert_eq!(resolved[0].host_ip.as_deref(), Some("10.0.0.1"));
+    }
+
+    #[tokio::test]
+    async fn allocate_host_ports_auto_assigns_first_available() {
+        let db = setup_db().await;
+        let node_id = create_node(&db, "auto-node").await;
+        let dep = create_deployment(&db, "auto-dep").await;
+        insert_reservation(&db, dep, node_id, "", "tcp", 3000).await;
+        insert_reservation(&db, dep, node_id, "", "tcp", 3001).await;
+
+        let config = PortAllocationConfig {
+            enable_auto_assign: true,
+            range_start: 3000,
+            range_end: 3002,
+        };
+        let ports = vec![port_mapping(80, None, "tcp", Some("0.0.0.0"))];
+        let deployment_id = create_deployment(&db, "auto-request").await;
+
+        let resolved =
+            allocate_host_ports_for_node(&db, node_id, deployment_id, &ports, None, &config)
+                .await
+                .expect("allocate");
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].host_port, Some(3002));
+        assert!(resolved[0].host_ip.is_none());
+    }
+
+    #[tokio::test]
+    async fn allocate_host_ports_reports_exhausted() {
+        let db = setup_db().await;
+        let node_id = create_node(&db, "exhaust-node").await;
+        let dep = create_deployment(&db, "exhaust-dep").await;
+        insert_reservation(&db, dep, node_id, "", "tcp", 4000).await;
+        insert_reservation(&db, dep, node_id, "", "tcp", 4001).await;
+        let config = PortAllocationConfig {
+            enable_auto_assign: true,
+            range_start: 4000,
+            range_end: 4001,
+        };
+        let ports = vec![port_mapping(80, None, "tcp", Some("0.0.0.0"))];
+        let deployment_id = create_deployment(&db, "exhaust-request").await;
+
+        let err = allocate_host_ports_for_node(&db, node_id, deployment_id, &ports, None, &config)
+            .await
+            .expect_err("exhausted");
+        let allocation = err
+            .downcast_ref::<PortAllocationError>()
+            .expect("allocation error");
+        match allocation {
+            PortAllocationError::Exhausted {
+                host_ip,
+                protocol,
+                range_start,
+                range_end,
+            } => {
+                assert!(host_ip.is_empty());
+                assert_eq!(protocol, "tcp");
+                assert_eq!(*range_start, 4000);
+                assert_eq!(*range_end, 4001);
+            }
+            other => panic!("expected exhausted, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn find_port_conflict_respects_ignore_deployment() {
+        let db = setup_db().await;
+        let node_id = create_node(&db, "conflict-node").await;
+        let dep = create_deployment(&db, "conflict-dep").await;
+        insert_reservation(&db, dep, node_id, "", "tcp", 9000).await;
+
+        let ports = vec![port_mapping(9000, None, "TCP", Some("1.2.3.4"))];
+        let conflict = find_port_conflict_for_node(&db, node_id, &ports, None)
+            .await
+            .expect("query");
+        assert!(conflict.is_some());
+
+        let conflict = find_port_conflict_for_node(&db, node_id, &ports, Some(dep))
+            .await
+            .expect("query");
+        assert!(conflict.is_none());
+    }
+
+    #[tokio::test]
+    async fn reserve_ports_for_node_rejects_local_conflicts() {
+        let db = setup_db().await;
+        let deployment_id = create_deployment(&db, "local-dep").await;
+        let node_id = create_node(&db, "local-node").await;
+        let mut tx = db.begin().await.expect("tx");
+        let ports = vec![
+            port_mapping(80, Some(8080), "tcp", None),
+            port_mapping(80, Some(8080), "tcp", Some("127.0.0.1")),
+        ];
+
+        let err = reserve_ports_for_node(&mut tx, deployment_id, node_id, &ports, None)
+            .await
+            .expect_err("local conflict");
+        let conflict = err
+            .downcast_ref::<PortReservationConflict>()
+            .expect("conflict");
+        assert_eq!(conflict.deployment_id, deployment_id);
+        assert_eq!(conflict.node_id, node_id);
+        assert_eq!(conflict.host_ip, "127.0.0.1");
+        assert_eq!(conflict.host_port, 8080);
+
+        tx.rollback().await.expect("rollback");
+    }
+
+    #[tokio::test]
+    async fn reserve_and_delete_port_reservations_roundtrip() {
+        let db = setup_db().await;
+        let deployment_id = create_deployment(&db, "roundtrip-dep").await;
+        let node_id = create_node(&db, "roundtrip-node").await;
+        let ports = vec![
+            port_mapping(80, Some(8080), "TCP", None),
+            port_mapping(443, Some(8443), "tcp", Some("10.0.0.1")),
+        ];
+
+        let mut tx = db.begin().await.expect("tx");
+        reserve_ports_for_node(&mut tx, deployment_id, node_id, &ports, None)
+            .await
+            .expect("reserve");
+        tx.commit().await.expect("commit");
+
+        let records = list_port_reservations_for_node(&db, node_id)
+            .await
+            .expect("list");
+        assert_eq!(records.len(), 2);
+        assert!(records.iter().any(|rec| rec.host_port == 8080));
+        assert!(records.iter().any(|rec| rec.protocol == "tcp"));
+
+        let mut tx = db.begin().await.expect("tx");
+        let deleted = delete_port_reservations(&mut tx, deployment_id)
+            .await
+            .expect("delete");
+        assert_eq!(deleted, 2);
+        tx.commit().await.expect("commit");
+
+        let records = list_port_reservations_for_node(&db, node_id)
+            .await
+            .expect("list");
+        assert!(records.is_empty());
+    }
+
+    #[tokio::test]
+    async fn replace_port_reservations_honors_desired_state() {
+        let db = setup_db().await;
+        let deployment_id = create_deployment(&db, "replace-dep").await;
+        let node_id = create_node(&db, "replace-node").await;
+        insert_reservation(&db, deployment_id, node_id, "", "tcp", 7000).await;
+
+        let assignments = vec![NewDeploymentAssignment {
+            replica_number: 0,
+            node_id,
+            ports: Some(vec![port_mapping(80, Some(7001), "tcp", None)]),
+        }];
+
+        let mut tx = db.begin().await.expect("tx");
+        replace_port_reservations(&mut tx, deployment_id, &assignments, DesiredState::Stopped)
+            .await
+            .expect("replace");
+        tx.commit().await.expect("commit");
+
+        let records = list_port_reservations_for_node(&db, node_id)
+            .await
+            .expect("list");
+        assert!(records.is_empty());
+
+        let mut tx = db.begin().await.expect("tx");
+        replace_port_reservations(&mut tx, deployment_id, &assignments, DesiredState::Running)
+            .await
+            .expect("replace");
+        tx.commit().await.expect("commit");
+
+        let records = list_port_reservations_for_node(&db, node_id)
+            .await
+            .expect("list");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].host_port, 7001);
+    }
+}
