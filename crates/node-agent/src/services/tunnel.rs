@@ -786,3 +786,201 @@ impl ServerCertVerifier for NoCertificateVerification {
 
 trait TunnelIo: AsyncRead + AsyncWrite + Unpin + Send {}
 impl<T> TunnelIo for T where T: AsyncRead + AsyncWrite + Unpin + Send {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::base_config;
+    use bytes::BytesMut;
+    use reqwest::header::HeaderValue as ReqwestHeaderValue;
+
+    fn framed_payload(frame: &TunnelFrame) -> BytesMut {
+        let payload = serde_json::to_vec(frame).expect("serialize frame");
+        let mut buffer = BytesMut::with_capacity(4 + payload.len());
+        buffer.put_u32(payload.len() as u32);
+        buffer.extend_from_slice(&payload);
+        buffer
+    }
+
+    #[test]
+    fn route_map_prefers_longest_prefix() {
+        let routes = vec![
+            TunnelRoute {
+                path_prefix: "/".to_string(),
+                target_host: "root".to_string(),
+                target_port: 80,
+            },
+            TunnelRoute {
+                path_prefix: "/api".to_string(),
+                target_host: "api".to_string(),
+                target_port: 8080,
+            },
+        ];
+        let map = TunnelRouteMap::new(&routes);
+
+        let matched = map.match_route("/api/v1/users").expect("route");
+        assert_eq!(matched.target_host, "api");
+        assert_eq!(matched.target_port, 8080);
+    }
+
+    #[test]
+    fn route_map_returns_none_when_no_match() {
+        let routes = vec![TunnelRoute {
+            path_prefix: "/api".to_string(),
+            target_host: "api".to_string(),
+            target_port: 8080,
+        }];
+        let map = TunnelRouteMap::new(&routes);
+        assert!(map.match_route("/health").is_none());
+    }
+
+    #[test]
+    fn build_header_map_filters_invalid_headers() {
+        let headers = HashMap::from([
+            ("x-test".to_string(), "ok".to_string()),
+            ("bad header".to_string(), "no".to_string()),
+            ("x-bad-value".to_string(), "line\nbreak".to_string()),
+        ]);
+
+        let map = build_header_map(&headers);
+        assert_eq!(
+            map.get("x-test").and_then(|v| v.to_str().ok()).unwrap(),
+            "ok"
+        );
+        assert!(map.get("bad header").is_none());
+        assert!(map.get("x-bad-value").is_none());
+    }
+
+    #[test]
+    fn flatten_headers_skips_non_utf8_values() {
+        let mut map = ReqwestHeaderMap::new();
+        map.insert(
+            "content-type",
+            ReqwestHeaderValue::from_static("text/plain"),
+        );
+        map.insert(
+            "x-binary",
+            ReqwestHeaderValue::from_bytes(&[0xFF]).expect("header value"),
+        );
+
+        let flattened = flatten_headers(&map);
+        assert_eq!(
+            flattened.get("content-type").map(String::as_str),
+            Some("text/plain")
+        );
+        assert!(!flattened.contains_key("x-binary"));
+    }
+
+    #[test]
+    fn decode_base64_body_accepts_valid_payload() {
+        let decoded = decode_base64_body("aGVsbG8=").expect("decode");
+        assert_eq!(decoded, b"hello");
+        assert!(decode_base64_body("").expect("empty").is_empty());
+    }
+
+    #[test]
+    fn decode_base64_body_rejects_invalid_payload() {
+        let err = decode_base64_body("not-base64").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("invalid base64 body"), "{msg}");
+    }
+
+    #[test]
+    fn try_parse_frame_parses_and_leaves_extra_bytes() {
+        let frame = TunnelFrame::Heartbeat {
+            sent_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+        let mut buffer = framed_payload(&frame);
+        buffer.extend_from_slice(b"extra");
+
+        let parsed = try_parse_frame(&mut buffer).expect("parse");
+        assert!(matches!(parsed, Some(TunnelFrame::Heartbeat { .. })));
+        assert_eq!(&buffer[..], b"extra");
+    }
+
+    #[test]
+    fn try_parse_frame_errors_on_invalid_json() {
+        let payload = b"not-json";
+        let mut buffer = BytesMut::with_capacity(4 + payload.len());
+        buffer.put_u32(payload.len() as u32);
+        buffer.extend_from_slice(payload);
+        let err = try_parse_frame(&mut buffer).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("parse tunnel frame"), "{msg}");
+    }
+
+    #[test]
+    fn format_authority_handles_ipv6_and_hostnames() {
+        assert_eq!(format_authority("example.com", 443), "example.com:443");
+        assert_eq!(format_authority("2001:db8::1", 443), "[2001:db8::1]:443");
+    }
+
+    #[test]
+    fn resolve_server_name_accepts_ip_and_rejects_invalid_host() {
+        let ip = resolve_server_name("127.0.0.1").expect("ip");
+        assert!(matches!(ip, ServerName::IpAddress(_)));
+
+        let err = resolve_server_name("bad host").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("invalid tunnel gateway host"), "{msg}");
+    }
+
+    #[test]
+    fn build_connect_request_includes_expected_headers() {
+        let mut cfg = base_config();
+        cfg.node_token = "token123".to_string();
+        let endpoint = crate::api::TunnelEndpoint {
+            host: "example.com".to_string(),
+            port: 443,
+            use_tls: true,
+            connect_timeout_secs: 10,
+            heartbeat_interval_secs: 30,
+            heartbeat_timeout_secs: 90,
+            token_header: "x-fledx-tunnel-token".to_string(),
+        };
+
+        let request = build_connect_request(&cfg, &endpoint).expect("request");
+        assert_eq!(request.method(), "CONNECT");
+        assert_eq!(
+            request.uri().to_string(),
+            "https://example.com:443/agent-tunnel"
+        );
+
+        let headers = request.headers();
+        assert_eq!(
+            headers
+                .get("host")
+                .and_then(|value| value.to_str().ok())
+                .unwrap(),
+            "example.com:443"
+        );
+        assert!(headers.get("x-fledx-node-id").is_some());
+        assert!(headers.get(AGENT_VERSION_HEADER).is_some());
+        assert!(headers.get(AGENT_BUILD_HEADER).is_some());
+        assert_eq!(
+            headers
+                .get("x-fledx-tunnel-token")
+                .and_then(|value| value.to_str().ok())
+                .unwrap(),
+            "Bearer token123"
+        );
+    }
+
+    #[test]
+    fn build_connect_request_rejects_invalid_token_header() {
+        let cfg = base_config();
+        let endpoint = crate::api::TunnelEndpoint {
+            host: "example.com".to_string(),
+            port: 443,
+            use_tls: true,
+            connect_timeout_secs: 10,
+            heartbeat_interval_secs: 30,
+            heartbeat_timeout_secs: 90,
+            token_header: "bad header".to_string(),
+        };
+
+        let err = build_connect_request(&cfg, &endpoint).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("invalid tunnel token header name"), "{msg}");
+    }
+}

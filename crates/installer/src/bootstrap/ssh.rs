@@ -701,6 +701,13 @@ mod tests {
     }
 
     #[test]
+    fn mktemp_dir_extractor_trims_trailing_punctuation() {
+        let out = "Output: /tmp/fledx-bootstrap-cp.123456:\r\n";
+        let dir = extract_remote_mktemp_dir(out, "fledx-bootstrap-cp").expect("dir");
+        assert_eq!(dir, "/tmp/fledx-bootstrap-cp.123456");
+    }
+
+    #[test]
     fn mktemp_dir_extractor_errors_when_prefix_missing() {
         let err = extract_remote_mktemp_dir("Welcome!\n/tmp/other.123\n", "fledx-bootstrap-cp")
             .expect_err("should fail");
@@ -739,6 +746,38 @@ mod tests {
             SshHostKeyChecking::Off.strict_host_key_checking_value(),
             "no"
         );
+    }
+
+    #[test]
+    fn host_key_failure_detection_matches_expected_messages() {
+        assert!(looks_like_ssh_host_key_failure(
+            "Host key verification failed."
+        ));
+        assert!(looks_like_ssh_host_key_failure(
+            "REMOTE HOST IDENTIFICATION HAS CHANGED!"
+        ));
+        assert!(looks_like_ssh_host_key_failure(
+            "Offending key in /home/alice/.ssh/known_hosts:12"
+        ));
+        assert!(looks_like_ssh_host_key_failure(
+            "possible man-in-the-middle attack detected"
+        ));
+    }
+
+    #[test]
+    fn host_key_failure_detection_ignores_unrelated_errors() {
+        assert!(!looks_like_ssh_host_key_failure(
+            "Permission denied (publickey)."
+        ));
+    }
+
+    #[test]
+    fn host_key_failure_hint_includes_destination_and_port() {
+        let target = SshTarget::from_user_at_host("alice@example.com", None, 2222, None);
+        let hint = render_ssh_host_key_failure_hint(&target);
+        assert!(hint.contains("alice@example.com"), "{hint}");
+        assert!(hint.contains("2222"), "{hint}");
+        assert!(hint.contains("ssh-keyscan"), "{hint}");
     }
 
     #[test]

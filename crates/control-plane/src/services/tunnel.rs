@@ -606,3 +606,66 @@ fn record_heartbeat_latency(node_id: &Uuid, sent_at: &str) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bytes::BytesMut;
+
+    fn framed_payload(frame: &TunnelFrame) -> BytesMut {
+        let payload = serde_json::to_vec(frame).expect("serialize frame");
+        let mut buffer = BytesMut::with_capacity(4 + payload.len());
+        buffer.put_u32(payload.len() as u32);
+        buffer.extend_from_slice(&payload);
+        buffer
+    }
+
+    #[test]
+    fn parse_bearer_extracts_token() {
+        let value = HeaderValue::from_str("Bearer abc123").expect("header");
+        assert_eq!(parse_bearer(&value).as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn parse_bearer_rejects_missing_prefix() {
+        let value = HeaderValue::from_str("Token abc123").expect("header");
+        assert_eq!(parse_bearer(&value), None);
+    }
+
+    #[test]
+    fn try_parse_frame_returns_none_for_short_buffer() {
+        let mut buffer = BytesMut::from(&[0x00, 0x01][..]);
+        assert!(try_parse_frame(&mut buffer).unwrap().is_none());
+    }
+
+    #[test]
+    fn try_parse_frame_returns_none_for_partial_payload() {
+        let mut buffer = BytesMut::from(&[0x00, 0x00, 0x00, 0x05][..]);
+        assert!(try_parse_frame(&mut buffer).unwrap().is_none());
+        assert_eq!(buffer.len(), 4);
+    }
+
+    #[test]
+    fn try_parse_frame_errors_on_invalid_json() {
+        let payload = b"not-json";
+        let mut buffer = BytesMut::with_capacity(4 + payload.len());
+        buffer.put_u32(payload.len() as u32);
+        buffer.extend_from_slice(payload);
+        let err = try_parse_frame(&mut buffer).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("parse tunnel frame"), "{msg}");
+    }
+
+    #[test]
+    fn try_parse_frame_parses_frame_and_leaves_extra_bytes() {
+        let frame = TunnelFrame::Heartbeat {
+            sent_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+        let mut buffer = framed_payload(&frame);
+        buffer.extend_from_slice(b"extra");
+
+        let parsed = try_parse_frame(&mut buffer).expect("parse");
+        assert!(matches!(parsed, Some(TunnelFrame::Heartbeat { .. })));
+        assert_eq!(&buffer[..], b"extra");
+    }
+}
