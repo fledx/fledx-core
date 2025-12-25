@@ -110,3 +110,93 @@ fn make_operator_api(
         operator_token.to_string(),
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::SessionTokenConfig;
+    use std::sync::Arc;
+
+    #[test]
+    fn resolve_operator_token_returns_error_when_missing() {
+        let err = resolve_operator_token(&None).expect_err("should fail");
+        assert!(err.to_string().contains("operator token is required"));
+    }
+
+    #[test]
+    fn resolve_operator_token_returns_value() {
+        let token = resolve_operator_token(&Some("token-123".to_string())).expect("token");
+        assert_eq!(token, "token-123");
+    }
+
+    #[test]
+    fn build_client_errors_on_missing_ca_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("missing.pem");
+        let err = build_client(&Some(missing.display().to_string())).expect_err("should fail");
+        assert!(
+            err.to_string()
+                .contains(&format!("read CA certificate: {}", missing.display()))
+        );
+    }
+
+    #[test]
+    fn build_client_errors_on_invalid_ca_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("invalid.pem");
+        let invalid_pem = b"-----BEGIN CERTIFICATE-----\n@@@\n-----END CERTIFICATE-----\n";
+        std::fs::write(&path, invalid_pem).expect("write");
+        let err = build_client(&Some(path.display().to_string())).expect_err("should fail");
+        let message = err.to_string();
+        assert!(
+            message.contains("parse CA certificate PEM for CLI client")
+                || message.contains("build CLI HTTP client"),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn operator_api_uses_static_token_when_no_session_cache() {
+        let ctx = CommandContext::new(
+            reqwest::Client::new(),
+            "http://example".to_string(),
+            "authorization".to_string(),
+            Some("token".to_string()),
+        );
+        let api = ctx.operator_api().expect("api");
+        let req = api
+            .apply_auth(reqwest::Client::new().get("http://example"))
+            .expect("apply auth");
+        let req = req.build().expect("build");
+        let header = req.headers().get("authorization").expect("header");
+        assert_eq!(header.to_str().expect("value"), "Bearer token");
+    }
+
+    #[test]
+    fn operator_api_uses_session_cache_when_present() {
+        let cache = SessionTokenCache::new(
+            reqwest::Client::new(),
+            "http://example",
+            "authorization",
+            "token",
+            "fp",
+            SessionTokenConfig::default(),
+        )
+        .expect("cache");
+        let ctx = CommandContext::new_with_session(
+            reqwest::Client::new(),
+            "http://example".to_string(),
+            "authorization".to_string(),
+            None,
+            Arc::new(cache),
+        );
+        let api = ctx.operator_api().expect("api");
+        let err = api
+            .apply_auth(reqwest::Client::new().get("http://example"))
+            .expect_err("session auth should fail");
+        assert!(
+            err.to_string()
+                .contains("session-auth requires async request path")
+        );
+    }
+}
