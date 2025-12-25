@@ -375,3 +375,148 @@ async fn fetch_applied_migrations(pool: &Db) -> Result<Vec<AppliedMigration>> {
 
     Ok(applied)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::migrate::Migrate;
+
+    fn label(version: i64, description: &str) -> MigrationLabel {
+        MigrationLabel {
+            version,
+            description: description.to_string(),
+        }
+    }
+
+    #[test]
+    fn dedup_sorted_orders_and_prefers_last() {
+        let labels = vec![label(2, "b"), label(1, "a"), label(2, "c")];
+        let deduped = dedup_sorted(labels);
+        assert_eq!(deduped.len(), 2);
+        assert_eq!(deduped[0].version, 1);
+        assert_eq!(deduped[0].description, "a");
+        assert_eq!(deduped[1].version, 2);
+        assert_eq!(deduped[1].description, "c");
+    }
+
+    #[test]
+    fn merge_snapshots_combines_latest_and_dedupes() {
+        let base = MigrationSnapshot {
+            latest_applied: Some(2),
+            latest_available: Some(4),
+            applied: vec![label(1, "base-1"), label(2, "base-2")],
+            pending: vec![label(4, "base-4")],
+        };
+        let extra = MigrationSnapshot {
+            latest_applied: Some(3),
+            latest_available: Some(5),
+            applied: vec![label(2, "extra-2"), label(3, "extra-3")],
+            pending: vec![label(4, "extra-4"), label(5, "extra-5")],
+        };
+
+        let merged = merge_snapshots(&base, &extra);
+        assert_eq!(merged.latest_applied, Some(3));
+        assert_eq!(merged.latest_available, Some(5));
+        assert_eq!(merged.applied.len(), 3);
+        assert_eq!(merged.applied[1].description, "extra-2");
+        assert_eq!(merged.pending.len(), 2);
+        assert_eq!(merged.pending[0].version, 4);
+        assert_eq!(merged.pending[0].description, "extra-4");
+    }
+
+    #[test]
+    fn merge_run_outcomes_combines_applied() {
+        let base = MigrationRunOutcome {
+            snapshot: MigrationSnapshot {
+                latest_applied: Some(1),
+                latest_available: Some(1),
+                applied: vec![label(1, "base-1")],
+                pending: Vec::new(),
+            },
+            applied: vec![label(1, "base-1")],
+        };
+        let extra = MigrationRunOutcome {
+            snapshot: MigrationSnapshot {
+                latest_applied: Some(2),
+                latest_available: Some(2),
+                applied: vec![label(2, "extra-2")],
+                pending: Vec::new(),
+            },
+            applied: vec![label(2, "extra-2")],
+        };
+
+        let merged = merge_run_outcomes(&base, &extra);
+        assert_eq!(merged.snapshot.latest_applied, Some(2));
+        assert_eq!(merged.applied.len(), 2);
+        assert_eq!(merged.applied[0].version, 1);
+        assert_eq!(merged.applied[1].version, 2);
+    }
+
+    #[test]
+    fn ensure_db_dir_creates_parent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let db_path = dir.path().join("nested").join("db.sqlite");
+        let url = format!("sqlite://{}", db_path.display());
+        ensure_db_dir(&url).expect("ensure");
+        assert!(db_path.parent().expect("parent").exists());
+    }
+
+    #[tokio::test]
+    async fn migration_snapshot_reports_pending_for_fresh_db() {
+        let pool = init_pool("sqlite::memory:").await.expect("pool");
+        let snapshot = migration_snapshot_with(&pool, core_migrator())
+            .await
+            .expect("snapshot");
+        let total = core_migrator().iter().count();
+        assert!(snapshot.applied.is_empty());
+        assert_eq!(snapshot.pending.len(), total);
+        assert_eq!(snapshot.latest_applied, None);
+        assert_eq!(
+            snapshot.latest_available,
+            latest_migration_version_with(core_migrator())
+        );
+    }
+
+    async fn insert_applied_migration(pool: &Db, version: i64, checksum: Vec<u8>) -> Result<()> {
+        let mut conn = pool.acquire().await?;
+        conn.ensure_migrations_table().await?;
+        sqlx::query(
+            "INSERT INTO _sqlx_migrations \
+             (version, description, installed_on, success, checksum, execution_time) \
+             VALUES (?, ?, CURRENT_TIMESTAMP, 1, ?, 0)",
+        )
+        .bind(version)
+        .bind(format!("test-{version}"))
+        .bind(checksum)
+        .execute(&mut *conn)
+        .await?;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn validate_migrations_rejects_unknown_version() {
+        let pool = init_pool("sqlite::memory:").await.expect("pool");
+        let unknown = latest_migration_version_with(core_migrator()).unwrap_or(0) + 100;
+        insert_applied_migration(&pool, unknown, vec![0_u8; 32])
+            .await
+            .expect("insert");
+
+        let err = validate_migrations_with(&pool, core_migrator())
+            .await
+            .expect_err("unknown should fail");
+        assert!(err.to_string().contains("unknown migration version"));
+    }
+
+    #[tokio::test]
+    async fn validate_migrations_allows_unknown_when_configured() {
+        let pool = init_pool("sqlite::memory:").await.expect("pool");
+        let unknown = latest_migration_version_with(core_migrator()).unwrap_or(0) + 100;
+        insert_applied_migration(&pool, unknown, vec![1_u8; 32])
+            .await
+            .expect("insert");
+
+        validate_migrations_with_allow_unknown(&pool, core_migrator())
+            .await
+            .expect("allow unknown");
+    }
+}
