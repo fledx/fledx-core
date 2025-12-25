@@ -412,7 +412,11 @@ mod tests {
     use anyhow::anyhow;
     use chrono::Utc;
     use std::collections::VecDeque;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
+    use std::thread;
+    use std::time::Instant as StdInstant;
     use uuid::Uuid;
 
     use ::common::api::{DesiredState, InstanceStatusResponse};
@@ -756,5 +760,128 @@ mod tests {
         assert!(is_terminal_deployment_status(DeploymentStatus::Stopped));
         assert!(is_terminal_deployment_status(DeploymentStatus::Failed));
         assert!(!is_terminal_deployment_status(DeploymentStatus::Deploying));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn watch_loop_stops_after_runtime_limit() {
+        let deployment_id = Uuid::new_v4();
+        let status = base_status(deployment_id);
+        let outputs = Arc::new(Mutex::new(Vec::new()));
+
+        let fetch_status = {
+            let status = status.clone();
+            move || {
+                let status = status.clone();
+                async move { Ok(status) }
+            }
+        };
+
+        let reporter = {
+            let outputs = outputs.clone();
+            move |line: String| outputs.lock().unwrap().push(line)
+        };
+
+        let handle = tokio::spawn(async move {
+            run_watch_loop(
+                fetch_status,
+                reporter,
+                Duration::from_secs(1),
+                Duration::from_secs(5),
+                Some(Duration::from_secs(3)),
+            )
+            .await
+            .expect("watch loop");
+        });
+
+        tokio::time::advance(Duration::from_secs(4)).await;
+        handle.await.expect("join");
+
+        let lines = outputs.lock().unwrap();
+        assert!(lines.iter().any(|line| line.contains("max runtime")));
+    }
+
+    #[tokio::test]
+    async fn watch_deployment_follows_logs_and_exits_on_terminal_status() {
+        let deployment_id = Uuid::new_v4();
+
+        let mut status = base_status(deployment_id);
+        status.status = DeploymentStatus::Running;
+
+        let status_body = serde_json::to_string(&status).expect("status json");
+        let page = ::common::api::Page::<::common::api::AuditLogEntry> {
+            limit: 100,
+            offset: 0,
+            items: Vec::new(),
+        };
+        let logs_body = serde_json::to_string(&page).expect("logs json");
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let status_body = Arc::new(status_body);
+        let logs_body = Arc::new(logs_body);
+        thread::spawn({
+            let status_body = status_body.clone();
+            let logs_body = logs_body.clone();
+            move || {
+                let _ = listener.set_nonblocking(true);
+                let start = StdInstant::now();
+                let mut handled = 0;
+                while start.elapsed() < std::time::Duration::from_secs(2) && handled < 3 {
+                    match listener.accept() {
+                        Ok((mut stream, _)) => {
+                            let mut buf = [0_u8; 4096];
+                            let n = stream.read(&mut buf).unwrap_or(0);
+                            let request = String::from_utf8_lossy(&buf[..n]);
+                            let path = request
+                                .lines()
+                                .next()
+                                .and_then(|line| line.split_whitespace().nth(1))
+                                .unwrap_or_default();
+
+                            let (status, body) = if path
+                                .starts_with(&format!("/api/v1/deployments/{deployment_id}"))
+                            {
+                                (200, status_body.as_str())
+                            } else if path.starts_with("/api/v1/logs") {
+                                (200, logs_body.as_str())
+                            } else {
+                                (404, "")
+                            };
+                            let response = format!(
+                                "HTTP/1.1 {status} OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{}",
+                                body.len(),
+                                body
+                            );
+                            let _ = stream.write_all(response.as_bytes());
+                            handled += 1;
+                        }
+                        Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+        });
+
+        let api = OperatorApi::new(
+            reqwest::Client::new(),
+            format!("http://{addr}"),
+            "authorization",
+            "token",
+        );
+
+        let args = DeployWatchArgs {
+            deployment_id,
+            poll_interval: 1,
+            max_interval: Some(1),
+            max_runtime: None,
+            follow_logs: true,
+            follow_logs_interval: 1,
+        };
+
+        watch_deployment(&api, args)
+            .await
+            .expect("watch deployment");
     }
 }

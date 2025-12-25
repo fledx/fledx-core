@@ -1727,4 +1727,33 @@ mod tests {
         assert!(!desired.requires_public_ip);
         assert!(!desired.tunnel_only);
     }
+
+    #[test]
+    fn deployment_create_response_defaults_generation_and_counts() {
+        let response: DeploymentCreateResponse = serde_json::from_value(json!({
+            "deployment_id": "00000000-0000-0000-0000-000000000042",
+            "assigned_node_id": "00000000-0000-0000-0000-000000000043"
+        }))
+        .expect("deserialize create response");
+        assert_eq!(response.generation, 1);
+        assert_eq!(response.unplaced_replicas, 0);
+        assert!(response.assigned_node_ids.is_empty());
+    }
+
+    #[test]
+    fn config_create_request_defaults_entries() {
+        let request: ConfigCreateRequest = serde_json::from_value(json!({
+            "name": "app-config"
+        }))
+        .expect("deserialize config request");
+        assert!(request.entries.is_empty());
+        assert_eq!(request.version, None);
+    }
+
+    #[test]
+    fn deployment_update_rejects_unknown_fields() {
+        let result: Result<DeploymentUpdate, _> =
+            serde_json::from_value(json!({ "name": "edge", "unexpected": true }));
+        assert!(result.is_err());
+    }
 }

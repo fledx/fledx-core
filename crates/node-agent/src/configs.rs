@@ -207,6 +207,7 @@ mod tests {
     use crate::test_support::{base_config, state_with_runtime_and_config, MockRuntime};
     use chrono::Utc;
     use httpmock::{Method::GET, MockServer};
+    use std::collections::HashMap;
 
     fn sample_config(node_id: Uuid, version: i64) -> ConfigDesired {
         ConfigDesired {
@@ -371,5 +372,52 @@ mod tests {
             assert_eq!(guard.configs_backoff_attempts, 1);
             assert!(guard.configs_backoff_until.is_some());
         }
+    }
+
+    #[test]
+    fn select_configs_for_deployment_filters_and_sorts() {
+        let node_id = Uuid::new_v4();
+        let deployment_id = Uuid::new_v4();
+
+        let mut by_deployment = sample_config(node_id, 1);
+        by_deployment.metadata.name = "b-config".to_string();
+        by_deployment.attached_nodes.clear();
+        by_deployment.attached_deployments.push(deployment_id);
+
+        let mut by_node = sample_config(node_id, 2);
+        by_node.metadata.name = "a-config".to_string();
+
+        let unrelated = sample_config(Uuid::new_v4(), 3);
+
+        let mut configs = HashMap::new();
+        configs.insert(by_deployment.metadata.config_id, by_deployment.clone());
+        configs.insert(by_node.metadata.config_id, by_node.clone());
+        configs.insert(unrelated.metadata.config_id, unrelated);
+
+        let selected = select_configs_for_deployment(&configs, node_id, deployment_id);
+        assert_eq!(selected.len(), 2);
+        assert_eq!(selected[0].metadata.name, "a-config");
+        assert_eq!(selected[1].metadata.name, "b-config");
+    }
+
+    #[test]
+    fn config_fingerprint_is_stable_and_sensitive_to_changes() {
+        let node_id = Uuid::new_v4();
+        let mut first = sample_config(node_id, 1);
+        first.metadata.config_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+        let mut second = sample_config(node_id, 2);
+        second.metadata.config_id =
+            Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+
+        let hash_a = config_fingerprint(&[first.clone(), second.clone()]).expect("hash");
+        let hash_b = config_fingerprint(&[second.clone(), first.clone()]).expect("hash");
+        assert_eq!(hash_a, hash_b);
+
+        let mut changed = second.clone();
+        changed.metadata.version += 1;
+        let hash_c = config_fingerprint(&[first, changed]).expect("hash");
+        assert_ne!(hash_a, hash_c);
+
+        assert_eq!(config_fingerprint(&[]), None);
     }
 }

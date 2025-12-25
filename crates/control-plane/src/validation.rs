@@ -1026,4 +1026,46 @@ mod tests {
 
         assert!(validate_heartbeat(&req, &limits).is_err());
     }
+
+    #[test]
+    fn normalize_public_ingress_trims_and_lowercases() {
+        let limits = limits();
+        let (ip, host) = normalize_public_ingress(
+            Some("  127.0.0.1 ".into()),
+            Some(" Foo.Example ".into()),
+            &limits,
+        )
+        .expect("normalize");
+        assert_eq!(ip.as_deref(), Some("127.0.0.1"));
+        assert_eq!(host.as_deref(), Some("foo.example"));
+    }
+
+    #[test]
+    fn normalize_labels_rejects_duplicate_keys() {
+        let limits = limits();
+        let mut labels = HashMap::new();
+        labels.insert("Region".to_string(), "us".to_string());
+        labels.insert("region".to_string(), "eu".to_string());
+
+        let err = normalize_labels(Some(labels), &limits).unwrap_err();
+        assert!(err.message.contains("duplicate label key"));
+    }
+
+    #[test]
+    fn normalize_capacity_returns_none_when_empty_and_disallowed() {
+        let capacity = db::CapacityHints {
+            cpu_millis: None,
+            memory_bytes: None,
+        };
+        let normalized = normalize_capacity(Some(capacity), false).expect("normalize");
+        assert!(normalized.is_none());
+    }
+
+    #[test]
+    fn validate_protocol_accepts_tcp_and_udp_only() {
+        assert!(validate_protocol("tcp").is_ok());
+        assert!(validate_protocol("UDP").is_ok());
+        let err = validate_protocol("icmp").unwrap_err();
+        assert!(err.message.contains("protocol must be tcp or udp"));
+    }
 }

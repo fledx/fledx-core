@@ -803,6 +803,7 @@ pub fn load() -> anyhow::Result<AppConfig> {
 mod tests {
     use super::*;
     use std::{env, panic, sync::Mutex};
+    use tempfile::tempdir;
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -952,5 +953,148 @@ mod tests {
                 assert!(msg.contains("server.tls.key_path"));
             },
         );
+    }
+
+    #[test]
+    fn ports_config_validate_rejects_invalid_ranges_and_host() {
+        let err = PortsConfig {
+            auto_assign: true,
+            range_start: 0,
+            range_end: 1,
+            public_host: None,
+        }
+        .validate()
+        .expect_err("zero range start");
+        assert!(err.to_string().contains("ports.range_start"));
+
+        let err = PortsConfig {
+            auto_assign: true,
+            range_start: 10,
+            range_end: 1,
+            public_host: None,
+        }
+        .validate()
+        .expect_err("range order");
+        assert!(err.to_string().contains("range_start must be <="));
+
+        let err = PortsConfig {
+            auto_assign: true,
+            range_start: 1,
+            range_end: 2,
+            public_host: Some("   ".into()),
+        }
+        .validate()
+        .expect_err("empty host");
+        assert!(err.to_string().contains("ports.public_host"));
+    }
+
+    #[test]
+    fn server_tls_normalize_trims_paths_and_enables() {
+        let mut cfg = ServerTlsConfig {
+            enabled: false,
+            cert_path: Some(" cert.pem ".into()),
+            key_path: Some(" key.pem ".into()),
+        };
+        cfg.normalize().expect("normalize");
+        assert_eq!(cfg.cert_path.as_deref(), Some("cert.pem"));
+        assert_eq!(cfg.key_path.as_deref(), Some("key.pem"));
+        assert!(cfg.enabled);
+    }
+
+    #[test]
+    fn volumes_config_validation_and_path_checks() {
+        let err = VolumesConfig {
+            allowed_host_prefixes: vec!["".into()],
+        }
+        .validate()
+        .expect_err("empty entry");
+        assert!(err.to_string().contains("cannot be empty"));
+
+        let err = VolumesConfig {
+            allowed_host_prefixes: vec![" /tmp".into()],
+        }
+        .validate()
+        .expect_err("whitespace entry");
+        assert!(err
+            .to_string()
+            .contains("must not contain surrounding whitespace"));
+
+        let err = VolumesConfig {
+            allowed_host_prefixes: vec!["relative".into()],
+        }
+        .validate()
+        .expect_err("relative path");
+        assert!(err.to_string().contains("must be absolute"));
+
+        let dir = tempdir().expect("tempdir");
+        let allowed_prefix = dir.path().to_string_lossy().to_string();
+        let cfg = VolumesConfig {
+            allowed_host_prefixes: vec![allowed_prefix.clone()],
+        };
+        cfg.validate().expect("valid prefixes");
+
+        let allowed_path = dir.path().join("child");
+        assert!(cfg.is_allowed_host_path(&allowed_path.to_string_lossy()));
+
+        let non_existing = dir.path().join("new/dir/file");
+        assert!(cfg.is_allowed_host_path(&non_existing.to_string_lossy()));
+
+        let parent_dir = dir.path().join("../escape");
+        assert!(!cfg.is_allowed_host_path(&parent_dir.to_string_lossy()));
+    }
+
+    #[test]
+    fn tunnel_config_validate_rejects_invalid_values() {
+        let err = TunnelConfig {
+            advertised_host: "".into(),
+            advertised_port: 49423,
+            use_tls: true,
+            connect_timeout_secs: 30,
+            heartbeat_interval_secs: 30,
+            heartbeat_timeout_secs: 90,
+            token_header: "x-token".into(),
+        }
+        .validate()
+        .expect_err("empty host");
+        assert!(err.to_string().contains("tunnel.advertised_host"));
+
+        let err = TunnelConfig {
+            advertised_host: "127.0.0.1".into(),
+            advertised_port: 0,
+            use_tls: true,
+            connect_timeout_secs: 30,
+            heartbeat_interval_secs: 30,
+            heartbeat_timeout_secs: 90,
+            token_header: "x-token".into(),
+        }
+        .validate()
+        .expect_err("invalid port");
+        assert!(err.to_string().contains("advertised_port"));
+
+        let err = TunnelConfig {
+            advertised_host: "127.0.0.1".into(),
+            advertised_port: 49423,
+            use_tls: true,
+            connect_timeout_secs: 30,
+            heartbeat_interval_secs: 10,
+            heartbeat_timeout_secs: 5,
+            token_header: "x-token".into(),
+        }
+        .validate()
+        .expect_err("timeout order");
+        assert!(err.to_string().contains("heartbeat_timeout_secs"));
+
+        let err = TunnelConfig {
+            advertised_host: "127.0.0.1".into(),
+            advertised_port: 49423,
+            use_tls: true,
+            connect_timeout_secs: 30,
+            heartbeat_interval_secs: 10,
+            heartbeat_timeout_secs: 20,
+            token_header: "   ".into(),
+        }
+        .validate()
+        .expect_err("empty token header");
+        assert!(err.to_string().contains("token_header"));
     }
 }

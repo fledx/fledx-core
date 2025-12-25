@@ -292,3 +292,162 @@ impl TunnelRegistry {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn registry_tracks_sessions_and_failures() {
+        let registry = TunnelRegistry::new();
+        let node_id = Uuid::new_v4();
+        let tunnel_id = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel(4);
+        let inflight = Arc::new(Semaphore::new(2));
+
+        registry.upsert(node_id, tunnel_id, tx, inflight).await;
+        assert!(registry.contains(node_id).await);
+
+        let snapshot = registry.snapshot().await;
+        assert_eq!(snapshot.total, 1);
+        assert_eq!(snapshot.statuses.len(), 1);
+        assert_eq!(snapshot.statuses[0].status, TunnelStatus::Connected);
+
+        registry.remove(node_id, "gone").await;
+        assert!(!registry.contains(node_id).await);
+
+        let snapshot = registry.snapshot().await;
+        assert_eq!(snapshot.total, 0);
+        let status = snapshot
+            .statuses
+            .iter()
+            .find(|entry| entry.node_id == node_id)
+            .expect("disconnected entry");
+        assert_eq!(status.status, TunnelStatus::Disconnected);
+        assert_eq!(status.last_error.as_deref(), Some("gone"));
+        assert!(status.last_event_secs.is_some());
+    }
+
+    #[tokio::test]
+    async fn registry_acquire_respects_inflight_limit() {
+        let registry = TunnelRegistry::new();
+        let node_id = Uuid::new_v4();
+        let (tx, _rx) = mpsc::channel(1);
+        let inflight = Arc::new(Semaphore::new(1));
+        registry.upsert(node_id, Uuid::new_v4(), tx, inflight).await;
+
+        let (_tx, permit) = registry.acquire(node_id).await.expect("permit");
+        let err = registry.acquire(node_id).await.expect_err("overloaded");
+        assert!(matches!(err, ForwardError::Overloaded));
+        drop(permit);
+        assert!(registry.acquire(node_id).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn forward_request_succeeds_and_returns_response() {
+        let registry = TunnelRegistry::new();
+        let node_id = Uuid::new_v4();
+        let (tx, mut rx) = mpsc::channel(1);
+        let inflight = Arc::new(Semaphore::new(1));
+        registry.upsert(node_id, Uuid::new_v4(), tx, inflight).await;
+
+        let handler = tokio::spawn(async move {
+            if let Some(TunnelCommand::Forward {
+                id, response_tx, ..
+            }) = rx.recv().await
+            {
+                let response = ForwardResponse {
+                    id,
+                    status: 200,
+                    headers: HashMap::new(),
+                    body_b64: "aGVsbG8=".to_string(),
+                };
+                let _ = response_tx.send(Ok(response));
+            }
+        });
+
+        let response = registry
+            .forward_request(
+                node_id,
+                "GET".to_string(),
+                "/".to_string(),
+                HashMap::new(),
+                b"ping".to_vec(),
+                Duration::from_secs(1),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status, 200);
+        handler.await.expect("handler");
+    }
+
+    #[tokio::test]
+    async fn forward_request_reports_channel_close() {
+        let registry = TunnelRegistry::new();
+        let node_id = Uuid::new_v4();
+        let (tx, rx) = mpsc::channel(1);
+        drop(rx);
+        let inflight = Arc::new(Semaphore::new(1));
+        registry.upsert(node_id, Uuid::new_v4(), tx, inflight).await;
+
+        let err = registry
+            .forward_request(
+                node_id,
+                "POST".to_string(),
+                "/".to_string(),
+                HashMap::new(),
+                Vec::new(),
+                Duration::from_millis(10),
+            )
+            .await
+            .expect_err("closed");
+        assert!(matches!(err, ForwardError::ChannelClosed));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn forward_request_times_out() {
+        let registry = TunnelRegistry::new();
+        let node_id = Uuid::new_v4();
+        let (tx, mut rx) = mpsc::channel(1);
+        let inflight = Arc::new(Semaphore::new(1));
+        registry.upsert(node_id, Uuid::new_v4(), tx, inflight).await;
+
+        let (hold_tx, hold_rx) = oneshot::channel::<()>();
+        let handle = tokio::spawn(async move {
+            if let Some(TunnelCommand::Forward { response_tx, .. }) = rx.recv().await {
+                let _ = hold_rx.await;
+                drop(response_tx);
+            }
+        });
+
+        let fut = registry.forward_request(
+            node_id,
+            "GET".to_string(),
+            "/".to_string(),
+            HashMap::new(),
+            Vec::new(),
+            Duration::from_secs(1),
+        );
+        tokio::time::advance(Duration::from_secs(2)).await;
+        let err = fut.await.expect_err("timeout");
+        assert!(matches!(err, ForwardError::Timeout));
+
+        let _ = hold_tx.send(());
+        handle.await.expect("handler");
+    }
+
+    #[tokio::test]
+    async fn relay_health_tracks_success_and_error() {
+        let state = RelayHealthState::default();
+        state.record_success().await;
+        let snapshot = state.snapshot().await;
+        assert!(snapshot.last_ok_at.is_some());
+        assert!(snapshot.last_error.is_none());
+
+        state.record_error("nope").await;
+        let snapshot = state.snapshot().await;
+        assert_eq!(snapshot.last_error.as_deref(), Some("nope"));
+        assert!(snapshot.last_error_at.is_some());
+    }
+}

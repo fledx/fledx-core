@@ -668,4 +668,16 @@ mod tests {
         assert!(matches!(parsed, Some(TunnelFrame::Heartbeat { .. })));
         assert_eq!(&buffer[..], b"extra");
     }
+
+    #[test]
+    fn record_connect_metrics_handles_empty_node_id() {
+        record_connect_metrics("", "ok", StdInstant::now());
+    }
+
+    #[test]
+    fn record_heartbeat_latency_tracks_success_and_parse_error() {
+        let node_id = Uuid::new_v4();
+        record_heartbeat_latency(&node_id, &Utc::now().to_rfc3339());
+        record_heartbeat_latency(&node_id, "not-a-timestamp");
+    }
 }

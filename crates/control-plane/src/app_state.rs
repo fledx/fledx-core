@@ -229,3 +229,50 @@ impl RegistrationLimiter for SlidingWindowRegistrationLimiter {
         RateLimitDecision::allowed(self.capacity, remaining, reset_after)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn operator_auth_checks_exact_tokens() {
+        let auth = OperatorAuth {
+            tokens: vec!["secret-token".to_string()],
+            header_name: HeaderName::from_static("authorization"),
+        };
+
+        assert!(auth.is_env_token("secret-token"));
+        assert!(!auth.is_env_token("secret-token-2"));
+        assert!(!auth.is_env_token("SECRET-TOKEN"));
+    }
+
+    #[test]
+    fn noop_registration_limiter_allows_without_limits() {
+        let mut limiter = NoopRegistrationLimiter;
+        let decision = limiter.acquire();
+
+        assert!(decision.allowed);
+        assert_eq!(decision.limit, 0);
+        assert_eq!(decision.remaining, 0);
+    }
+
+    #[test]
+    fn sliding_window_limiter_enforces_capacity() {
+        let mut limiter = SlidingWindowRegistrationLimiter::per_minute(2);
+
+        let first = limiter.acquire();
+        assert!(first.allowed);
+        assert_eq!(first.limit, 2);
+        assert_eq!(first.remaining, 1);
+
+        let second = limiter.acquire();
+        assert!(second.allowed);
+        assert_eq!(second.remaining, 0);
+
+        let third = limiter.acquire();
+        assert!(!third.allowed);
+        assert_eq!(third.limit, 2);
+        assert_eq!(third.remaining, 0);
+        assert!(third.retry_after.is_some());
+    }
+}

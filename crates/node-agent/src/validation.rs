@@ -438,4 +438,59 @@ mod tests {
         let err = validate_volume_mounts(&volumes, &cfg).unwrap_err();
         assert!(err.to_string().contains("volume mounts are disabled"));
     }
+
+    #[test]
+    fn validate_ports_allows_non_exposed_without_host_port() {
+        let ports = vec![api::PortMapping {
+            container_port: 8080,
+            host_port: None,
+            protocol: "tcp".into(),
+            expose: false,
+            host_ip: None,
+            endpoint: None,
+        }];
+
+        assert!(validate_ports(&ports).is_ok());
+    }
+
+    #[test]
+    fn validate_volume_mounts_rejects_relative_paths() {
+        let tmp = tempdir().expect("tempdir");
+        let allowed = tmp.path().canonicalize().unwrap();
+        let mut cfg = base_config();
+        cfg.allowed_volume_prefixes = vec![allowed.display().to_string()];
+
+        let bad_host = api::VolumeMount {
+            host_path: "relative/path".into(),
+            container_path: "/data".into(),
+            read_only: Some(false),
+        };
+        let err = validate_volume_mounts(&[bad_host], &cfg).unwrap_err();
+        assert!(err.to_string().contains("host_path must be absolute"));
+
+        let good_host = api::VolumeMount {
+            host_path: allowed.join("data").to_string_lossy().into_owned(),
+            container_path: "relative".into(),
+            read_only: Some(false),
+        };
+        std::fs::create_dir_all(&good_host.host_path).expect("mkdirs");
+        let err = validate_volume_mounts(&[good_host], &cfg).unwrap_err();
+        assert!(err.to_string().contains("container_path must be absolute"));
+    }
+
+    #[test]
+    fn resolve_secret_files_rejects_directory() {
+        let dir = tempdir().expect("tempdir");
+        let secret_dir = dir.path().join("dir-secret");
+        std::fs::create_dir_all(&secret_dir).expect("mkdirs");
+
+        let entries = vec![api::SecretFile {
+            secret: "dir-secret".into(),
+            path: "/etc/dir-secret".into(),
+            optional: false,
+        }];
+
+        let err = resolve_secret_files(&entries, dir.path().to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("is not a file"));
+    }
 }

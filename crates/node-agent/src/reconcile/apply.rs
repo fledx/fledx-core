@@ -310,6 +310,7 @@ mod tests {
         test_support::{base_config, state_with_runtime_and_config, MockRuntime, StartAction},
     };
     use chrono::Utc;
+    use std::collections::HashMap;
     use uuid::Uuid;
 
     #[tokio::test]
@@ -529,5 +530,143 @@ mod tests {
 
         let containers = mock.containers.lock().expect("lock");
         assert!(containers.is_empty(), "container should be removed");
+    }
+
+    #[tokio::test]
+    async fn apply_deployment_reports_port_conflict() {
+        let port_error = runtime::ContainerRuntimeError::PortConflict {
+            id: "conflict".into(),
+            host_port: 8080,
+            protocol: runtime::PortProtocol::Tcp,
+            host_ip: "0.0.0.0".into(),
+            source: anyhow::anyhow!("busy"),
+        };
+        let mock = MockRuntime::with_start_actions(vec![StartAction::Err(port_error)]);
+        let runtime: DynContainerRuntime = std::sync::Arc::new(mock.clone());
+        let state = state_with_runtime_and_config(runtime.clone(), base_config());
+        let deployment_id = Uuid::new_v4();
+        let key = ReplicaKey::new(deployment_id, 0);
+
+        let desired = api::DeploymentDesired {
+            deployment_id,
+            name: "example/image:1".into(),
+            replica_number: key.replica_number,
+            image: "example/image:1".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: Some(vec![api::PortMapping {
+                container_port: 80,
+                host_port: Some(8080),
+                protocol: "tcp".into(),
+                expose: true,
+                host_ip: Some("0.0.0.0".into()),
+                endpoint: None,
+            }]),
+            volumes: None,
+            requires_public_ip: false,
+            tunnel_only: false,
+            placement: None,
+            health: None,
+            desired_state: api::DesiredState::Running,
+            replica_generation: Some(1),
+            generation: 1,
+        };
+
+        let err = apply_deployment(&state, desired, runtime.clone())
+            .await
+            .expect_err("port conflict");
+        assert!(err.to_string().contains("port conflict"));
+
+        let guard = state.managed_read().await;
+        let entry = guard.managed.get(&key).expect("entry");
+        assert_eq!(entry.state, InstanceState::Failed);
+        assert!(entry
+            .message
+            .as_deref()
+            .unwrap_or_default()
+            .contains("port conflict"));
+    }
+
+    #[tokio::test]
+    async fn apply_deployment_restarts_on_config_fingerprint_mismatch() {
+        let deployment_id = Uuid::new_v4();
+        let key = ReplicaKey::new(deployment_id, 0);
+        let name = container_name(&key);
+
+        let mut labels = HashMap::new();
+        labels.insert("fledx.generation".to_string(), "1".to_string());
+        labels.insert(
+            state::CONFIG_FINGERPRINT_LABEL.to_string(),
+            "stale".to_string(),
+        );
+
+        let container = runtime::ContainerDetails {
+            id: name.clone(),
+            name: Some(name.clone()),
+            status: runtime::ContainerStatus::Running,
+            labels: Some(labels),
+        };
+
+        let mock = MockRuntime::with_containers(vec![container]);
+        let runtime: DynContainerRuntime = std::sync::Arc::new(mock.clone());
+        let state = state_with_runtime_and_config(runtime.clone(), base_config());
+
+        let config_id = Uuid::new_v4();
+        let config = api::ConfigDesired {
+            metadata: api::ConfigMetadata {
+                config_id,
+                name: "cfg".into(),
+                version: 1,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            },
+            entries: vec![api::ConfigEntry {
+                key: "HELLO".into(),
+                value: Some("world".into()),
+                secret_ref: None,
+            }],
+            files: Vec::new(),
+            attached_deployments: vec![deployment_id],
+            attached_nodes: Vec::new(),
+            checksum: Some("sum".into()),
+        };
+
+        {
+            let mut guard = state.lock().await;
+            guard.configs.insert(config_id, config);
+        }
+
+        let desired = api::DeploymentDesired {
+            deployment_id,
+            name: "example/image:1".into(),
+            replica_number: key.replica_number,
+            image: "example/image:1".into(),
+            replicas: 1,
+            command: None,
+            env: None,
+            secret_env: None,
+            secret_files: None,
+            ports: None,
+            volumes: None,
+            requires_public_ip: false,
+            tunnel_only: false,
+            placement: None,
+            health: None,
+            desired_state: api::DesiredState::Running,
+            replica_generation: Some(1),
+            generation: 1,
+        };
+
+        apply_deployment(&state, desired, runtime.clone())
+            .await
+            .expect("apply succeeds");
+
+        let guard = state.managed_read().await;
+        let entry = guard.managed.get(&key).expect("entry");
+        assert_eq!(entry.state, InstanceState::Running);
+        assert!(mock.start_calls() >= 1);
     }
 }

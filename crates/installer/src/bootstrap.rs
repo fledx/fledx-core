@@ -119,4 +119,15 @@ mod tests {
         assert_eq!(output.stdout, "hello");
         assert!(!output.status.success());
     }
+
+    #[test]
+    fn run_capture_surfaces_missing_command() {
+        let cmd = Command::new("definitely-not-a-command-12345");
+        let err = match run_capture(cmd) {
+            Ok(_) => panic!("expected missing command error"),
+            Err(err) => err,
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("failed to run"), "{msg}");
+    }
 }

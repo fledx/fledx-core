@@ -313,7 +313,8 @@ async fn cleanup_managed_containers(state: &state::SharedState) {
 mod tests {
     use super::*;
     use crate::runtime::ContainerRuntimeError;
-    use crate::test_support::base_config;
+    use crate::runtime::{ContainerDetails, ContainerStatus};
+    use crate::test_support::{base_config, MockRuntime};
     use std::sync::Arc;
     use tokio::sync::watch;
 
@@ -368,5 +369,51 @@ mod tests {
 
         let err = handle.await_termination().await.expect_err("panic");
         assert!(err.to_string().contains("panicked"));
+    }
+
+    #[tokio::test]
+    async fn cleanup_managed_containers_skips_when_runtime_unavailable() {
+        let state = dummy_state();
+        cleanup_managed_containers(&state).await;
+    }
+
+    #[tokio::test]
+    async fn cleanup_managed_containers_noops_when_empty() {
+        let mock = MockRuntime::default();
+        let runtime: DynContainerRuntime = Arc::new(mock.clone());
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let factory: RuntimeFactory = Arc::new({
+            let runtime = runtime.clone();
+            move || Ok(runtime.clone())
+        });
+        let state = state::new_state(cfg, client, factory, Some(runtime));
+
+        cleanup_managed_containers(&state).await;
+        let guard = mock.containers.lock().expect("lock");
+        assert!(guard.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cleanup_managed_containers_removes_existing() {
+        let container = ContainerDetails {
+            id: "container-1".to_string(),
+            name: Some("container-1".to_string()),
+            status: ContainerStatus::Running,
+            labels: None,
+        };
+        let mock = MockRuntime::with_containers(vec![container]);
+        let runtime: DynContainerRuntime = Arc::new(mock.clone());
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let factory: RuntimeFactory = Arc::new({
+            let runtime = runtime.clone();
+            move || Ok(runtime.clone())
+        });
+        let state = state::new_state(cfg, client, factory, Some(runtime));
+
+        cleanup_managed_containers(&state).await;
+        let guard = mock.containers.lock().expect("lock");
+        assert!(guard.is_empty());
     }
 }
