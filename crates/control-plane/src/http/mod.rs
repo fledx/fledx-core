@@ -5553,6 +5553,74 @@ mod tests {
         }
     }
 
+    mod parsing {
+        use super::*;
+        use serde::Deserialize;
+
+        #[test]
+        fn parse_limit_offset_defaults_and_validates() {
+            let (limit, offset) = parse_limit_offset(None, None).unwrap();
+            assert_eq!(limit, DEFAULT_PAGE_LIMIT);
+            assert_eq!(offset, 0);
+
+            let err = parse_limit_offset(Some(0), Some(0)).unwrap_err();
+            assert_eq!(err.status, StatusCode::BAD_REQUEST);
+            assert!(err.message.contains("limit must be between 1 and"));
+
+            let err = parse_limit_offset(Some(MAX_PAGE_LIMIT + 1), None).unwrap_err();
+            assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        }
+
+        #[test]
+        fn parse_metrics_limit_honors_max_and_rejects_invalid() {
+            let limit = parse_metrics_limit(None, 10).unwrap();
+            assert_eq!(limit, 10);
+
+            let limit = parse_metrics_limit(Some(5), 10).unwrap();
+            assert_eq!(limit, 5);
+
+            let err = parse_metrics_limit(Some(0), 10).unwrap_err();
+            assert_eq!(err.status, StatusCode::BAD_REQUEST);
+
+            let err = parse_metrics_limit(Some(11), 10).unwrap_err();
+            assert_eq!(err.status, StatusCode::BAD_REQUEST);
+        }
+
+        #[test]
+        fn parse_rfc3339_tolerant_accepts_space_offset() {
+            let parsed =
+                parse_rfc3339_tolerant("2024-01-01T12:34:56 02:00").expect("parse succeeds");
+            let expected = DateTime::parse_from_rfc3339("2024-01-01T12:34:56+02:00")
+                .unwrap()
+                .with_timezone(&Utc);
+            assert_eq!(parsed, expected);
+        }
+
+        #[test]
+        fn parse_rfc3339_tolerant_rejects_invalid() {
+            assert!(parse_rfc3339_tolerant("not-a-date").is_err());
+        }
+
+        #[derive(Deserialize)]
+        struct TimeWindow {
+            #[serde(default, deserialize_with = "deserialize_opt_rfc3339")]
+            since: Option<DateTime<Utc>>,
+        }
+
+        #[test]
+        fn deserialize_opt_rfc3339_handles_valid_and_invalid() {
+            let parsed: TimeWindow =
+                serde_json::from_str(r#"{ "since": "2024-01-01T00:00:00Z" }"#).unwrap();
+            assert!(parsed.since.is_some());
+
+            let parsed: TimeWindow = serde_json::from_str("{}").unwrap();
+            assert!(parsed.since.is_none());
+
+            let err = serde_json::from_str::<TimeWindow>(r#"{ "since": "bad" }"#);
+            assert!(err.is_err());
+        }
+    }
+
     mod relay {
         use super::common::setup_state;
         use super::*;
