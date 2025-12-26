@@ -868,4 +868,83 @@ mod tests {
         );
         assert!(outcome.threshold_just_reached);
     }
+
+    #[tokio::test]
+    async fn exec_probe_succeeds_when_exit_code_zero() {
+        let runtime = std::sync::Arc::new(MockRuntime::with_exec_actions(vec![ExecAction::Ok {
+            exit_code: 0,
+            output: "ok".into(),
+        }]));
+
+        let outcome = run_exec_probe(
+            Some(runtime),
+            "container-1",
+            &["/bin/true".into()],
+            Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(outcome.success);
+        assert_eq!(outcome.message, "exec exitcode 0");
+        assert!(outcome.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn exec_probe_reports_nonzero_exit_output() {
+        let runtime = std::sync::Arc::new(MockRuntime::with_exec_actions(vec![ExecAction::Ok {
+            exit_code: 2,
+            output: "failed".into(),
+        }]));
+
+        let outcome = run_exec_probe(
+            Some(runtime),
+            "container-2",
+            &["/bin/false".into()],
+            Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(!outcome.success);
+        assert_eq!(outcome.message, "exec exitcode 2");
+        assert_eq!(outcome.error.as_deref(), Some("failed"));
+    }
+
+    #[tokio::test]
+    async fn exec_probe_errors_when_runtime_missing() {
+        let outcome = run_exec_probe(
+            None,
+            "container-3",
+            &["/bin/true".into()],
+            Duration::from_secs(1),
+        )
+        .await;
+
+        assert!(!outcome.success);
+        assert_eq!(outcome.message, "exec runtime unavailable");
+        assert_eq!(outcome.error.as_deref(), Some("docker runtime unavailable"));
+    }
+
+    #[tokio::test]
+    async fn probe_helpers_report_port_not_mapped() {
+        let cfg = base_config();
+        let client = Client::new();
+
+        let http_outcome = run_http_probe(
+            &client,
+            &cfg,
+            8080,
+            "healthz",
+            Duration::from_secs(1),
+            &None,
+        )
+        .await;
+        assert!(!http_outcome.success);
+        assert_eq!(http_outcome.error.as_deref(), Some("port not mapped"));
+        assert_eq!(http_outcome.message, "http probe port 8080 not mapped");
+
+        let tcp_outcome = run_tcp_probe(&cfg, 8080, Duration::from_secs(1), &None).await;
+        assert!(!tcp_outcome.success);
+        assert_eq!(tcp_outcome.error.as_deref(), Some("port not mapped"));
+        assert_eq!(tcp_outcome.message, "tcp probe port 8080 not mapped");
+    }
 }
