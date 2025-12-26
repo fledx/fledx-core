@@ -134,6 +134,7 @@ mod tests {
     use crate::{
         api, runtime,
         state::{self, RuntimeFactory},
+        telemetry,
         test_support::{FakeCpClient, MockRuntime, base_config, state_with_runtime_and_config},
     };
     use uuid::Uuid;
@@ -236,5 +237,51 @@ mod tests {
             .await
             .expect("reconcile completes");
         assert_eq!(outcome, ReconcileOutcome::FetchError);
+    }
+
+    #[tokio::test]
+    async fn reconcile_tick_records_fetch_error_metric() {
+        let handle = telemetry::init_metrics_recorder();
+
+        let runtime: runtime::DynContainerRuntime = std::sync::Arc::new(MockRuntime::default());
+        let state = state_with_runtime_and_config(runtime, base_config());
+        let client = FakeCpClient::default();
+        client.set_desired_error("nope");
+
+        reconcile_tick(&state, &client)
+            .await
+            .expect("reconcile tick");
+
+        let rendered = handle.render();
+        assert!(
+            rendered.contains("node_agent_reconcile_total{result=\"fetch_error\""),
+            "missing fetch_error reconcile metric: {rendered}"
+        );
+    }
+
+    #[tokio::test]
+    async fn reconcile_tick_records_runtime_unavailable_metric() {
+        let handle = telemetry::init_metrics_recorder();
+
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let runtime_factory: RuntimeFactory = std::sync::Arc::new(|| {
+            Err(runtime::ContainerRuntimeError::Connection {
+                context: "test",
+                source: anyhow::anyhow!("down"),
+            })
+        });
+        let state = state::new_state(cfg, client, runtime_factory, None);
+        let cp_client = FakeCpClient::default();
+
+        reconcile_tick(&state, &cp_client)
+            .await
+            .expect("reconcile tick");
+
+        let rendered = handle.render();
+        assert!(
+            rendered.contains("node_agent_reconcile_total{result=\"runtime_unavailable\""),
+            "missing runtime_unavailable reconcile metric: {rendered}"
+        );
     }
 }

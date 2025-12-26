@@ -1180,6 +1180,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_forward_request_returns_bad_gateway_on_request_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("addr").port();
+        drop(listener);
+
+        let routes = vec![TunnelRoute {
+            path_prefix: "/".to_string(),
+            target_host: "127.0.0.1".to_string(),
+            target_port: port,
+        }];
+        let (ctx, mut rx) = forward_context(routes);
+
+        handle_forward_request(
+            ctx,
+            "req-5".to_string(),
+            "GET".to_string(),
+            "/".to_string(),
+            HashMap::new(),
+            "".to_string(),
+        )
+        .await
+        .expect("handler");
+
+        let (status, _headers, body) = next_response(&mut rx).await;
+        assert_eq!(status, 502);
+        assert!(!body.is_empty(), "expected error body for bad gateway");
+    }
+
+    #[tokio::test]
     async fn connect_transport_non_tls_connects() {
         let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
         let addr = listener.local_addr().expect("addr");
