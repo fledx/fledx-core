@@ -777,4 +777,95 @@ mod tests {
         );
         assert_eq!(health.last_error.as_deref(), Some("status 500"));
     }
+
+    #[test]
+    fn resolve_host_port_prefers_mapping_then_public_host_then_public_ip() {
+        let mut cfg = base_config();
+        let base_ports = vec![PortMapping {
+            container_port: 8080,
+            host_port: Some(18080),
+            protocol: "tcp".into(),
+            host_ip: Some("192.0.2.10".into()),
+            expose: false,
+            endpoint: None,
+        }];
+
+        let binding = resolve_host_port(8080, &Some(base_ports.clone()), &cfg).expect("binding");
+        assert_eq!(binding.0, "192.0.2.10");
+        assert_eq!(binding.1, 18080);
+
+        cfg.public_host = Some("edge.example.com".into());
+        let mut ports_with_blank = base_ports.clone();
+        ports_with_blank[0].host_ip = Some("   ".into());
+        let binding = resolve_host_port(8080, &Some(ports_with_blank), &cfg).expect("binding");
+        assert_eq!(binding.0, "edge.example.com");
+
+        cfg.public_host = None;
+        cfg.public_ip = Some("203.0.113.20".into());
+        let mut ports_with_blank = base_ports.clone();
+        ports_with_blank[0].host_ip = Some("   ".into());
+        let binding = resolve_host_port(8080, &Some(ports_with_blank), &cfg).expect("binding");
+        assert_eq!(binding.0, "203.0.113.20");
+
+        cfg.public_ip = None;
+        let mut ports_without_host = base_ports.clone();
+        ports_without_host[0].host_ip = None;
+        let binding = resolve_host_port(8080, &Some(ports_without_host), &cfg).expect("binding");
+        assert_eq!(binding.0, "127.0.0.1");
+    }
+
+    #[test]
+    fn should_run_probe_respects_start_period_and_next_run() {
+        let now = Utc::now();
+        let mut state = ProbeState::default();
+
+        let recent_start = Some(now - ChronoDuration::seconds(1));
+        assert!(
+            !should_run_probe(&state, recent_start, Duration::from_secs(10), now),
+            "should skip during start period"
+        );
+
+        state.next_run_at = Some(now + ChronoDuration::seconds(5));
+        let old_start = Some(now - ChronoDuration::seconds(20));
+        assert!(
+            !should_run_probe(&state, old_start, Duration::from_secs(1), now),
+            "should skip before next_run_at"
+        );
+
+        state.next_run_at = Some(now - ChronoDuration::seconds(1));
+        assert!(
+            should_run_probe(&state, old_start, Duration::from_secs(1), now),
+            "should run when start period elapsed and schedule reached"
+        );
+    }
+
+    #[test]
+    fn apply_probe_outcome_sets_threshold_and_reason() {
+        let mut state = ProbeState::default();
+        let mut outcome = ProbeExecutionOutcome {
+            success: false,
+            message: "http 500".into(),
+            error: Some("status 500".into()),
+            threshold_just_reached: false,
+        };
+
+        apply_probe_outcome(&mut state, &mut outcome, 2, ProbeRole::Liveness);
+
+        assert_eq!(state.consecutive_failures, 1);
+        assert_eq!(state.healthy, Some(true));
+        assert!(state.reason.is_none());
+        assert_eq!(state.last_probe_result.as_deref(), Some("http 500"));
+        assert_eq!(state.last_error.as_deref(), Some("status 500"));
+        assert!(!outcome.threshold_just_reached);
+
+        apply_probe_outcome(&mut state, &mut outcome, 2, ProbeRole::Liveness);
+
+        assert_eq!(state.consecutive_failures, 2);
+        assert_eq!(state.healthy, Some(false));
+        assert_eq!(
+            state.reason.as_deref(),
+            Some("liveness probe failed 2 consecutive times")
+        );
+        assert!(outcome.threshold_just_reached);
+    }
 }
