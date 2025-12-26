@@ -233,7 +233,7 @@ fn configs_url(cfg: &config::AppConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{state, test_support::make_test_state};
+    use crate::{SERVICE_IDENTITY_FINGERPRINT_HEADER, state, test_support::make_test_state};
     use httpmock::{Method::GET, MockServer};
     use uuid::Uuid;
 
@@ -277,5 +277,114 @@ mod tests {
             .await
             .expect("request id stored");
         assert_eq!(stored, "4bf92f3577b34da6a3ce929d0e0e4736");
+    }
+
+    #[tokio::test]
+    async fn fetch_configs_includes_etag_and_fingerprint_headers() {
+        let server = MockServer::start();
+        let node_id = Uuid::new_v4();
+        let path = format!("/api/v1/nodes/{}/configs", node_id);
+
+        let config = api::ConfigDesired {
+            metadata: api::ConfigMetadata {
+                config_id: Uuid::new_v4(),
+                name: "cfg".into(),
+                version: 1,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+            },
+            entries: Vec::new(),
+            files: Vec::new(),
+            attached_deployments: Vec::new(),
+            attached_nodes: vec![node_id],
+            checksum: None,
+        };
+
+        let response = api::NodeConfigResponse {
+            configs: vec![config.clone()],
+            service_identities: Vec::new(),
+        };
+
+        let _mock = server.mock(|when, then| {
+            when.method(GET)
+                .path(path.clone())
+                .header(REQUEST_ID_HEADER, "seed-request")
+                .header("if-none-match", "etag-1")
+                .header(SERVICE_IDENTITY_FINGERPRINT_HEADER, "fp-1");
+            then.status(200).json_body_obj(&response);
+        });
+
+        let state = make_test_state(server.url(""), node_id, 5, 2, 50);
+        state::set_request_id(&state, "seed-request".into()).await;
+        let client = ControlPlaneClient::with_request_id(&state, "seed-request".into()).await;
+
+        let res = client
+            .fetch_configs(&state, Some("etag-1"), Some("fp-1"))
+            .await
+            .expect("config fetch succeeds");
+
+        assert_eq!(res.status, StatusCode::OK);
+        let payload = res.payload.expect("payload present");
+        assert_eq!(payload.configs.len(), 1);
+        assert_eq!(payload.configs[0].metadata.name, "cfg");
+    }
+
+    #[tokio::test]
+    async fn fetch_configs_returns_not_modified_payload_none() {
+        let server = MockServer::start();
+        let node_id = Uuid::new_v4();
+        let path = format!("/api/v1/nodes/{}/configs", node_id);
+        let traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01";
+
+        let _mock = server.mock(|when, then| {
+            when.method(GET)
+                .path(path.clone())
+                .header(REQUEST_ID_HEADER, "seed-request")
+                .header("if-none-match", "etag-2");
+            then.status(304)
+                .header(crate::TRACEPARENT_HEADER, traceparent);
+        });
+
+        let state = make_test_state(server.url(""), node_id, 5, 2, 50);
+        state::set_request_id(&state, "seed-request".into()).await;
+        let client = ControlPlaneClient::with_request_id(&state, "seed-request".into()).await;
+
+        let res = client
+            .fetch_configs(&state, Some("etag-2"), None)
+            .await
+            .expect("not modified is ok");
+
+        assert_eq!(res.status, StatusCode::NOT_MODIFIED);
+        assert!(res.payload.is_none());
+
+        let stored = state::current_request_id(&state)
+            .await
+            .expect("request id stored");
+        assert_eq!(stored, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    }
+
+    #[tokio::test]
+    async fn fetch_configs_reports_error_on_failure_status() {
+        let server = MockServer::start();
+        let node_id = Uuid::new_v4();
+        let path = format!("/api/v1/nodes/{}/configs", node_id);
+
+        let _mock = server.mock(|when, then| {
+            when.method(GET)
+                .path(path.clone())
+                .header(REQUEST_ID_HEADER, "seed-request");
+            then.status(500).body("boom");
+        });
+
+        let state = make_test_state(server.url(""), node_id, 5, 2, 50);
+        state::set_request_id(&state, "seed-request".into()).await;
+        let client = ControlPlaneClient::with_request_id(&state, "seed-request".into()).await;
+
+        let err = client
+            .fetch_configs(&state, None, None)
+            .await
+            .expect_err("fetch should fail");
+
+        assert!(err.to_string().contains("config request failed"));
     }
 }
