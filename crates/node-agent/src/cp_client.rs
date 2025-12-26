@@ -233,8 +233,11 @@ fn configs_url(cfg: &config::AppConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{SERVICE_IDENTITY_FINGERPRINT_HEADER, state, test_support::make_test_state};
-    use httpmock::{Method::GET, MockServer};
+    use crate::{
+        SERVICE_IDENTITY_FINGERPRINT_HEADER, compat, state, test_support::make_test_state,
+    };
+    use httpmock::{Method::GET, Method::POST, MockServer};
+    use serde_json::json;
     use uuid::Uuid;
 
     #[tokio::test]
@@ -277,6 +280,101 @@ mod tests {
             .await
             .expect("request id stored");
         assert_eq!(stored, "4bf92f3577b34da6a3ce929d0e0e4736");
+    }
+
+    #[tokio::test]
+    async fn send_heartbeat_updates_request_id_from_traceparent() {
+        let server = MockServer::start();
+        let node_id = Uuid::new_v4();
+        let path = format!("/api/v1/nodes/{}/heartbeats", node_id);
+        let traceparent = "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01";
+
+        let _mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(path.clone())
+                .header(REQUEST_ID_HEADER, "seed-request");
+            then.status(200)
+                .header(crate::TRACEPARENT_HEADER, traceparent);
+        });
+
+        let state = make_test_state(server.url(""), node_id, 5, 2, 50);
+        state::set_request_id(&state, "seed-request".into()).await;
+
+        let client = ControlPlaneClient::with_request_id(&state, "seed-request".into()).await;
+
+        let payload = json!({ "node_status": "ready" });
+        let res = client
+            .send_heartbeat(&state, &payload)
+            .await
+            .expect("heartbeat succeeds");
+
+        assert_eq!(res.request_id, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        let stored = state::current_request_id(&state)
+            .await
+            .expect("request id stored");
+        assert_eq!(stored, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    }
+
+    #[tokio::test]
+    async fn send_heartbeat_reports_status_errors() {
+        let server = MockServer::start();
+        let node_id = Uuid::new_v4();
+        let path = format!("/api/v1/nodes/{}/heartbeats", node_id);
+
+        let _mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(path.clone())
+                .header(REQUEST_ID_HEADER, "seed-request");
+            then.status(500).body("boom");
+        });
+
+        let state = make_test_state(server.url(""), node_id, 5, 2, 50);
+        state::set_request_id(&state, "seed-request".into()).await;
+        let client = ControlPlaneClient::with_request_id(&state, "seed-request".into()).await;
+
+        let payload = json!({ "node_status": "ready" });
+        let err = client
+            .send_heartbeat(&state, &payload)
+            .await
+            .expect_err("heartbeat should fail");
+
+        assert!(err.to_string().contains("heartbeat failed"));
+    }
+
+    #[tokio::test]
+    async fn send_heartbeat_surfaces_compat_errors() {
+        let server = MockServer::start();
+        let node_id = Uuid::new_v4();
+        let path = format!("/api/v1/nodes/{}/heartbeats", node_id);
+
+        let payload = compat::AgentVersionError {
+            error: compat::UNSUPPORTED_AGENT_ERROR.to_string(),
+            agent_version: "0.1.0".into(),
+            min_supported: "1.0.0".into(),
+            max_supported: "2.0.0".into(),
+            upgrade_url: "https://example.com".into(),
+        };
+
+        let _mock = server.mock(|when, then| {
+            when.method(POST)
+                .path(path.clone())
+                .header(REQUEST_ID_HEADER, "seed-request");
+            then.status(400)
+                .header(compat::CONTROL_PLANE_VERSION_HEADER, "1.2.3")
+                .json_body_obj(&payload);
+        });
+
+        let state = make_test_state(server.url(""), node_id, 5, 2, 50);
+        state::set_request_id(&state, "seed-request".into()).await;
+        let client = ControlPlaneClient::with_request_id(&state, "seed-request".into()).await;
+
+        let heartbeat = json!({ "node_status": "ready" });
+        let err = client
+            .send_heartbeat(&state, &heartbeat)
+            .await
+            .expect_err("compat error should propagate");
+
+        assert!(err.downcast_ref::<compat::CompatError>().is_some());
     }
 
     #[tokio::test]

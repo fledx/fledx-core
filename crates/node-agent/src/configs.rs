@@ -208,6 +208,7 @@ mod tests {
     use chrono::Utc;
     use httpmock::{Method::GET, MockServer};
     use std::collections::HashMap;
+    use std::time::{Duration, Instant};
 
     fn sample_config(node_id: Uuid, version: i64) -> ConfigDesired {
         ConfigDesired {
@@ -372,6 +373,85 @@ mod tests {
             assert_eq!(guard.configs_backoff_attempts, 1);
             assert!(guard.configs_backoff_until.is_some());
         }
+    }
+
+    #[tokio::test]
+    async fn refresh_configs_skips_when_backoff_active() {
+        telemetry::init_metrics_recorder();
+
+        let server = MockServer::start_async().await;
+        let node_id = Uuid::new_v4();
+        let mut cfg = base_config();
+        cfg.control_plane_url = server.url("");
+        cfg.node_id = node_id;
+
+        let runtime: DynContainerRuntime = std::sync::Arc::new(MockRuntime::default());
+        let state = state_with_runtime_and_config(runtime, cfg);
+
+        let path = format!("/api/v1/nodes/{}/configs", node_id);
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path(path.clone());
+                then.status(200).json_body_obj(&NodeConfigResponse {
+                    configs: Vec::new(),
+                    service_identities: Vec::new(),
+                });
+            })
+            .await;
+
+        {
+            let mut guard = state.lock().await;
+            guard.configs_backoff_attempts = 2;
+            guard.configs_backoff_until = Some(Instant::now() + Duration::from_secs(60));
+        }
+
+        refresh_configs(&state)
+            .await
+            .expect("backoff should short-circuit");
+        assert_eq!(mock.calls(), 0);
+
+        let guard = state.lock().await;
+        assert_eq!(guard.configs_backoff_attempts, 2);
+    }
+
+    #[tokio::test]
+    async fn refresh_configs_runs_after_backoff_expires() {
+        telemetry::init_metrics_recorder();
+
+        let server = MockServer::start_async().await;
+        let node_id = Uuid::new_v4();
+        let mut cfg = base_config();
+        cfg.control_plane_url = server.url("");
+        cfg.node_id = node_id;
+
+        let runtime: DynContainerRuntime = std::sync::Arc::new(MockRuntime::default());
+        let state = state_with_runtime_and_config(runtime, cfg);
+
+        let path = format!("/api/v1/nodes/{}/configs", node_id);
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path(path.clone());
+                then.status(200).json_body_obj(&NodeConfigResponse {
+                    configs: Vec::new(),
+                    service_identities: Vec::new(),
+                });
+            })
+            .await;
+
+        {
+            let mut guard = state.lock().await;
+            guard.configs_backoff_attempts = 2;
+            guard.configs_backoff_until = Some(Instant::now() - Duration::from_secs(1));
+        }
+
+        refresh_configs(&state)
+            .await
+            .expect("expired backoff should fetch");
+        assert_eq!(mock.calls(), 1);
+
+        let guard = state.lock().await;
+        assert_eq!(guard.configs_backoff_attempts, 0);
+        assert!(guard.configs_backoff_until.is_none());
     }
 
     #[test]
