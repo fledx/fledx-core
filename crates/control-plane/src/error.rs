@@ -1,9 +1,10 @@
 use axum::http::HeaderMap;
 use sqlx::{Error as SqlxError, error::DatabaseError};
+use std::fmt;
 use tracing::error;
 
 /// Application error type for HTTP handlers.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AppError {
     pub status: axum::http::StatusCode,
     pub code: &'static str,
@@ -93,6 +94,14 @@ impl AppError {
         self
     }
 }
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for AppError {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DbErrorKind {
@@ -196,6 +205,10 @@ pub fn is_unique_violation(err: &anyhow::Error) -> bool {
 
 impl From<anyhow::Error> for AppError {
     fn from(err: anyhow::Error) -> Self {
+        let err = match err.downcast::<AppError>() {
+            Ok(app_err) => return app_err,
+            Err(err) => err,
+        };
         if let Some(mapped) = map_anyhow_error(&err) {
             if mapped.status.is_server_error() {
                 crate::telemetry::record_internal_error_metrics(&err);
@@ -400,6 +413,33 @@ mod tests {
     #[test]
     fn unknown_errors_map_to_internal() {
         let err = AppError::from(anyhow::anyhow!("boom"));
+        assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.code, "internal_error");
+        assert_eq!(err.message, "internal server error");
+    }
+
+    #[test]
+    fn app_error_round_trips_through_anyhow() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-rate-limit", "10".parse().expect("header value"));
+        let err = AppError::too_many_requests("rate limited").with_headers(headers);
+        let mapped = AppError::from(anyhow::Error::new(err));
+        assert_eq!(mapped.status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(mapped.code, "rate_limited");
+        assert_eq!(mapped.message, "rate limited");
+        assert_eq!(
+            mapped
+                .headers
+                .as_deref()
+                .and_then(|stored| stored.get("x-rate-limit"))
+                .and_then(|value| value.to_str().ok()),
+            Some("10")
+        );
+    }
+
+    #[test]
+    fn app_error_from_anyhow_without_app_error_is_internal() {
+        let err = AppError::from(anyhow::anyhow!("still bad"));
         assert_eq!(err.status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(err.code, "internal_error");
         assert_eq!(err.message, "internal server error");
