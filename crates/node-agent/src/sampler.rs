@@ -421,4 +421,73 @@ mod tests {
             "stale samples should be cleared when no running replicas remain"
         );
     }
+
+    #[tokio::test]
+    async fn connection_errors_clear_runtime_without_container_backoff() {
+        let runtime = std::sync::Arc::new(MockRuntime::default());
+        let cfg = base_config();
+        let state = state_with_runtime_and_config(runtime.clone(), cfg);
+
+        let container_id = "conn-err".to_string();
+        runtime.set_stats(
+            &container_id,
+            vec![Err(ContainerRuntimeError::Connection {
+                context: "stats",
+                source: anyhow::anyhow!("down"),
+            })],
+        );
+
+        let key = ReplicaKey::new(Uuid::new_v4(), 0);
+        {
+            let mut store = state.managed_write().await;
+            let mut managed = ManagedDeployment::new(1);
+            managed.mark_running(Some(container_id.clone()));
+            store.managed.insert(key, managed);
+        }
+
+        let mut backoff = HashMap::new();
+        sample_once(
+            &state,
+            &mut backoff,
+            5,
+            1,
+            Duration::from_millis(10),
+            Duration::from_millis(20),
+        )
+        .await
+        .unwrap();
+
+        assert!(!backoff.contains_key(&container_id));
+        let guard = state.lock().await;
+        assert!(guard.runtime.is_none());
+        assert!(guard.runtime_backoff_attempts >= 1);
+        assert!(guard.runtime_backoff_until.is_some());
+        assert!(guard.needs_adoption);
+    }
+
+    #[test]
+    fn prune_backoff_removes_stale_entries() {
+        let mut backoff = HashMap::new();
+        backoff.insert(
+            "keep".to_string(),
+            BackoffEntry {
+                attempts: 1,
+                ready_at: Instant::now(),
+            },
+        );
+        backoff.insert(
+            "drop".to_string(),
+            BackoffEntry {
+                attempts: 2,
+                ready_at: Instant::now(),
+            },
+        );
+
+        let key = ReplicaKey::new(Uuid::new_v4(), 0);
+        let targets = vec![(key, "keep".to_string())];
+        prune_backoff(&mut backoff, &targets);
+
+        assert!(backoff.contains_key("keep"));
+        assert!(!backoff.contains_key("drop"));
+    }
 }
