@@ -1301,6 +1301,7 @@ mod tests {
     use super::super::ENV_LOCK;
     use super::*;
     use std::env;
+    use std::ffi::OsString;
     use std::fs;
     use std::path::Path;
     use tempfile::tempdir;
@@ -1514,6 +1515,15 @@ authorization: bearer qwerty
     }
 
     #[test]
+    fn should_retry_systemctl_with_sudo_matches_expected_errors() {
+        assert!(should_retry_systemctl_with_sudo(
+            "Failed to connect to bus: Permission denied"
+        ));
+        assert!(should_retry_systemctl_with_sudo("ACCESS DENIED"));
+        assert!(!should_retry_systemctl_with_sudo("unit not found"));
+    }
+
+    #[test]
     fn cp_env_with_tls_adds_tls_settings() {
         let tls = ControlPlaneTlsAssets {
             ca_cert_pem: "ca".to_string(),
@@ -1654,6 +1664,34 @@ exit 3
                 EnvVarGuard::set("FAKE_SYSTEMCTL_IS_ACTIVE_OUTPUT", "inactive\n".into());
             let state = systemd_state_local("fledx-agent").expect("inactive");
             assert_eq!(state, "inactive");
+        });
+    }
+
+    #[test]
+    fn systemctl_capture_ssh_retries_with_sudo() {
+        const SSH: &str = r#"
+if [ -n "$FAKE_CALLS_FILE" ]; then
+  echo "$*" >> "$FAKE_CALLS_FILE"
+fi
+case "$*" in
+  *sudo*) printf "%s" "sudo ok"; exit 0 ;;
+  *) printf "%s" "Failed to connect to bus: Permission denied" 1>&2; exit 1 ;;
+esac
+"#;
+
+        with_fake_commands(&[("ssh", SSH)], || {
+            let dir = tempdir().expect("tempdir");
+            let calls_file = dir.path().join("calls.txt");
+            let _calls_guard =
+                EnvVarGuard::set("FAKE_CALLS_FILE", calls_file.to_string_lossy().to_string());
+            let ssh = SshTarget::from_user_at_host("example.com", None, 22, None);
+            let output =
+                systemctl_capture_ssh(&ssh, &[OsString::from("is-active")]).expect("capture");
+            assert!(output.status.success());
+            assert_eq!(output.stdout, "sudo ok");
+
+            let calls = fs::read_to_string(&calls_file).expect("read calls");
+            assert_eq!(calls.lines().count(), 2);
         });
     }
 

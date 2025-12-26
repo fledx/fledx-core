@@ -723,6 +723,14 @@ exit ${FAKE_SSH_EXIT:-0}\n";
     }
 
     #[test]
+    fn linux_arch_from_uname_output_errors_when_token_missing() {
+        let err = LinuxArch::from_uname_output("Welcome\nLinux\n").expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("unsupported arch output"), "{msg}");
+        assert!(msg.contains("Welcome"), "{msg}");
+    }
+
+    #[test]
     fn linux_arch_rejects_unknown_values() {
         let err = LinuxArch::from_uname("i686").expect_err("should fail");
         let msg = err.to_string();
@@ -773,6 +781,13 @@ exit ${FAKE_SSH_EXIT:-0}\n";
         let out = "Output: /tmp/fledx-bootstrap-cp.123456:\r\n";
         let dir = extract_remote_mktemp_dir(out, "fledx-bootstrap-cp").expect("dir");
         assert_eq!(dir, "/tmp/fledx-bootstrap-cp.123456");
+    }
+
+    #[test]
+    fn mktemp_dir_extractor_rejects_control_characters() {
+        let out = "Output: /tmp/fledx-bootstrap-agent.AB\u{7f}CDEF\n";
+        let err = extract_remote_mktemp_dir(out, "fledx-bootstrap-agent").expect_err("should fail");
+        assert!(err.to_string().contains("did not contain"));
     }
 
     #[test]
@@ -930,6 +945,17 @@ exit ${FAKE_SSH_EXIT:-0}\n";
         })
         .expect("mktemp");
         assert_eq!(dir, "/tmp/fledx-bootstrap-agent.ABCDEF");
+    }
+
+    #[test]
+    fn detect_arch_over_ssh_uses_probe_output() {
+        let arch = with_fake_ssh("banner amd64\n", "", 0, || {
+            let target =
+                InstallTarget::Ssh(SshTarget::from_user_at_host("example.com", None, 22, None));
+            target.detect_arch(false)
+        })
+        .expect("detect arch");
+        assert_eq!(arch, LinuxArch::X86_64);
     }
 
     #[test]
