@@ -426,6 +426,9 @@ pub async fn prime_control_plane_info(state: &SharedState) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::make_test_state;
+    use reqwest::header::{HeaderMap, HeaderValue};
+    use uuid::Uuid;
 
     #[test]
     fn snapshot_parses_and_applies_defaults() {
@@ -493,5 +496,146 @@ mod tests {
         match err {
             CompatError::Incompatible { upgrade_url, .. } => assert!(upgrade_url.is_none()),
         }
+    }
+
+    #[tokio::test]
+    async fn update_from_headers_applies_snapshot() {
+        let state = make_test_state("http://localhost:49421".into(), Uuid::new_v4(), 1, 1, 1);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTROL_PLANE_VERSION_HEADER,
+            HeaderValue::from_static("1.2.3"),
+        );
+        headers.insert(
+            CONTROL_PLANE_COMPAT_MIN_HEADER,
+            HeaderValue::from_static("1.0.0"),
+        );
+        headers.insert(
+            CONTROL_PLANE_COMPAT_MAX_HEADER,
+            HeaderValue::from_static("2.0.0"),
+        );
+        headers.insert(
+            CONTROL_PLANE_COMPAT_UPGRADE_URL_HEADER,
+            HeaderValue::from_static(" https://upgrade.example "),
+        );
+
+        update_from_headers(&state, &headers).await.expect("update");
+
+        let guard = state.lock().await;
+        let snapshot = guard.compat.snapshot.as_ref().expect("snapshot");
+        assert_eq!(snapshot.control_plane_version, Version::new(1, 2, 3));
+        assert_eq!(snapshot.min_supported, Version::new(1, 0, 0));
+        assert_eq!(snapshot.max_supported, Version::new(2, 0, 0));
+        assert_eq!(
+            snapshot.upgrade_url.as_deref(),
+            Some("https://upgrade.example")
+        );
+    }
+
+    #[tokio::test]
+    async fn update_from_headers_ignores_missing_version() {
+        let state = make_test_state("http://localhost:49421".into(), Uuid::new_v4(), 1, 1, 1);
+        let headers = HeaderMap::new();
+        update_from_headers(&state, &headers).await.expect("update");
+
+        let guard = state.lock().await;
+        assert!(guard.compat.snapshot.is_none());
+    }
+
+    #[tokio::test]
+    async fn handle_error_response_returns_incompatible() {
+        let state = make_test_state("http://localhost:49421".into(), Uuid::new_v4(), 1, 1, 1);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTROL_PLANE_VERSION_HEADER,
+            HeaderValue::from_static("2.1.0"),
+        );
+        let body = serde_json::json!({
+            "error": UNSUPPORTED_AGENT_ERROR,
+            "agent_version": "0.1.0",
+            "min_supported": "2.0.0",
+            "max_supported": "2.0.1",
+            "upgrade_url": "https://upgrade.example"
+        })
+        .to_string();
+
+        let err = handle_error_response(&state, &headers, &body)
+            .await
+            .expect("handle")
+            .expect("compat error");
+
+        match err {
+            CompatError::Incompatible { min_supported, .. } => {
+                assert_eq!(min_supported, "2.0.0");
+            }
+        }
+
+        let guard = state.lock().await;
+        let snapshot = guard.compat.snapshot.as_ref().expect("snapshot");
+        assert_eq!(snapshot.control_plane_version, Version::new(2, 1, 0));
+    }
+
+    #[tokio::test]
+    async fn handle_error_response_ignores_invalid_body() {
+        let state = make_test_state("http://localhost:49421".into(), Uuid::new_v4(), 1, 1, 1);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            CONTROL_PLANE_VERSION_HEADER,
+            HeaderValue::from_static("1.2.3"),
+        );
+
+        let result = handle_error_response(&state, &headers, "not-json")
+            .await
+            .expect("handle");
+        assert!(result.is_none());
+
+        let guard = state.lock().await;
+        let snapshot = guard.compat.snapshot.as_ref().expect("snapshot");
+        assert_eq!(snapshot.control_plane_version, Version::new(1, 2, 3));
+    }
+
+    #[tokio::test]
+    async fn enforce_allows_supported_snapshot() {
+        let state = make_test_state("http://localhost:49421".into(), Uuid::new_v4(), 1, 1, 1);
+        let agent = Version::parse(version::VERSION).expect("agent version");
+        let snapshot = CompatSnapshot {
+            control_plane_version: agent.clone(),
+            min_supported: Version::new(0, 0, 0),
+            max_supported: Version::new(agent.major.saturating_add(1), 0, 0),
+            upgrade_url: None,
+        };
+
+        {
+            let mut guard = state.lock().await;
+            guard.compat.apply_snapshot(snapshot);
+        }
+
+        enforce(&state, "test").await.expect("supported");
+        let guard = state.lock().await;
+        assert!(guard.compat.last_error.is_none());
+    }
+
+    #[tokio::test]
+    async fn enforce_returns_error_when_incompatible() {
+        let state = make_test_state("http://localhost:49421".into(), Uuid::new_v4(), 1, 1, 1);
+        let agent = Version::parse(version::VERSION).expect("agent version");
+        let min_minor = agent.minor.saturating_add(1);
+        let snapshot = CompatSnapshot {
+            control_plane_version: agent.clone(),
+            min_supported: Version::new(agent.major, min_minor, 0),
+            max_supported: Version::new(agent.major, min_minor, 0),
+            upgrade_url: None,
+        };
+        {
+            let mut guard = state.lock().await;
+            guard.compat.apply_snapshot(snapshot);
+        }
+
+        let err = enforce(&state, "test").await.expect_err("incompatible");
+        assert!(err.to_string().contains("unsupported"));
+
+        let guard = state.lock().await;
+        assert!(guard.compat.backoff_attempts >= 1);
+        assert!(guard.compat.last_error.is_some());
     }
 }

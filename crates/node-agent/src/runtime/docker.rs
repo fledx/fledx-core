@@ -721,6 +721,21 @@ mod tests {
     }
 
     #[test]
+    fn extract_host_binding_detects_tcp_protocol() {
+        let msg = "Ports are not available: listen tcp 0.0.0.0:443: bind: address already in use";
+        let binding = extract_host_binding(msg).expect("binding");
+        assert_eq!(binding.0.as_deref(), Some("0.0.0.0"));
+        assert_eq!(binding.1, 443);
+        assert_eq!(binding.2, Some(PortProtocol::Tcp));
+    }
+
+    #[test]
+    fn extract_host_binding_returns_none_when_missing_token() {
+        let msg = "driver failed programming external connectivity: port is already allocated";
+        assert!(extract_host_binding(msg).is_none());
+    }
+
+    #[test]
     fn parse_host_port_token_handles_ip_and_port() {
         assert_eq!(
             parse_host_port_token("0.0.0.0:8080"),

@@ -190,4 +190,35 @@ mod tests {
         assert!(!start_called.load(Ordering::SeqCst));
         assert!(!wait_called.load(Ordering::SeqCst));
     }
+
+    #[tokio::test]
+    async fn run_with_propagates_start_errors() {
+        let start_called = Arc::new(AtomicBool::new(false));
+        let wait_called = Arc::new(AtomicBool::new(false));
+
+        let start_flag = start_called.clone();
+        let wait_flag = wait_called.clone();
+        let cfg = base_config();
+
+        let err = run_with(
+            move || {
+                let cfg = cfg.clone();
+                async move { Ok(cfg) }
+            },
+            move |_cfg, _opts| {
+                start_flag.store(true, Ordering::SeqCst);
+                async move { Err::<TestHandle, anyhow::Error>(anyhow::anyhow!("start failed")) }
+            },
+            move || {
+                wait_flag.store(true, Ordering::SeqCst);
+                async move {}
+            },
+        )
+        .await
+        .expect_err("start error");
+
+        assert!(err.to_string().contains("start failed"));
+        assert!(start_called.load(Ordering::SeqCst));
+        assert!(!wait_called.load(Ordering::SeqCst));
+    }
 }
