@@ -78,6 +78,7 @@ impl GatewayManager {
             match ensure_runtime(&mut guard) {
                 Ok(rt) => rt,
                 Err(err) => {
+                    drop(guard);
                     record_runtime_error(
                         state,
                         &runtime::ContainerRuntimeError::Connection {
@@ -314,8 +315,11 @@ async fn check_admin(client: &Client, admin_port: u16) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::ContainerRuntimeError;
+    use crate::state::{self, RuntimeFactory};
     use crate::test_support::{MockRuntime, base_config, state_with_runtime_and_config};
     use std::fs;
+    use std::sync::Arc;
 
     #[tokio::test]
     async fn starts_envoy_when_enabled() -> anyhow::Result<()> {
@@ -447,5 +451,60 @@ mod tests {
             Some("example.com".into())
         );
         assert_eq!(control_plane_host("not a url"), None);
+    }
+
+    #[tokio::test]
+    async fn tick_applies_backoff_when_runtime_unavailable() -> anyhow::Result<()> {
+        let mut cfg = base_config();
+        cfg.gateway.enabled = true;
+        cfg.gateway.envoy_image = Some("envoyproxy/envoy:v1".into());
+        let tmp = tempfile::tempdir()?;
+        cfg.volume_data_dir = tmp.path().to_string_lossy().to_string();
+
+        let runtime_factory: RuntimeFactory = Arc::new(|| {
+            Err(ContainerRuntimeError::Connection {
+                context: "test",
+                source: anyhow::anyhow!("down"),
+            })
+        });
+        let state = state::new_state(cfg, Client::new(), runtime_factory, None);
+        let mut manager = GatewayManager::default();
+
+        manager.tick(&state, &Client::new()).await?;
+
+        assert_eq!(manager.backoff_attempts, 1);
+        assert!(manager.backoff_until.is_some());
+        let guard = state.lock().await;
+        assert!(guard.runtime.is_none());
+        assert!(guard.runtime_backoff_attempts >= 1);
+        assert!(guard.runtime_backoff_until.is_some());
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tick_restarts_when_bootstrap_changes() -> anyhow::Result<()> {
+        let runtime = std::sync::Arc::new(MockRuntime::default());
+        let mut cfg = base_config();
+        cfg.gateway.enabled = true;
+        cfg.gateway.envoy_image = Some("envoyproxy/envoy:v1".into());
+        cfg.gateway.xds_host = Some("127.0.0.1".into());
+        let tmp = tempfile::tempdir()?;
+        cfg.volume_data_dir = tmp.path().to_string_lossy().to_string();
+
+        let state = state_with_runtime_and_config(runtime.clone(), cfg);
+        let mut manager = GatewayManager::default();
+        let client = Client::new();
+
+        manager.tick(&state, &client).await?;
+        assert_eq!(runtime.start_calls(), 1);
+
+        {
+            let mut guard = state.lock().await;
+            guard.cfg.gateway.xds_host = Some("10.0.0.1".into());
+        }
+
+        manager.tick(&state, &client).await?;
+        assert_eq!(runtime.start_calls(), 2);
+        Ok(())
     }
 }
