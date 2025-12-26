@@ -626,6 +626,24 @@ mod tests {
     }
 
     #[test]
+    fn map_connection_or_uses_wrapper_for_non_connection_errors() {
+        let err = DockerError::DockerResponseServerError {
+            status_code: 500,
+            message: "boom".into(),
+        };
+        let mapped = map_connection_or(err, "pull_image", |source| {
+            ContainerRuntimeError::PullImage {
+                image: "img".into(),
+                source: source.into(),
+            }
+        });
+        match mapped {
+            ContainerRuntimeError::PullImage { image, .. } => assert_eq!(image, "img"),
+            other => panic!("expected pull image error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn map_docker_error_handles_not_found_and_other() {
         let not_found = DockerError::DockerResponseServerError {
             status_code: 404,
@@ -730,6 +748,15 @@ mod tests {
     }
 
     #[test]
+    fn extract_host_binding_parses_port_without_ip() {
+        let msg = "Ports are not available: listen tcp :8080: bind: address already in use";
+        let binding = extract_host_binding(msg).expect("binding");
+        assert!(binding.0.is_none());
+        assert_eq!(binding.1, 8080);
+        assert_eq!(binding.2, Some(PortProtocol::Tcp));
+    }
+
+    #[test]
     fn extract_host_binding_returns_none_when_missing_token() {
         let msg = "driver failed programming external connectivity: port is already allocated";
         assert!(extract_host_binding(msg).is_none());
@@ -769,6 +796,19 @@ mod tests {
         assert_eq!(found.protocol, PortProtocol::Udp);
 
         let not_found = find_matching_mapping(&ports, Some("1.2.3.4"), 8080, None);
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn find_matching_mapping_rejects_protocol_mismatch() {
+        let ports = vec![PortMapping {
+            container_port: 80,
+            host_port: 8080,
+            protocol: PortProtocol::Tcp,
+            host_ip: None,
+        }];
+
+        let not_found = find_matching_mapping(&ports, None, 8080, Some(PortProtocol::Udp));
         assert!(not_found.is_none());
     }
 
