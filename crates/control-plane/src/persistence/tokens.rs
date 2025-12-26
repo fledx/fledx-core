@@ -83,7 +83,7 @@ pub async fn list_active_node_tokens(pool: &Db, node_id: Uuid) -> Result<Vec<Nod
         FROM node_tokens
         WHERE node_id = ?1
           AND disabled_at IS NULL
-          AND (expires_at IS NULL OR expires_at > datetime('now'))
+          AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
         ORDER BY created_at DESC
         "#,
     )
@@ -242,6 +242,30 @@ mod tests {
         let active = create_node_token(&db, node.id, "active".into(), Some(active_at))
             .await
             .unwrap();
+
+        let records = list_active_node_tokens(&db, node.id).await.unwrap();
+        let ids: HashSet<Uuid> = records.iter().map(|record| record.id).collect();
+        assert!(ids.contains(&active.id));
+        assert!(!ids.contains(&expired.id));
+    }
+
+    #[tokio::test]
+    async fn list_active_node_tokens_filters_same_day_expiry() {
+        let db = setup_db().await;
+        let node = nodes::create_node(&db, new_node("beta-now")).await.unwrap();
+        let now = Utc::now();
+
+        let expired = create_node_token(&db, node.id, "expired-now".into(), Some(now))
+            .await
+            .unwrap();
+        let active = create_node_token(
+            &db,
+            node.id,
+            "active-soon".into(),
+            Some(now + chrono::Duration::minutes(5)),
+        )
+        .await
+        .unwrap();
 
         let records = list_active_node_tokens(&db, node.id).await.unwrap();
         let ids: HashSet<Uuid> = records.iter().map(|record| record.id).collect();
