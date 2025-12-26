@@ -191,7 +191,11 @@ fn earliest_rotation(bundles: &[ServiceIdentityBundle]) -> Option<DateTime<Utc>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_support::base_config;
+    use crate::{
+        state,
+        test_support::{MockRuntime, base_config, state_with_runtime_and_config},
+    };
+    use httpmock::{Method::GET, MockServer};
 
     #[test]
     fn persist_writes_files_with_permissions() {
@@ -332,5 +336,87 @@ mod tests {
 
         let earliest = earliest_rotation(&bundles).expect("rotation");
         assert!(earliest <= now + chrono::Duration::seconds(10));
+    }
+
+    #[tokio::test]
+    async fn sync_bundles_writes_and_nudges_on_change() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/ready");
+                then.status(200);
+            })
+            .await;
+
+        let mut cfg = base_config();
+        let dir = tempfile::tempdir().unwrap();
+        cfg.service_identity_dir = dir.path().to_string_lossy().to_string();
+        cfg.gateway.admin_port = server.port();
+
+        let runtime = std::sync::Arc::new(MockRuntime::default());
+        let state = state_with_runtime_and_config(runtime, cfg);
+
+        let bundle = ServiceIdentityBundle {
+            identity: "service://tenant/app".into(),
+            cert_pem: "CERT".into(),
+            key_pem: "KEY".into(),
+            ca_pem: Some("CA".into()),
+            expires_at: None,
+            rotate_after: None,
+        };
+
+        state::set_service_identities(&state, vec![bundle], Some("fp1".into())).await;
+
+        let mut last_applied_fp = None;
+        sync_bundles(&state, &Client::new(), &mut last_applied_fp)
+            .await
+            .expect("sync succeeds");
+
+        assert_eq!(last_applied_fp.as_deref(), Some("fp1"));
+        mock.assert_async().await;
+
+        let base = dir.path().join("service-tenant-app");
+        assert!(base.join(CERT_FILENAME).exists());
+        assert!(base.join(KEY_FILENAME).exists());
+        assert!(base.join(CA_FILENAME).exists());
+    }
+
+    #[tokio::test]
+    async fn sync_bundles_skips_when_fingerprint_matches() {
+        let server = MockServer::start_async().await;
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path("/ready");
+                then.status(200);
+            })
+            .await;
+
+        let mut cfg = base_config();
+        let dir = tempfile::tempdir().unwrap();
+        cfg.service_identity_dir = dir.path().to_string_lossy().to_string();
+        cfg.gateway.admin_port = server.port();
+
+        let runtime = std::sync::Arc::new(MockRuntime::default());
+        let state = state_with_runtime_and_config(runtime, cfg);
+
+        let bundle = ServiceIdentityBundle {
+            identity: "service://tenant/app".into(),
+            cert_pem: "CERT".into(),
+            key_pem: "KEY".into(),
+            ca_pem: None,
+            expires_at: None,
+            rotate_after: None,
+        };
+
+        state::set_service_identities(&state, vec![bundle], Some("fp1".into())).await;
+
+        let mut last_applied_fp = Some("fp1".into());
+        sync_bundles(&state, &Client::new(), &mut last_applied_fp)
+            .await
+            .expect("sync succeeds");
+
+        assert_eq!(last_applied_fp.as_deref(), Some("fp1"));
+        assert_eq!(mock.calls(), 0);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
     }
 }
