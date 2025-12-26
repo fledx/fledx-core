@@ -952,6 +952,66 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
     }
 
+    #[tokio::test]
+    async fn ensure_runtime_returns_existing_runtime_without_factory() {
+        let runtime: DynContainerRuntime = Arc::new(crate::test_support::MockRuntime::default());
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let factory: RuntimeFactory = {
+            let attempts = attempts.clone();
+            Arc::new(move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err(ContainerRuntimeError::Connection {
+                    context: "factory",
+                    source: anyhow::anyhow!("down"),
+                })
+            })
+        };
+
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let state = new_state(cfg, client, factory, Some(runtime.clone()));
+
+        let mut guard = state.lock().await;
+        let res = ensure_runtime(&mut guard).expect("runtime should be reused");
+        drop(guard);
+
+        assert!(Arc::ptr_eq(&res, &runtime));
+        assert_eq!(attempts.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn ensure_runtime_respects_reconnect_backoff() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let factory: RuntimeFactory = {
+            let attempts = attempts.clone();
+            Arc::new(move || {
+                attempts.fetch_add(1, Ordering::SeqCst);
+                Err(ContainerRuntimeError::Connection {
+                    context: "factory",
+                    source: anyhow::anyhow!("down"),
+                })
+            })
+        };
+
+        let cfg = base_config();
+        let client = reqwest::Client::new();
+        let state = new_state(cfg, client, factory, None);
+
+        let mut guard = state.lock().await;
+        guard.runtime_backoff_until = Some(Instant::now() + Duration::from_secs(60));
+        let err = match ensure_runtime(&mut guard) {
+            Ok(_) => panic!("backoff should block reconnect"),
+            Err(err) => err,
+        };
+        drop(guard);
+
+        assert!(
+            err.to_string().contains("backoff"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(attempts.load(Ordering::SeqCst), 0);
+    }
+
     #[test]
     fn downsample_metrics_globally() {
         let key = ReplicaKey::new(Uuid::new_v4(), 0);
