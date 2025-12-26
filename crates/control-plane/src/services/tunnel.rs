@@ -632,6 +632,12 @@ mod tests {
     }
 
     #[test]
+    fn parse_bearer_rejects_empty_token() {
+        let value = HeaderValue::from_str("Bearer ").expect("header");
+        assert_eq!(parse_bearer(&value), None);
+    }
+
+    #[test]
     fn try_parse_frame_returns_none_for_short_buffer() {
         let mut buffer = BytesMut::from(&[0x00, 0x01][..]);
         assert!(try_parse_frame(&mut buffer).unwrap().is_none());
@@ -666,6 +672,27 @@ mod tests {
         let parsed = try_parse_frame(&mut buffer).expect("parse");
         assert!(matches!(parsed, Some(TunnelFrame::Heartbeat { .. })));
         assert_eq!(&buffer[..], b"extra");
+    }
+
+    #[test]
+    fn try_parse_frame_parses_multiple_frames() {
+        let first = TunnelFrame::Heartbeat {
+            sent_at: "2025-01-01T00:00:00Z".to_string(),
+        };
+        let second = TunnelFrame::HeartbeatAck {
+            received_at: "2025-01-01T00:00:01Z".to_string(),
+        };
+        let mut buffer = framed_payload(&first);
+        buffer.extend_from_slice(&framed_payload(&second));
+
+        let parsed_first = try_parse_frame(&mut buffer).expect("parse first");
+        assert!(matches!(parsed_first, Some(TunnelFrame::Heartbeat { .. })));
+        let parsed_second = try_parse_frame(&mut buffer).expect("parse second");
+        assert!(matches!(
+            parsed_second,
+            Some(TunnelFrame::HeartbeatAck { .. })
+        ));
+        assert!(buffer.is_empty());
     }
 
     #[test]

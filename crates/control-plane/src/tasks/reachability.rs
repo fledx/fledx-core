@@ -367,8 +367,7 @@ mod tests {
     use crate::config::PortsConfig;
     use crate::persistence::{deployments, migrations, nodes};
 
-    #[tokio::test]
-    async fn sweep_marks_stale_nodes_and_reschedules() {
+    async fn setup_db() -> (db::Db, scheduler::RoundRobinScheduler, PortsConfig) {
         let db = migrations::init_pool("sqlite::memory:")
             .await
             .expect("db init");
@@ -380,45 +379,49 @@ mod tests {
             range_end: 40000,
             public_host: None,
         };
+        (db, scheduler, ports)
+    }
+
+    async fn create_node(
+        db: &db::Db,
+        name: &str,
+        last_seen: Option<chrono::DateTime<chrono::Utc>>,
+        status: nodes::NodeStatus,
+    ) -> nodes::NodeRecord {
+        nodes::create_node(
+            db,
+            nodes::NewNode {
+                id: Uuid::new_v4(),
+                name: Some(name.to_string()),
+                token_hash: format!("{name}-hash"),
+                arch: None,
+                os: None,
+                public_ip: None,
+                public_host: None,
+                labels: None,
+                capacity: None,
+                last_seen,
+                status,
+            },
+        )
+        .await
+        .expect("node")
+    }
+
+    #[tokio::test]
+    async fn sweep_marks_stale_nodes_and_reschedules() {
+        let (db, scheduler, ports) = setup_db().await;
         let now = Utc::now();
 
-        let ready_node = nodes::create_node(
-            &db,
-            nodes::NewNode {
-                id: Uuid::new_v4(),
-                name: Some("ready".into()),
-                token_hash: "ready-hash".into(),
-                arch: None,
-                os: None,
-                public_ip: None,
-                public_host: None,
-                labels: None,
-                capacity: None,
-                last_seen: Some(now),
-                status: nodes::NodeStatus::Ready,
-            },
-        )
-        .await
-        .expect("ready node");
+        let ready_node = create_node(&db, "ready", Some(now), nodes::NodeStatus::Ready).await;
 
-        let stale_node = nodes::create_node(
+        let stale_node = create_node(
             &db,
-            nodes::NewNode {
-                id: Uuid::new_v4(),
-                name: Some("stale".into()),
-                token_hash: "stale-hash".into(),
-                arch: None,
-                os: None,
-                public_ip: None,
-                public_host: None,
-                labels: None,
-                capacity: None,
-                last_seen: Some(now - ChronoDuration::seconds(120)),
-                status: nodes::NodeStatus::Ready,
-            },
+            "stale",
+            Some(now - ChronoDuration::seconds(120)),
+            nodes::NodeStatus::Ready,
         )
-        .await
-        .expect("stale node");
+        .await;
 
         let deployment_id = Uuid::new_v4();
         deployments::create_deployment(
@@ -465,6 +468,135 @@ mod tests {
             .expect("fetch stale node")
             .expect("stale node missing");
         assert_eq!(stale_after.status, nodes::NodeStatus::Unreachable);
+
+        let assignments = deployments::list_assignments_for_deployment(&db, deployment_id)
+            .await
+            .expect("list assignments");
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].node_id, ready_node.id);
+
+        let deployment = deployments::get_deployment(&db, deployment_id)
+            .await
+            .expect("fetch deployment")
+            .expect("deployment missing");
+        assert_eq!(deployment.status, deployments::DeploymentStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn sweep_reschedule_disabled_keeps_assignments() {
+        let (db, scheduler, ports) = setup_db().await;
+        let now = Utc::now();
+
+        let _ready_node = create_node(&db, "ready", Some(now), nodes::NodeStatus::Ready).await;
+        let stale_node = create_node(
+            &db,
+            "stale",
+            Some(now - ChronoDuration::seconds(120)),
+            nodes::NodeStatus::Ready,
+        )
+        .await;
+
+        let deployment_id = Uuid::new_v4();
+        deployments::create_deployment(
+            &db,
+            deployments::NewDeployment {
+                id: deployment_id,
+                name: "static".into(),
+                image: "img:2".into(),
+                replicas: 1,
+                command: None,
+                env: None,
+                secret_env: None,
+                secret_files: None,
+                volumes: None,
+                ports: None,
+                requires_public_ip: false,
+                tunnel_only: false,
+                constraints: None,
+                placement: None,
+                health: None,
+                desired_state: deployments::DesiredState::Running,
+                assigned_node_id: Some(stale_node.id),
+                status: deployments::DeploymentStatus::Running,
+                generation: 1,
+                assignments: vec![deployments::NewDeploymentAssignment {
+                    replica_number: 0,
+                    node_id: stale_node.id,
+                    ports: None,
+                }],
+            },
+        )
+        .await
+        .expect("deployment");
+
+        let report =
+            run_reachability_sweep(&db, &scheduler, Duration::from_secs(60), false, &ports)
+                .await
+                .expect("sweep");
+
+        assert_eq!(report.marked_unreachable, 1);
+        assert_eq!(report.rescheduled, 0);
+        assert_eq!(report.marked_pending, 0);
+
+        let stale_after = nodes::get_node(&db, stale_node.id)
+            .await
+            .expect("fetch stale node")
+            .expect("stale node missing");
+        assert_eq!(stale_after.status, nodes::NodeStatus::Unreachable);
+
+        let assignments = deployments::list_assignments_for_deployment(&db, deployment_id)
+            .await
+            .expect("list assignments");
+        assert_eq!(assignments.len(), 1);
+        assert_eq!(assignments[0].node_id, stale_node.id);
+
+        let deployment = deployments::get_deployment(&db, deployment_id)
+            .await
+            .expect("fetch deployment")
+            .expect("deployment missing");
+        assert_eq!(deployment.status, deployments::DeploymentStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn reschedule_marks_pending_when_under_assigned() {
+        let (db, scheduler, ports) = setup_db().await;
+        let now = Utc::now();
+
+        let ready_node = create_node(&db, "ready", Some(now), nodes::NodeStatus::Ready).await;
+        let deployment_id = Uuid::new_v4();
+        deployments::create_deployment(
+            &db,
+            deployments::NewDeployment {
+                id: deployment_id,
+                name: "under".into(),
+                image: "img:3".into(),
+                replicas: 2,
+                command: None,
+                env: None,
+                secret_env: None,
+                secret_files: None,
+                volumes: None,
+                ports: None,
+                requires_public_ip: false,
+                tunnel_only: false,
+                constraints: None,
+                placement: None,
+                health: None,
+                desired_state: deployments::DesiredState::Running,
+                assigned_node_id: None,
+                status: deployments::DeploymentStatus::Running,
+                generation: 1,
+                assignments: Vec::new(),
+            },
+        )
+        .await
+        .expect("deployment");
+
+        let report = reschedule_deployments(&db, &scheduler, &ports, None)
+            .await
+            .expect("reschedule");
+        assert_eq!(report.rescheduled, 0);
+        assert_eq!(report.marked_pending, 1);
 
         let assignments = deployments::list_assignments_for_deployment(&db, deployment_id)
             .await
