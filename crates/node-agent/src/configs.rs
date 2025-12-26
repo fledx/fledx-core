@@ -202,6 +202,7 @@ pub fn config_fingerprint(configs: &[ConfigDesired]) -> Option<String> {
 mod tests {
     use super::*;
     use crate::api::{ConfigEntry, ConfigMetadata, NodeConfigResponse};
+    use crate::compat;
     use crate::runtime::DynContainerRuntime;
     use crate::telemetry;
     use crate::test_support::{MockRuntime, base_config, state_with_runtime_and_config};
@@ -343,7 +344,7 @@ mod tests {
 
     #[tokio::test]
     async fn refresh_configs_handles_auth_error_without_crash() {
-        telemetry::init_metrics_recorder();
+        let handle = telemetry::init_metrics_recorder();
 
         let server = MockServer::start_async().await;
         let node_id = Uuid::new_v4();
@@ -373,6 +374,12 @@ mod tests {
             assert_eq!(guard.configs_backoff_attempts, 1);
             assert!(guard.configs_backoff_until.is_some());
         }
+
+        let rendered = handle.render();
+        assert!(
+            rendered.contains("node_agent_config_fetch_total{result=\"error\""),
+            "missing error telemetry: {rendered}"
+        );
     }
 
     #[tokio::test]
@@ -452,6 +459,49 @@ mod tests {
         let guard = state.lock().await;
         assert_eq!(guard.configs_backoff_attempts, 0);
         assert!(guard.configs_backoff_until.is_none());
+    }
+
+    #[tokio::test]
+    async fn refresh_configs_records_compat_error_metric() {
+        let handle = telemetry::init_metrics_recorder();
+
+        let server = MockServer::start_async().await;
+        let node_id = Uuid::new_v4();
+        let mut cfg = base_config();
+        cfg.control_plane_url = server.url("");
+        cfg.node_id = node_id;
+
+        let runtime: DynContainerRuntime = std::sync::Arc::new(MockRuntime::default());
+        let state = state_with_runtime_and_config(runtime, cfg);
+
+        let path = format!("/api/v1/nodes/{}/configs", node_id);
+        let payload = compat::AgentVersionError {
+            error: compat::UNSUPPORTED_AGENT_ERROR.to_string(),
+            agent_version: "0.1.0".into(),
+            min_supported: "1.0.0".into(),
+            max_supported: "2.0.0".into(),
+            upgrade_url: "https://example.com".into(),
+        };
+        let mock = server
+            .mock_async(|when, then| {
+                when.method(GET).path(path.clone());
+                then.status(400)
+                    .header(compat::CONTROL_PLANE_VERSION_HEADER, "1.2.3")
+                    .json_body_obj(&payload);
+            })
+            .await;
+
+        let err = refresh_configs(&state)
+            .await
+            .expect_err("compat error should surface");
+        assert!(err.downcast_ref::<compat::CompatError>().is_some());
+        mock.assert_async().await;
+
+        let rendered = handle.render();
+        assert!(
+            rendered.contains("node_agent_config_fetch_total{result=\"compat_error\""),
+            "missing compat_error telemetry: {rendered}"
+        );
     }
 
     #[test]

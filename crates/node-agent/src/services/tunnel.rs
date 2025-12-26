@@ -1390,6 +1390,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_next_frame_parses_multiple_frames_from_buffer() {
+        let (mut send_stream, mut recv_stream, client_task, server_task) = h2_stream_pair().await;
+        let mut buffer = BytesMut::new();
+
+        send_frame(
+            &mut send_stream,
+            TunnelFrame::Heartbeat {
+                sent_at: "2025-01-01T00:00:00Z".to_string(),
+            },
+        )
+        .await
+        .expect("send frame 1");
+        send_frame(
+            &mut send_stream,
+            TunnelFrame::HeartbeatAck {
+                received_at: "2025-01-01T00:00:01Z".to_string(),
+            },
+        )
+        .await
+        .expect("send frame 2");
+        send_stream.send_data(Bytes::new(), true).expect("close");
+
+        let first = read_next_frame(&mut recv_stream, &mut buffer)
+            .await
+            .expect("read")
+            .expect("frame");
+        assert!(matches!(first, TunnelFrame::Heartbeat { .. }));
+
+        let second = read_next_frame(&mut recv_stream, &mut buffer)
+            .await
+            .expect("read")
+            .expect("frame");
+        assert!(matches!(second, TunnelFrame::HeartbeatAck { .. }));
+
+        client_task.abort();
+        server_task.abort();
+    }
+
+    #[tokio::test]
     async fn read_next_frame_returns_none_on_clean_close() {
         let (mut send_stream, mut recv_stream, client_task, server_task) = h2_stream_pair().await;
         send_stream.send_data(Bytes::new(), true).expect("send");
@@ -1399,6 +1438,27 @@ mod tests {
             .await
             .expect("read");
         assert!(frame.is_none());
+
+        client_task.abort();
+        server_task.abort();
+    }
+
+    #[tokio::test]
+    async fn read_next_frame_errors_on_invalid_json_payload() {
+        let (mut send_stream, mut recv_stream, client_task, server_task) = h2_stream_pair().await;
+
+        let payload = b"not-json";
+        let mut buffer = BytesMut::with_capacity(4 + payload.len());
+        buffer.put_u32(payload.len() as u32);
+        buffer.extend_from_slice(payload);
+        send_stream.send_data(buffer.freeze(), true).expect("send");
+
+        let mut recv_buffer = BytesMut::new();
+        let err = read_next_frame(&mut recv_stream, &mut recv_buffer)
+            .await
+            .expect_err("should fail");
+        let msg = err.to_string();
+        assert!(msg.contains("parse tunnel frame"), "{msg}");
 
         client_task.abort();
         server_task.abort();
