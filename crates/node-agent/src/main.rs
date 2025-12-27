@@ -31,12 +31,25 @@ where
     WaitFut: Future<Output = ()>,
     Handle: ShutdownHandle,
 {
+    install_rustls_provider();
     let cfg = load().await?;
     let agent = start(cfg, AgentOptions::default()).await?;
 
     wait().await;
     info!("shutdown signal received, stopping agent");
     agent.shutdown().await
+}
+
+fn try_install_rustls_provider() -> Result<(), std::sync::Arc<rustls::crypto::CryptoProvider>> {
+    rustls::crypto::aws_lc_rs::default_provider().install_default()
+}
+
+fn install_rustls_provider() {
+    if rustls::crypto::CryptoProvider::get_default().is_some() {
+        return;
+    }
+
+    let _ = try_install_rustls_provider();
 }
 
 #[tokio::main]
@@ -119,6 +132,15 @@ mod tests {
             force_empty_capacity: false,
             cleanup_on_shutdown: false,
         }
+    }
+
+    #[test]
+    fn install_rustls_provider_sets_default_and_is_idempotent() {
+        install_rustls_provider();
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
+
+        let second_attempt = try_install_rustls_provider();
+        assert!(second_attempt.is_err());
     }
 
     #[tokio::test]
