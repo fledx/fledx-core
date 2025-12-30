@@ -15,11 +15,12 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze (CodeQL)
+    name: "analyze: codeql"
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
@@ -27,12 +28,12 @@ jobs:
           languages: rust, actions
           build-mode: none
 
-      - name: Install Rust toolchain
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.92.0
 
-      - name: Cache Rust artifacts
+      - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{ runner.os }}-codeql
@@ -40,7 +41,7 @@ jobs:
       - name: Build workspace
         run: cargo build --workspace --all-features --verbose
 
-      - name: Perform CodeQL Analysis
+      - name: Analyze
         uses: github/codeql-action/analyze@v3
         with:
           category: "/language:rust"

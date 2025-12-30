@@ -64,7 +64,7 @@ jobs:
           components: ${{ inputs.components }}
           targets: ${{ inputs.targets }}
 
-      - name: Cache Rust artifacts
+      - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{ runner.os }}-${{ inputs.cache_shared_key }}

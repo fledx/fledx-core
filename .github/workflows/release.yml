@@ -21,7 +21,7 @@ env:
 
 jobs:
   prepare:
-    name: Prepare Release
+    name: "prep: release"
     runs-on: ubuntu-latest
     outputs:
       mode: ${{ steps.resolve.outputs.mode }}
@@ -83,7 +83,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build (${{ matrix.target }})
+    name: "build: assets"
     needs: prepare
     if: needs.prepare.outputs.tag != ''
     runs-on: ${{ matrix.os }}
@@ -98,18 +98,19 @@ jobs:
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ needs.prepare.outputs.checkout_ref }}
 
-      - name: Install Rust toolchain
+      - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.92.0
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust artifacts
+      - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
           shared-key: ${{ runner.os }}-${{ matrix.target }}-${{ needs.prepare.outputs.mode }}
@@ -160,7 +161,7 @@ jobs:
         env:
           FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS: ${{ secrets.FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS }}
 
-      - name: Package binaries
+      - name: Package artifacts
         run: |
           cd target/${{ matrix.target }}/release
           for bin in fledx fledx-cp fledx-agent; do
@@ -232,7 +233,7 @@ jobs:
             fi
           done
 
-      - name: Upload release artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: fledx-${{ needs.prepare.outputs.tag }}-${{ matrix.arch }}-linux
@@ -249,19 +250,20 @@ jobs:
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256.sig
 
   publish-nightly:
-    name: Publish Nightly
+    name: "release: nightly"
     needs:
       - prepare
       - build
     if: needs.prepare.outputs.mode == 'nightly'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ needs.prepare.outputs.checkout_ref }}
 
-      - name: Download staging artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
@@ -319,7 +321,7 @@ jobs:
               --target "$sha"
           fi
 
-      - name: Upload release assets (clobber)
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -344,19 +346,19 @@ jobs:
             "${files[@]}" --clobber
 
   publish-release:
-    name: Publish Release
+    name: "release: github"
     needs:
       - prepare
       - build
     if: needs.prepare.outputs.mode == 'tag'
     runs-on: ubuntu-latest
     steps:
-      - name: Download release artifacts
+      - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Validate release artifacts
+      - name: Validate artifacts
         shell: bash
         run: |
           set -euo pipefail
@@ -411,7 +413,7 @@ jobs:
             exit 1
           fi
 
-      - name: Create GitHub Release
+      - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

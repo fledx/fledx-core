@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   security-audit:
-    name: Security Audit
+    name: "audit: security"
     uses: ./.github/workflows/rust-job.yml
     with:
       cache_shared_key: security

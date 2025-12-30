@@ -39,7 +39,7 @@ jobs:
         FLEDX_RUN_CHAOS=0 cargo test --workspace --verbose
 
   coverage:
-    name: "coverage: llvm-cov"
+    name: "test: coverage"
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     uses: ./.github/workflows/rust-job.yml
     with:
