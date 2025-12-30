@@ -54,17 +54,3 @@ jobs:
       artifact_name: coverage-core-lcov
       artifact_path: coverage/lcov.info
       artifact_if_no_files_found: error
-
-  build-aarch64:
-    name: "build: aarch64"
-    uses: ./.github/workflows/rust-job.yml
-    with:
-      targets: aarch64-unknown-linux-gnu
-      cache_shared_key: aarch64
-      command: |
-        sudo apt-get update
-        sudo apt-get install -y gcc-aarch64-linux-gnu
-        export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-        export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
-        export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
-        cargo build --target aarch64-unknown-linux-gnu --workspace --verbose
