@@ -47,7 +47,7 @@ jobs:
       cache_shared_key: coverage
       cache_bin: true
       command: |
-        cargo install --locked cargo-llvm-cov
+        cargo install --locked cargo-llvm-cov --version 0.6.21
         mkdir -p coverage
         FLEDX_RUN_CHAOS=0 cargo llvm-cov --workspace --all-features --lcov \
           --output-path coverage/lcov.info
