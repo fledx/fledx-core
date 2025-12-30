@@ -1,147 +1,70 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    branches: [main]
+    branches:
+      - main
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
-
 jobs:
-  # Format and lint checks
-  code-quality:
-    name: Code Quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  lint-rust:
+    name: "lint: rust"
+    uses: ./.github/workflows/rust-job.yml
+    with:
+      components: rustfmt,clippy
+      cache_shared_key: lint
+      cache_bin: true
+      command: |
+        cargo fmt --all -- --check
+        cargo clippy --workspace --all-targets --all-features -- -D warnings
+        cargo install --locked cargo-deny
+        cargo deny check
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.92.0
-          components: rustfmt, clippy
-
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ runner.os }}-host
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: Install cargo-deny
-        run: cargo install --locked cargo-deny
-
-      - name: Run cargo deny
-        run: cargo deny check
-
-  # Build and test on x86_64
-  test-x86_64:
-    name: Test (x86_64-unknown-linux-gnu)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.92.0
-
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ runner.os }}-x86_64
-
-      - name: Build workspace
-        run: cargo build --workspace --verbose
-
-      - name: Run tests
-        run: cargo test --workspace --verbose
-        env:
-          # Skip chaos tests in CI
-          FLEDX_RUN_CHAOS: "0"
+  test-rust:
+    name: "test: rust"
+    uses: ./.github/workflows/rust-job.yml
+    with:
+      cache_shared_key: test
+      command: |
+        cargo build --workspace --verbose
+        FLEDX_RUN_CHAOS=0 cargo test --workspace --verbose
 
   coverage:
-    name: Coverage (llvm-cov)
+    name: "coverage: llvm-cov"
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    uses: ./.github/workflows/rust-job.yml
+    with:
+      components: llvm-tools-preview
+      cache_shared_key: coverage
+      cache_bin: true
+      command: |
+        cargo install --locked cargo-llvm-cov
+        mkdir -p coverage
+        FLEDX_RUN_CHAOS=0 cargo llvm-cov --workspace --all-features --lcov \
+          --output-path coverage/lcov.info
+      artifact_name: coverage-core-lcov
+      artifact_path: coverage/lcov.info
+      artifact_if_no_files_found: error
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.92.0
-
-      - name: Install llvm-tools-preview
-        run: rustup component add llvm-tools-preview
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-llvm-cov
-
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ runner.os }}-coverage
-
-      - name: Run coverage
-        run: |
-          mkdir -p coverage
-          cargo llvm-cov --workspace --all-features --lcov \
-            --output-path coverage/lcov.info
-        env:
-          # Skip chaos tests in CI
-          FLEDX_RUN_CHAOS: "0"
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-core-lcov
-          path: coverage/lcov.info
-          if-no-files-found: error
-
-  # Build on aarch64 (cross-compilation check)
   build-aarch64:
-    name: Build (aarch64-unknown-linux-gnu)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.92.0
-          targets: aarch64-unknown-linux-gnu
-
-      - name: Install cross-compilation tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
-      - name: Cache Rust artifacts
-        uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: ${{ runner.os }}-aarch64
-
-      - name: Build for aarch64
-        run: |
-          cargo build --target aarch64-unknown-linux-gnu --workspace --verbose
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
+    name: "build: aarch64"
+    uses: ./.github/workflows/rust-job.yml
+    with:
+      targets: aarch64-unknown-linux-gnu
+      cache_shared_key: aarch64
+      command: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu
+        export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+        export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+        export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
+        cargo build --target aarch64-unknown-linux-gnu --workspace --verbose
