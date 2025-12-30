@@ -3,35 +3,105 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  build:
-    name: Build Release (${{ matrix.target }})
+  prepare:
+    name: Prepare Release
     runs-on: ubuntu-latest
+    outputs:
+      mode: ${{ steps.resolve.outputs.mode }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
+      release_name: ${{ steps.resolve.outputs.release_name }}
+      build_id: ${{ steps.resolve.outputs.build_id }}
+    steps:
+      - name: Resolve release target
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          ref="${{ github.ref }}"
+          mode=""
+          tag=""
+          version=""
+          checkout_ref=""
+          release_name=""
+          build_id=""
+          nightly_date="$(date -u +%Y%m%d)"
+
+          if [[ "$ref" == refs/tags/* ]]; then
+            mode="tag"
+            tag="${ref#refs/tags/}"
+            if [ -z "$tag" ]; then
+              echo "tag ref is required" >&2
+              exit 1
+            fi
+            if [[ "$tag" != v* ]]; then
+              echo "tag must start with v (e.g. v1.2.3)" >&2
+              exit 1
+            fi
+            version="${tag#v}"
+            if [ -z "$version" ]; then
+              echo "version could not be derived from tag: $tag" >&2
+              exit 1
+            fi
+            checkout_ref="$tag"
+            release_name="Release ${tag}"
+          else
+            mode="nightly"
+            tag="nightly"
+            version="nightly"
+            checkout_ref="${{ github.sha }}"
+            short_sha="$(printf '%s' "${{ github.sha }}" | cut -c1-12)"
+            build_id="nightly-${nightly_date}-${short_sha}"
+            release_name="Nightly (${build_id})"
+          fi
+
+          {
+            echo "mode=$mode"
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "checkout_ref=$checkout_ref"
+            echo "release_name=$release_name"
+            echo "build_id=$build_id"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
             arch: x86_64
-          - target: aarch64-unknown-linux-gnu
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm64
             arch: aarch64
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
+            target: aarch64-unknown-linux-gnu
     steps:
-      - name: Get version from tag
-        id: get_version
-        run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -39,23 +109,17 @@ jobs:
           toolchain: 1.92.0
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compilation tools (aarch64)
-        if: matrix.arch == 'aarch64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ${{ runner.os }}-${{ matrix.target }}
+          shared-key: ${{ runner.os }}-${{ matrix.target }}-${{ needs.prepare.outputs.mode }}
 
       - name: Export version
         run: |
-          version="${{ steps.get_version.outputs.version }}"
-          echo "VERSION=${version#v}" >> "$GITHUB_ENV"
+          echo "VERSION=${{ needs.prepare.outputs.version }}" >> "$GITHUB_ENV"
 
       - name: Validate tag matches Cargo versions
+        if: needs.prepare.outputs.mode == 'tag'
         run: |
           if [ -z "$VERSION" ]; then
             echo "VERSION is not set" >&2
@@ -94,9 +158,6 @@ jobs:
 
           cargo build --release --target ${{ matrix.target }} --workspace
         env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-          CC_aarch64_unknown_linux_gnu: aarch64-linux-gnu-gcc
-          CXX_aarch64_unknown_linux_gnu: aarch64-linux-gnu-g++
           FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS: ${{ secrets.FLEDX_RELEASE_SIGNING_ED25519_PUBKEYS }}
 
       - name: Package binaries
@@ -174,7 +235,7 @@ jobs:
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: fledx-release-${{ matrix.arch }}-linux
+          name: fledx-${{ needs.prepare.outputs.tag }}-${{ matrix.arch }}-linux
           if-no-files-found: error
           path: |
             target/${{ matrix.target }}/release/fledx-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz
@@ -187,9 +248,107 @@ jobs:
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256
             target/${{ matrix.target }}/release/fledx-agent-${{ env.VERSION }}-${{ matrix.arch }}-linux.tar.gz.sha256.sig
 
-  publish:
+  publish-nightly:
+    name: Publish Nightly
+    needs:
+      - prepare
+      - build
+    if: needs.prepare.outputs.mode == 'nightly'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Download staging artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Update nightly tag
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -f nightly "${{ needs.prepare.outputs.checkout_ref }}"
+          git push -f origin refs/tags/nightly
+
+      - name: Create or update nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD_ID: ${{ needs.prepare.outputs.build_id }}
+        shell: bash
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "missing GH_TOKEN" >&2
+            exit 1
+          fi
+
+          if [ -z "${BUILD_ID:-}" ]; then
+            echo "missing BUILD_ID (prepare output)" >&2
+            exit 1
+          fi
+
+          title="Nightly (${BUILD_ID})"
+          repo="${GITHUB_REPOSITORY}"
+          sha="${{ needs.prepare.outputs.checkout_ref }}"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
+          notes_file="$(mktemp)"
+          trap 'rm -f "$notes_file"' EXIT
+          {
+            printf '%s\n' "Automated nightly pre-release build."
+            printf '\n'
+            printf '%s\n' "- Build ID: ${BUILD_ID}"
+            printf '%s\n' "- Commit: ${sha}"
+            printf '%s\n' "- Run: ${run_url}"
+          } >"$notes_file"
+
+          if gh release view nightly --repo "$repo" >/dev/null 2>&1; then
+            gh release edit nightly --repo "$repo" \
+              --title "$title" \
+              --notes-file "$notes_file" \
+              --prerelease
+          else
+            gh release create nightly --repo "$repo" \
+              --title "$title" \
+              --notes-file "$notes_file" \
+              --prerelease \
+              --target "$sha"
+          fi
+
+      - name: Upload release assets (clobber)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "missing GH_TOKEN" >&2
+            exit 1
+          fi
+
+          if [ ! -d artifacts ]; then
+            echo "artifacts directory is missing" >&2
+            exit 1
+          fi
+
+          mapfile -d '' files < <(find artifacts -type f -print0)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "no files found under artifacts/" >&2
+            exit 1
+          fi
+
+          gh release upload nightly --repo "$GITHUB_REPOSITORY" \
+            "${files[@]}" --clobber
+
+  publish-release:
     name: Publish Release
-    needs: build
+    needs:
+      - prepare
+      - build
+    if: needs.prepare.outputs.mode == 'tag'
     runs-on: ubuntu-latest
     steps:
       - name: Download release artifacts
@@ -202,10 +361,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          tag="${GITHUB_REF#refs/tags/}"
-          version="${tag#v}"
+          version="${{ needs.prepare.outputs.version }}"
           if [ -z "$version" ]; then
-            echo "version could not be derived from tag: $GITHUB_REF" >&2
+            echo "version could not be derived" >&2
             exit 1
           fi
 
@@ -258,8 +416,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: ${{ needs.prepare.outputs.release_name }}
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -269,7 +427,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.prepare.outputs.tag }}
           fail_on_unmatched_files: true
           files: |
             artifacts/**/fledx-*.tar.gz*
